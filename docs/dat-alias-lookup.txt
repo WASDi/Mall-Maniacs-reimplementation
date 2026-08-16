@@ -1,0 +1,338 @@
+Mall Maniacs (maniac.exe) - DAT_* alias lookup (g_playerRecords region)
+====================================================================================================
+
+All 160 remaining program DAT_* symbols live inside g_playerRecords
+(base 0x456210, 8 records x 0x374 stride, ends 0x457db0) and were
+deliberately NOT renamed/typed in pass 5c (docs/11-issues.md section 16,
+'protected region': do NOT re-type - they are interior aliases of the
+typed record array). Use this table to resolve a DAT_* you meet in
+decompilation to its logical g_playerRecords[i].<field>.
+
+Dual view: SceneObject part at record+0x0; Player view at record+0x150
+(= g_apPlayers @0x456360, Player[8]). Field names below use the
+record-relative offset; aliases between the two views are marked.
+
+DAT_*          addr       rec  off    field                    xrefs  notes/functions
+----------------------------------------------------------------------------------------------------
+DAT_00456218   00456218  [0]  +0x008  pCartName                5       [alias: nId? mString cart name (dual)]
+                                                                        used by: menuInit,playerSetupRound,playerSetupSceneObjects,stateNetLobby
+DAT_00456220   00456220  [0]  +0x010  pCharSceneNode           22      [alias: sceneNodeAllocChild (char scene node)]
+                                                                        used by: editorMouseMove,levelObjectsCartsCameraInit,menuInit,navPointEditorClick,netClientSendPlayerState,playerAnimSfxUpdate,playerSetupSceneObjects,stateNetLobby
+DAT_00456224   00456224  [0]  +0x014  pCartMesh                36      [alias: sceneryObjAlloc cart mesh]
+                                                                        used by: gameObjectUpdate,itemThrowUpdate,levelObjectsCartsCameraInit,menuInit,netClientReceiveGameMsg,netClientSendPlayerState,playerSetupSceneObjects,stateNetLobby
+DAT_00456228   00456228  [0]  +0x018  <unmapped +0x018>        3      
+                                                                        used by: menuInit,stateNetLobby
+DAT_0045622c   0045622c  [0]  +0x01c  <unmapped +0x01c>        3      
+                                                                        used by: menuInit,stateNetLobby
+DAT_00456230   00456230  [0]  +0x020  pCharSplashMesh          5       [alias: SPLASH mesh child (y=-1200)]
+                                                                        used by: menuInit,playerSetupSceneObjects,stateNetLobby
+DAT_00456234   00456234  [0]  +0x024  pCartSplashMesh          5       [alias: SPLASH mesh child (y=-1200)]
+                                                                        used by: menuInit,playerSetupSceneObjects,stateNetLobby
+DAT_00456238   00456238  [0]  +0x028  <unmapped +0x028>        6      
+                                                                        used by: menuInit,playerAnimSfxUpdate,stateNetLobby
+DAT_0045623c   0045623c  [0]  +0x02c  <unmapped +0x02c>        5      
+                                                                        used by: menuInit,playerAnimSfxUpdate,stateNetLobby
+DAT_00456240   00456240  [0]  +0x030  pCharMesh                19      [alias: char mesh obj (slot 0 of anmSet); KUNDKORT parent at win]
+                                                                        used by: menuInit,playerSetupSceneObjects,roundLogicUpdate,stateNetLobby
+DAT_00456244   00456244  [0]  +0x034  pCharSubMesh1            23      [alias: N_<name> sub-mesh slot 1]
+                                                                        used by: menuInit,playerSetupSceneObjects,stateNetLobby
+DAT_00456248   00456248  [0]  +0x038  pCharSubMesh2            5       [alias: N_<name> sub-mesh slot 2]
+                                                                        used by: menuInit,playerSetupSceneObjects,stateNetLobby
+DAT_0045624c   0045624c  [0]  +0x03c  <unmapped +0x03c>        3      
+                                                                        used by: menuInit,stateNetLobby
+DAT_00456250   00456250  [0]  +0x040  <unmapped +0x040>        3      
+                                                                        used by: menuInit,stateNetLobby
+DAT_00456254   00456254  [0]  +0x044  pCartChildNodeA          5       [alias: sceneNodeAllocChild(cart)]
+                                                                        used by: levelObjectsCartsCameraInit,menuInit,playerSetupSceneObjects,stateNetLobby
+DAT_00456258   00456258  [0]  +0x048  pCartChildNodeB          5       [alias: sceneNodeAllocChild(cart)]
+                                                                        used by: levelObjectsCartsCameraInit,menuInit,playerSetupSceneObjects,stateNetLobby
+DAT_0045625c   0045625c  [0]  +0x04c  <unmapped +0x04c>        16     
+                                                                        used by: menuInit,playerSetupRound,renderGameHud,stateNetLobby,stateStartGame
+DAT_00456260   00456260  [0]  +0x050  <unmapped +0x050>        7      
+                                                                        used by: menuInit,stateNetLobby,stateStartGame
+DAT_00456261   00456261  [0]  +0x051  <unmapped +0x051>        2      
+                                                                        used by: stateNetLobby,stateStartGame
+DAT_0045635c   0045635c  [0]  +0x14c  <unmapped +0x14c>        8      
+                                                                        used by: levelObjectsCartsCameraInit,menuInit,playerSetupCharacters,stateNetLobby
+DAT_00456380   00456380  [0]  +0x170  <unmapped +0x170>        3      
+                                                                        used by: menuInit,stateNetLobby
+DAT_00456384   00456384  [0]  +0x174  pObj                     23      [alias: object handle (low byte = present) [nHasCart alias]]
+                                                                        used by: actionCmd,editorMouseMove,gameObjectUpdate,gameUpdate,itemThrowUpdate,levelObjectsCartsCameraInit,menuInit,navPointEditorClick,netClientReceiveGameMsg,netClientSendPlayerState,playerSetupRound,roundLogicUpdate,stateNetLobby
+DAT_00456388   00456388  [0]  +0x178  <unmapped +0x178>        3      
+                                                                        used by: menuInit,stateNetLobby
+DAT_0045638c   0045638c  [0]  +0x17c  nHeldItemId              7      
+                                                                        used by: gameObjectUpdate,menuInit,playerSetupRound,stateNetLobby
+DAT_00456390   00456390  [0]  +0x180  nItemCount               17      [alias: Matkrig carried count, target 5 [nMode alias]]
+                                                                        used by: gameObjectUpdate,menuInit,playerSetupRound,renderGameHud,roundLogicUpdate,stateNetLobby
+DAT_00456394   00456394  [0]  +0x184  nListItemId0             29      [alias: shopping-list ids / Vagnrace time slot [nCartIdx alias]]
+                                                                        used by: gameObjectUpdate,menuInit,netClientReceiveGameMsg,playerSetupRound,renderGameHud,roundLogicUpdate,stateNetLobby
+DAT_00456398   00456398  [0]  +0x188  <unmapped +0x188>        15     
+                                                                        used by: gameObjectUpdate,menuInit,playerSetupRound,roundLogicUpdate,stateNetLobby
+DAT_004563bc   004563bc  [0]  +0x1ac  nListCollected0          27      [alias: per-slot collected flags]
+                                                                        used by: gameObjectUpdate,menuInit,netClientReceiveGameMsg,playerSetupRound,renderGameHud,roundLogicUpdate,stateNetLobby
+DAT_004563c0   004563c0  [0]  +0x1b0  <unmapped +0x1b0>        13     
+                                                                        used by: gameObjectUpdate,menuInit,playerSetupRound,renderGameHud,roundLogicUpdate,stateNetLobby
+DAT_004563e4   004563e4  [0]  +0x1d4  <unmapped +0x1d4>        8      
+                                                                        used by: gameObjectUpdate,menuInit,stateNetLobby
+DAT_004563e8   004563e8  [0]  +0x1d8  <unmapped +0x1d8>        5      
+                                                                        used by: gameObjectUpdate,menuInit,stateNetLobby
+DAT_004563ec   004563ec  [0]  +0x1dc  pFaceObj                 7       [alias: avatar/face sprite]
+                                                                        used by: gameKeyHandler,menuInit,renderGameHud,stateNetLobby
+DAT_004563f0   004563f0  [0]  +0x1e0  <unmapped +0x1e0>        5      
+                                                                        used by: gameKeyHandler,menuInit,stateNetLobby
+DAT_004563f4   004563f4  [0]  +0x1e4  <unmapped +0x1e4>        8      
+                                                                        used by: gameObjectUpdate,itemThrowUpdate,menuInit,playerThrowItemCtor,stateNetLobby
+DAT_004563f8   004563f8  [0]  +0x1e8  <unmapped +0x1e8>        10     
+                                                                        used by: menuInit,playerSetupRound,stateNetLobby
+DAT_004563fc   004563fc  [0]  +0x1ec  <unmapped +0x1ec>        6      
+                                                                        used by: menuInit,playerSetupRound,stateNetLobby
+DAT_00456400   00456400  [0]  +0x1f0  flWalkTurnConst          2      
+                                                                        used by: playerSetupRound
+DAT_00456404   00456404  [0]  +0x1f4  <unmapped +0x1f4>        6      
+                                                                        used by: gameObjectUpdate,netClientReceiveGameMsg,netClientSendPlayerState
+DAT_00456408   00456408  [0]  +0x1f8  <unmapped +0x1f8>        2      
+                                                                        used by: playerSetupRound
+DAT_0045640c   0045640c  [0]  +0x1fc  <unmapped +0x1fc>        2      
+                                                                        used by: playerSetupRound
+DAT_00456410   00456410  [0]  +0x200  <unmapped +0x200>        2      
+                                                                        used by: playerSetupRound
+DAT_00456414   00456414  [0]  +0x204  <unmapped +0x204>        6      
+                                                                        used by: gameObjectUpdate,netClientReceiveGameMsg,netClientSendPlayerState
+DAT_00456418   00456418  [0]  +0x208  <unmapped +0x208>        1      
+                                                                        used by: netClientReceiveGameMsg
+DAT_00456434   00456434  [0]  +0x224  pWalkNode                17      [alias: WorldNode 0x48-B sub-object]
+                                                                        used by: editorMouseMove,levelObjectsCartsCameraInit,navPointEditorClick,netClientReceiveGameMsg,netClientSendPlayerState,playerSetupRound,roundLogicUpdate,roundTeardown
+DAT_00456438   00456438  [0]  +0x228  <unmapped +0x228>        10     
+                                                                        used by: menuInit,playerSetupRound,stateNetLobby
+DAT_0045643c   0045643c  [0]  +0x22c  <unmapped +0x22c>        8      
+                                                                        used by: menuInit,playerSetupRound,stateNetLobby
+DAT_00456440   00456440  [0]  +0x230  <unmapped +0x230>        1      
+                                                                        used by: playerSetupRound
+DAT_00456444   00456444  [0]  +0x234  <unmapped +0x234>        3      
+                                                                        used by: netClientReceiveGameMsg,netClientSendPlayerState,playerSetupRound
+DAT_00456448   00456448  [0]  +0x238  <unmapped +0x238>        1      
+                                                                        used by: playerSetupRound
+DAT_0045644c   0045644c  [0]  +0x23c  <unmapped +0x23c>        3      
+                                                                        used by: playerSetupRound
+DAT_00456450   00456450  [0]  +0x240  <unmapped +0x240>        1      
+                                                                        used by: playerSetupRound
+DAT_00456454   00456454  [0]  +0x244  <unmapped +0x244>        3      
+                                                                        used by: netClientReceiveGameMsg,netClientSendPlayerState,playerSetupRound
+DAT_00456458   00456458  [0]  +0x248  <unmapped +0x248>        2      
+                                                                        used by: netClientSendPlayerState,playerSetupRound
+DAT_00456464   00456464  [0]  +0x254  <unmapped +0x254>        1      
+                                                                        used by: playerSetupRound
+DAT_00456468   00456468  [0]  +0x258  <unmapped +0x258>        1      
+                                                                        used by: playerSetupRound
+DAT_0045646c   0045646c  [0]  +0x25c  <unmapped +0x25c>        1      
+                                                                        used by: playerSetupRound
+DAT_00456470   00456470  [0]  +0x260  <unmapped +0x260>        3      
+                                                                        used by: netClientReceiveGameMsg,netClientSendPlayerState,playerSetupRound
+DAT_00456474   00456474  [0]  +0x264  pPosNode                 30      [alias: WorldNode 0x48-B sub-object]
+                                                                        used by: gameObjectUpdate,itemThrowUpdate,levelObjectsCartsCameraInit,netClientReceiveGameMsg,netClientSendPlayerState,playerSetupRound,roundTeardown
+DAT_00456478   00456478  [0]  +0x268  <unmapped +0x268>        10     
+                                                                        used by: menuInit,playerSetupRound,stateNetLobby
+DAT_0045647c   0045647c  [0]  +0x26c  <unmapped +0x26c>        5      
+                                                                        used by: menuInit,playerSetupRound,stateNetLobby
+DAT_00456480   00456480  [0]  +0x270  flCartTurnConst          1      
+                                                                        used by: playerSetupRound
+DAT_00456484   00456484  [0]  +0x274  <unmapped +0x274>        5      
+                                                                        used by: gameObjectUpdate,netClientReceiveGameMsg
+DAT_00456488   00456488  [0]  +0x278  <unmapped +0x278>        2      
+                                                                        used by: playerSetupRound
+DAT_0045648c   0045648c  [0]  +0x27c  <unmapped +0x27c>        2      
+                                                                        used by: playerSetupRound
+DAT_00456490   00456490  [0]  +0x280  <unmapped +0x280>        1      
+                                                                        used by: playerSetupRound
+DAT_00456494   00456494  [0]  +0x284  <unmapped +0x284>        5      
+                                                                        used by: gameObjectUpdate,netClientReceiveGameMsg
+DAT_00456498   00456498  [0]  +0x288  <unmapped +0x288>        1      
+                                                                        used by: netClientReceiveGameMsg
+DAT_004564b4   004564b4  [0]  +0x2a4  pCartNode                24      [alias: WorldNode 0x48-B sub-object]
+                                                                        used by: editorMouseMove,levelObjectsCartsCameraInit,navPointEditorClick,netClientReceiveGameMsg,playerSetupRound,roundLogicUpdate,roundTeardown
+DAT_004564b8   004564b8  [0]  +0x2a8  pAnmSet[0]               6       [alias: anmSet holder pick1.anm]
+                                                                        used by: menuInit,playerSetupSceneObjects,roundTeardown,stateNetLobby
+DAT_004564bc   004564bc  [0]  +0x2ac  pAnmSet[1]               6       [alias: anmSet holder pick2.anm]
+                                                                        used by: menuInit,playerSetupSceneObjects,roundTeardown,stateNetLobby
+DAT_004564c0   004564c0  [0]  +0x2b0  pAnmSet[2]               6       [alias: anmSet holder flpick1.anm]
+                                                                        used by: menuInit,playerSetupSceneObjects,roundTeardown,stateNetLobby
+DAT_004564c4   004564c4  [0]  +0x2b4  pAnmSet[3]               6       [alias: anmSet holder flpick2.anm]
+                                                                        used by: menuInit,playerSetupSceneObjects,roundTeardown,stateNetLobby
+DAT_004564c8   004564c8  [0]  +0x2b8  pAnmSet[4]               6       [alias: anmSet holder throw1.anm]
+                                                                        used by: menuInit,playerSetupSceneObjects,roundTeardown,stateNetLobby
+DAT_004564cc   004564cc  [0]  +0x2bc  pAnmSet[5]               6       [alias: anmSet holder throw2.anm]
+                                                                        used by: menuInit,playerSetupSceneObjects,roundTeardown,stateNetLobby
+DAT_004564d0   004564d0  [0]  +0x2c0  pAnmSet[6]               7       [alias: anmSet holder run.anm]
+                                                                        used by: menuInit,playerAnimSfxUpdate,playerSetupSceneObjects,roundTeardown,stateNetLobby
+DAT_004564d4   004564d4  [0]  +0x2c4  pAnmSet[7]               9       [alias: anmSet holder stand.anm]
+                                                                        used by: menuInit,playerSetupSceneObjects,roundStartInit,roundTeardown,stateNetLobby
+DAT_004564d8   004564d8  [0]  +0x2c8  pAnmSet[8]               6       [alias: anmSet holder grab.anm]
+                                                                        used by: menuInit,playerSetupSceneObjects,roundTeardown,stateNetLobby
+DAT_004564dc   004564dc  [0]  +0x2cc  pAnmSet[9]               7       [alias: anmSet holder oops.anm]
+                                                                        used by: menuInit,playerAnimSfxUpdate,playerSetupSceneObjects,roundTeardown,stateNetLobby
+DAT_004564e0   004564e0  [0]  +0x2d0  pAnmSet[10]              8       [alias: anmSet holder winner.anm]
+                                                                        used by: menuInit,playerAnimSfxUpdate,playerSetupSceneObjects,roundTeardown,stateNetLobby
+DAT_004564e4   004564e4  [0]  +0x2d4  <unmapped +0x2d4>        3      
+                                                                        used by: menuInit,stateNetLobby
+DAT_004564e8   004564e8  [0]  +0x2d8  nChannelsDirty           5      
+                                                                        used by: gameUpdate,menuInit,playerAnimSfxUpdate,stateNetLobby
+DAT_004564ec   004564ec  [0]  +0x2dc  nCtrlType                13      [alias: 2=AI (Player view nState)]
+                                                                        used by: gameWorldUpdate,menuInit,playerSetupCharacters,playerUpdateDispatch,stateNetLobby
+DAT_004564f0   004564f0  [0]  +0x2e0  fPosPrevX                20      [alias: prev-tick net position [flAnimFrame alias]]
+                                                                        used by: gameKeyHandler,gameWorldUpdate,menuInit,movieFrameUpdate,netClientSendPlayerState,netGameUpdate,playerSetupRound,playerUpdateAI,roundLogicUpdate,stateNetLobby
+DAT_004564f4   004564f4  [0]  +0x2e4  fPosPrevZ                14      [alias: prev-tick net position [flAnimTimer alias]]
+                                                                        used by: gameKeyHandler,menuInit,movieFrameUpdate,netClientSendPlayerState,netGameUpdate,playerSetupRound,playerUpdateAI,roundLogicUpdate,stateNetLobby
+DAT_004564f8   004564f8  [0]  +0x2e8  nAnimState               24      [alias: net anim 2|5|6]
+                                                                        used by: menuInit,movieFrameUpdate,netClientReceiveGameMsg,netClientSendPlayerState,playerSetupRound,playerUpdateAI,roundLogicUpdate,stateNetLobby
+DAT_004564fc   004564fc  [0]  +0x2ec  <unmapped +0x2ec>        3      
+                                                                        used by: menuInit,stateNetLobby
+DAT_00456500   00456500  [0]  +0x2f0  nAnimBusy                11     
+                                                                        used by: gameWorldUpdate,menuInit,netClientReceiveGameMsg,netClientSendPlayerState,playerSetupRound,playerUpdateAI,stateNetLobby
+DAT_00456504   00456504  [0]  +0x2f4  nAnimBusyReload          4      
+                                                                        used by: menuInit,playerUpdateAI,stateNetLobby
+DAT_00456508   00456508  [0]  +0x2f8  nAnimBusyTimer           4       [alias: 0xf = wait/anim-complete]
+                                                                        used by: menuInit,playerUpdateAI,stateNetLobby
+DAT_0045650c   0045650c  [0]  +0x2fc  <unmapped +0x2fc>        7      
+                                                                        used by: gameKeyHandler,menuInit,playerSetupRound,stateNetLobby
+DAT_00456510   00456510  [0]  +0x300  fPosX                    6       [alias: network-decoded world position]
+                                                                        used by: menuInit,netClientReceiveGameMsg,netGameUpdate,stateNetLobby
+DAT_00456514   00456514  [0]  +0x304  fPosZ                    6       [alias: network-decoded world position]
+                                                                        used by: menuInit,netClientReceiveGameMsg,netGameUpdate,stateNetLobby
+DAT_00456518   00456518  [0]  +0x308  <unmapped +0x308>        6      
+                                                                        used by: menuInit,stateNetLobby,stateStartGame
+DAT_0045651c   0045651c  [0]  +0x30c  nNetWait                 8      
+                                                                        used by: menuInit,netClientReceiveGameMsg,renderGameHud,roundLogicUpdate,stateNetLobby
+DAT_00456520   00456520  [0]  +0x310  nActionFlags             9       [alias: OR'd net sub-opcodes]
+                                                                        used by: menuInit,netServerReceiveGameMsg,netServerSendSubCmd,roundLogicUpdate,stateNetLobby
+DAT_00456524   00456524  [0]  +0x314  aiCtrl                   8       [alias: AiController (player+0x1c4 Player-rel); moveState first 0x60B]
+                                                                        used by: aiControllersInit,menuInit,playerUpdateDispatch,stateNetLobby
+DAT_00456528   00456528  [0]  +0x318  <unmapped +0x318>        3      
+                                                                        used by: menuInit,stateNetLobby
+DAT_00456584   00456584  [1]  +0x000  pPlayerName              17      [alias: mString char* (name used to load char mesh)]
+                                                                        used by: aiControllersInit,gameUpdate,menuInit,playerUpdateAI
+DAT_00456594   00456594  [1]  +0x010  pCharSceneNode           4       [alias: sceneNodeAllocChild (char scene node)]
+                                                                        used by: playerAnimSfxUpdate,playerUpdateAI
+DAT_00456598   00456598  [1]  +0x014  pCartMesh                2       [alias: sceneryObjAlloc cart mesh]
+                                                                        used by: itemThrowUpdate,playerAnimSfxUpdate
+DAT_004565ac   004565ac  [1]  +0x028  <unmapped +0x028>        6      
+                                                                        used by: playerAnimSfxUpdate
+DAT_004565b0   004565b0  [1]  +0x02c  <unmapped +0x02c>        6      
+                                                                        used by: playerAnimSfxUpdate
+DAT_004565b4   004565b4  [1]  +0x030  pCharMesh                11      [alias: char mesh obj (slot 0 of anmSet); KUNDKORT parent at win]
+                                                                        used by: playerAnimSfxUpdate
+DAT_004565c4   004565c4  [1]  +0x040  <unmapped +0x040>        4      
+                                                                        used by: playerUpdateAI
+DAT_004565c8   004565c8  [1]  +0x044  pCartChildNodeA          1       [alias: sceneNodeAllocChild(cart)]
+                                                                        used by: playerAnimSfxUpdate
+DAT_004565cc   004565cc  [1]  +0x048  pCartChildNodeB          1       [alias: sceneNodeAllocChild(cart)]
+                                                                        used by: playerAnimSfxUpdate
+DAT_004565d0   004565d0  [1]  +0x04c  <unmapped +0x04c>        2      
+                                                                        used by: stateStartGame
+DAT_004566d4   004566d4  [1]  +0x150  Player.view              2       [alias: g_apPlayers[i] alias base (Player[8] @0x456360)]
+                                                                        used by: playerSetupCharacters,stateStartGame
+DAT_004566d8   004566d8  [1]  +0x154  bIsLocal                 2      
+                                                                        used by: levelObjectsCartsCameraInit,playerSetupCharacters
+DAT_004566dc   004566dc  [1]  +0x158  bFlags                   8       [alias: bit 0x20 = heading to checkout]
+                                                                        used by: playerAnimSfxUpdate,roundLogicUpdate
+DAT_004566e0   004566e0  [1]  +0x15c  nScore                   2      
+                                                                        used by: roundLogicUpdate
+DAT_004566f0   004566f0  [1]  +0x16c  nProgress                3       [alias: 0-100 HUD progress bar]
+                                                                        used by: playerUpdateAI
+DAT_004566f8   004566f8  [1]  +0x174  pObj                     12      [alias: object handle (low byte = present) [nHasCart alias]]
+                                                                        used by: gameUpdate,itemThrowUpdate,playerAnimSfxUpdate,playerUpdateAI,roundLogicUpdate
+DAT_00456700   00456700  [1]  +0x17c  nHeldItemId              7      
+                                                                        used by: playerUpdateAI
+DAT_00456704   00456704  [1]  +0x180  nItemCount               4       [alias: Matkrig carried count, target 5 [nMode alias]]
+                                                                        used by: renderGameHud,roundLogicUpdate
+DAT_00456708   00456708  [1]  +0x184  nListItemId0             8       [alias: shopping-list ids / Vagnrace time slot [nCartIdx alias]]
+                                                                        used by: netClientReceiveGameMsg,renderGameHud,roundLogicUpdate
+DAT_0045670c   0045670c  [1]  +0x188  <unmapped +0x188>        2      
+                                                                        used by: roundLogicUpdate
+DAT_00456730   00456730  [1]  +0x1ac  nListCollected0          6       [alias: per-slot collected flags]
+                                                                        used by: netClientReceiveGameMsg,playerUpdateAI,renderGameHud,roundLogicUpdate
+DAT_00456734   00456734  [1]  +0x1b0  <unmapped +0x1b0>        2      
+                                                                        used by: playerUpdateAI,roundLogicUpdate
+DAT_00456758   00456758  [1]  +0x1d4  <unmapped +0x1d4>        1      
+                                                                        used by: playerUpdateAI
+DAT_0045675c   0045675c  [1]  +0x1d8  <unmapped +0x1d8>        3      
+                                                                        used by: playerUpdateAI
+DAT_00456760   00456760  [1]  +0x1dc  pFaceObj                 5       [alias: avatar/face sprite]
+                                                                        used by: playerUpdateAI
+DAT_00456764   00456764  [1]  +0x1e0  <unmapped +0x1e0>        5      
+                                                                        used by: playerUpdateAI
+DAT_00456784   00456784  [1]  +0x200  <unmapped +0x200>        1      
+                                                                        used by: playerAnimSfxUpdate
+DAT_00456788   00456788  [1]  +0x204  <unmapped +0x204>        1      
+                                                                        used by: playerAnimSfxUpdate
+DAT_0045678c   0045678c  [1]  +0x208  <unmapped +0x208>        3      
+                                                                        used by: playerUpdateAI
+DAT_004567a8   004567a8  [1]  +0x224  pWalkNode                8       [alias: WorldNode 0x48-B sub-object]
+                                                                        used by: playerUpdateAI,roundTeardown
+DAT_004567b8   004567b8  [1]  +0x234  <unmapped +0x234>        2      
+                                                                        used by: playerAnimSfxUpdate
+DAT_004567c8   004567c8  [1]  +0x244  <unmapped +0x244>        2      
+                                                                        used by: playerAnimSfxUpdate
+DAT_004567e8   004567e8  [1]  +0x264  pPosNode                 4       [alias: WorldNode 0x48-B sub-object]
+                                                                        used by: itemThrowUpdate,playerUpdateAI,roundTeardown
+DAT_004567f8   004567f8  [1]  +0x274  <unmapped +0x274>        2      
+                                                                        used by: playerAnimSfxUpdate
+DAT_00456804   00456804  [1]  +0x280  <unmapped +0x280>        1      
+                                                                        used by: playerAnimSfxUpdate
+DAT_00456808   00456808  [1]  +0x284  <unmapped +0x284>        3      
+                                                                        used by: playerAnimSfxUpdate
+DAT_00456828   00456828  [1]  +0x2a4  pCartNode                4       [alias: WorldNode 0x48-B sub-object]
+                                                                        used by: roundLogicUpdate,roundTeardown
+DAT_0045682c   0045682c  [1]  +0x2a8  pAnmSet[0]               2       [alias: anmSet holder pick1.anm]
+                                                                        used by: playerUpdateAI,roundTeardown
+DAT_00456830   00456830  [1]  +0x2ac  pAnmSet[1]               2       [alias: anmSet holder pick2.anm]
+                                                                        used by: playerUpdateAI,roundTeardown
+DAT_00456834   00456834  [1]  +0x2b0  pAnmSet[2]               3       [alias: anmSet holder flpick1.anm]
+                                                                        used by: playerUpdateAI,roundTeardown
+DAT_00456838   00456838  [1]  +0x2b4  pAnmSet[3]               2       [alias: anmSet holder flpick2.anm]
+                                                                        used by: playerUpdateAI,roundTeardown
+DAT_0045683c   0045683c  [1]  +0x2b8  pAnmSet[4]               2       [alias: anmSet holder throw1.anm]
+                                                                        used by: playerUpdateAI,roundTeardown
+DAT_00456840   00456840  [1]  +0x2bc  pAnmSet[5]               2       [alias: anmSet holder throw2.anm]
+                                                                        used by: playerUpdateAI,roundTeardown
+DAT_00456844   00456844  [1]  +0x2c0  pAnmSet[6]               3       [alias: anmSet holder run.anm]
+                                                                        used by: playerAnimSfxUpdate,roundTeardown
+DAT_00456848   00456848  [1]  +0x2c4  pAnmSet[7]               4       [alias: anmSet holder stand.anm]
+                                                                        used by: playerAnimSfxUpdate,roundStartInit,roundTeardown
+DAT_0045684c   0045684c  [1]  +0x2c8  pAnmSet[8]               2       [alias: anmSet holder grab.anm]
+                                                                        used by: playerUpdateAI,roundTeardown
+DAT_00456850   00456850  [1]  +0x2cc  pAnmSet[9]               2       [alias: anmSet holder oops.anm]
+                                                                        used by: playerAnimSfxUpdate,roundTeardown
+DAT_00456854   00456854  [1]  +0x2d0  pAnmSet[10]              1       [alias: anmSet holder winner.anm]
+                                                                        used by: roundTeardown
+DAT_00456858   00456858  [1]  +0x2d4  <unmapped +0x2d4>        10     
+                                                                        used by: playerAnimSfxUpdate,playerUpdateAI
+DAT_0045685c   0045685c  [1]  +0x2d8  nChannelsDirty           2      
+                                                                        used by: gameUpdate,playerAnimSfxUpdate
+DAT_00456860   00456860  [1]  +0x2dc  nCtrlType                3       [alias: 2=AI (Player view nState)]
+                                                                        used by: playerSetupCharacters,playerUpdateAI,playerUpdateDispatch
+DAT_00456864   00456864  [1]  +0x2e0  fPosPrevX                15      [alias: prev-tick net position [flAnimFrame alias]]
+                                                                        used by: movieFrameUpdate,netGameUpdate,playerAnimSfxUpdate,playerUpdateAI,roundLogicUpdate
+DAT_00456868   00456868  [1]  +0x2e4  fPosPrevZ                16      [alias: prev-tick net position [flAnimTimer alias]]
+                                                                        used by: movieFrameUpdate,netGameUpdate,playerAnimSfxUpdate,playerUpdateAI,roundLogicUpdate
+DAT_0045686c   0045686c  [1]  +0x2e8  nAnimState               14      [alias: net anim 2|5|6]
+                                                                        used by: movieFrameUpdate,playerUpdateAI,roundLogicUpdate
+DAT_00456874   00456874  [1]  +0x2f0  nAnimBusy                31     
+                                                                        used by: playerAnimSfxUpdate,playerUpdateAI
+DAT_00456878   00456878  [1]  +0x2f4  nAnimBusyReload          2      
+                                                                        used by: playerUpdateAI
+DAT_0045687c   0045687c  [1]  +0x2f8  nAnimBusyTimer           4       [alias: 0xf = wait/anim-complete]
+                                                                        used by: playerUpdateAI
+DAT_00456884   00456884  [1]  +0x300  fPosX                    1       [alias: network-decoded world position]
+                                                                        used by: netGameUpdate
+DAT_00456888   00456888  [1]  +0x304  fPosZ                    1       [alias: network-decoded world position]
+                                                                        used by: netGameUpdate
+DAT_0045688c   0045688c  [1]  +0x308  <unmapped +0x308>        3      
+                                                                        used by: stateStartGame
+DAT_00456894   00456894  [1]  +0x310  nActionFlags             2       [alias: OR'd net sub-opcodes]
+                                                                        used by: netServerSendSubCmd,roundLogicUpdate
+DAT_00456c00   00456c00  [2]  +0x308  <unmapped +0x308>        1      
+DAT_00456c08   00456c08  [2]  +0x310  nActionFlags             1       [alias: OR'd net sub-opcodes]
+                                                                        used by: netServerSendSubCmd
+
+Example: DAT_00456240 = 0x456240-0x456210 = +0x30 => g_playerRecords[0].pCharMesh
+          (winner's char mesh passed to sceneryObjAlloc for the KUNDKORT obj)

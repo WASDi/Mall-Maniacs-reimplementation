@@ -8,7 +8,9 @@ renamed + decoded; statically-linked MSVC CRT region 0x43c850-0x44966c fully
 mapped and renamed: config-save iostream stream layer, low-level CRT file I/O,
 memory (SBH/heap2 allocators), ctype/float helpers, TLS/errno, C++ EH runtime,
 C++-EH vec-ctor/dtor, atexit/exit + lock cluster, cmdline/env startup).
-1178/1178 functions documented = 100%. Only facts marked [VERIFIED]
+1178/1178 functions documented = 100%. Data surface fully named (pass 5c):
+605 globals renamed, 571 typed; only documented aliases/artifacts remain as
+DAT_* (see 11-issues.md §16 pass 5c). Only facts marked [VERIFIED]
 were confirmed by reading decompilation/xrefs; everything else is hypothesis.
 
 ## How to use these notes
@@ -36,6 +38,7 @@ the open unknowns and the priority-ordered next-steps queue.
 | 12 | [12-input.md](12-input.md) | Input / DirectInput subsystem: keyboard/mouse devices, key polling, repeat | inputPollKeyboard 0x416820 |
 | 13 | [13-msvc-crt.md](13-msvc-crt.md) | Statically-linked MSVC CRT (0x43c850-0x44966c): EH runtime, SBH/heap2 allocators, exit/lock/startup, stdio/ctype/format, strtold/tz/env naming | crtCxxFrameHandler 0x43dde1, crtSbhInit 0x443fc0 |
 | 14 | [14-animations.md](14-animations.md) | .anm animation format (keyframe stream), loader cluster, playback chain | anmLoad 0x433a90, sceneObjectAnimStep 0x434540 |
+| 15 | [15-retyping.md](15-retyping.md) | Undefined-type retyping plan (578 game funcs + 2 game globals; skips dispatch/switch tables + CRT) | census: FindUndefinedTypes.java |
 
 ## Address-range → file map (approximate, for lookup only)
 
@@ -53,6 +56,18 @@ the open unknowns and the priority-ordered next-steps queue.
   [13-msvc-crt.md](13-msvc-crt.md), [06-config.md](06-config.md),
   [11-issues.md](11-issues.md) §16
 - `0x440000-0x500000` .rdata/.data constants, strings, globals → [08-globals.md](08-globals.md), [01-binary.md](01-binary.md)
+
+## Tooling
+
+- Running Ghidra Java scripts via the MCP bridge (stale-cache workaround, manual
+  javac compile, inline-script gotcha) → [`Ghidra_scripts.md`](../Ghidra_scripts.md)
+- Data-surface bulk apply (pass 5c) used `ApplyDatTypes.java` (name+type from an
+  embedded plan) + `VerifyDatTypes.java` (DAT_* census); both in
+  `/home/wasd/ghidra_scripts/`, plans in `/tmp/opencode/finalplan.json`/`.tsv`.
+- Remaining `DAT_*` lookup: [`dat-alias-lookup.txt`](dat-alias-lookup.txt) maps
+  every remaining program `DAT_*` (all in the `g_playerRecords` region
+  0x456210-0x457db0) to its record index + offset + logical field
+  (e.g. `DAT_00456240` = `g_playerRecords[0].pCharMesh`).
 
 ## Key starting points (verified)
 

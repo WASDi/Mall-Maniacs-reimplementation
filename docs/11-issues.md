@@ -6,18 +6,24 @@
 - None blocking. All 1178 functions in maniac.exe are documented/named (0
   undocumented). Major subsystems renamed (game flow, networking, config,
   renderer, sound, file formats, input); MSVC CRT region 0x43c850-0x44966c fully
-  mapped and renamed. Remaining work is semantics/struct detail rather than
-  naming: verify remaining hypotheses, tighten types/structs/enums, and cross-
-  reference with the game data files in /home/wasd/MallManiacsUnmodified/.
+  mapped and renamed. Data surface fully named (pass 5c): 605 globals renamed,
+  571 typed; only documented aliases/artifacts remain as DAT_*. Remaining work
+  is semantics/struct detail rather than naming: verify remaining hypotheses,
+  tighten types/structs/enums, and cross-reference with the game data files in
+  /home/wasd/MallManiacsUnmodified/.
 - Open [HYPOTHESIS] plate comments: g_nScoreTableTick @0x45d43c (per-frame
   counter in stateHighScoreTable @0x41dfd0). Convert to [VERIFIED] on next
   revisit. (g_bSceneNameTableDirty was resolved — see §16 pass 5b: it is the
   scene-directory path buffer g_szSceneDir @0x45e950.)
 
 ## 15. Next steps (priority order)
-1. Semantics polish: review the "hypothesis" plate comments for the last CRT
+1. (Optional cleanup) The 34 below-image-base `DAT_*` operand-artifact labels
+   (DAT_00000002, DAT_0004d2fc, ...) — Ghidra auto-created for absolute operand
+   refs; harmless but could be deleted for a clean symbol table. Verify each has
+   no logical meaning before deleting.
+2. Semantics polish: review the "hypothesis" plate comments for the last CRT
    passes (see §16) and convert to [VERIFIED] where decompilation confirms them.
-2. Struct/type tightening: game/scene/net/sound/input/movie globals + 9 UI
+3. Struct/type tightening: game/scene/net/sound/input/movie globals + 9 UI
    string literals now typed (see §16 global-typing pass). CRT cleanup largely
    done (pass 5): file count @0x462b20, TLS index @0x452400, codepages,
    mb-bytes @0x452788, heap @0x462a0c, io write buf @0x45493c, lock critical
@@ -26,14 +32,45 @@
    do (low priority, mostly aliases or string-interior): DAT_00452130/00452150
    FILE structs, DAT_00462640 stream buffers, _environ DAT_00462464/68, remaining
    timezone scalars. Intentionally left untyped (aliases of typed arrays — do
-    NOT re-type): g_apPlayers @0x456360 (typed void*[8]; Player view at +0x150 of
-    g_playerRecords SceneObject[8]), g_bSceneTextAnimActive @0x45ecd0 /
-    g_apSceneTextAnimGlyphs @0x45ec90 (overlap g_apSndBank bank 0).
-3. Update the docs/ files with each step's findings; save program regularly.
-4. Optional: archive_ingest_program to push the completed documentation set into
+   NOT re-type): g_apPlayers @0x456360 (typed void*[8]; Player view at +0x150 of
+   g_playerRecords SceneObject[8]), g_bSceneTextAnimActive @0x45ecd0 /
+   g_apSceneTextAnimGlyphs @0x45ec90 (overlap g_apSndBank bank 0), plus the 160
+   protected-region aliases in 0x456210-0x457db0 (g_playerRecords) and
+   0x45ec90-0x45ecd0 (see pass 5c).
+4. Update the docs/ files with each step's findings; save program regularly.
+5. Optional: archive_ingest_program to push the completed documentation set into
    the cross-version archive (re_kb).
 
 ## 16. Completed work (short summaries — detail in the linked docs)
+- Global-naming pass 5c (CLOSED): bulk-typed and named the last 608 non-
+  protected `DAT_*` globals via a generated Java script (ApplyDatTypes.java,
+  see ../Ghidra_scripts.md). Final counts: **605 renamed, 571 typed** (37
+  create-fails are string-interior byte aliases whose parent data item already
+  covers the address — renames still applied; 2 bogus addresses 0x80000009/6f
+  and the in-.text item 0x43f90d intentionally left). 160 items in the
+  g_playerRecords / sceneTextAnim / sndbank0 regions were deliberately NOT
+  re-typed (documented aliases, see below). Remaining `DAT_*` in the program =
+  196 = the 160 protected aliases + 34 low-address operand artifacts (e.g.
+  DAT_00000002, DAT_0004d2fc — below-image-base labels Ghidra auto-creates for
+  `mov [imm],...` operands; not real globals) + 2 bogus. Categories:
+  - 178 float/double consts → `g_fl_*`/`g_dbl_*` value-named; semantic
+    overrides: `g_dblTrigScaleInv` @0x44b780 (10430.378 = 32768/π),
+    `g_dblTrigScale` @0x44b788 (9.587e-05 = π/32768), `g_flZero`/`g_flOne`/
+    `g_flMinusOne`/`g_flHalfPi`/`g_flPi`/`g_flPi2`/`g_flMinusPi`/`g_flTwoPi`,
+    `g_dblFourThirds` @0x44b798.
+  - 65 strings → `g_sz_*` content-named (incl. `g_szCrtErrPrefix` @0x44bd94).
+  - 46 command-token strings + interior char bytes (`g_cCmdPlay` etc.; movie
+    play/rec/stop @0x44ecdc/f0/fc, actionCmd "jump" @0x44e718, eload/esave
+    "x"/"y"/"h", enameCmd "v", logCmd "file", consoleHandleKey " ").
+  - 163 read-only data, 73 mutable globals, 27 float/double data globals, 21
+    rdata ptr-or-const, 10 binary blobs, 7 int consts, 7 CRT scalars, 4 rdata
+    ptrs, 2 GUIDs (`GUID_SysMouse` @0x44b730, `GUID_SysKeyboard` @0x44b740),
+    2 DIDATAFORMAT (`c_dfDIMouse` @0x44b750, `c_dfDIKeyboard` @0x44b768).
+  - L2 sign-wobble doubles verified from levelEventDirector_L2 @0x418000:
+    `g_dblL2PhaseX/AmpX/PhaseZ/AmpZ/PhaseY/AmpY` @0x459e38..0x459eb0.
+  - CRT: `g_pfnAtexit` slots, `g_crtHeapMutex` @0x4624f8, `g_crtFatalExit`
+    @0x462490, `g_crtTableTail` @0x454dd0, `g_crtZeroPad` @0x4627a8,
+    `g_flPhysZero` @0x44e320.
 - Global-naming pass 5b (CLOSED): final drive-down to a fully-named data surface.
   Every defined program global now carries a semantic `g_*` name; the only
   remaining `DAT_*` addresses are single-byte string-interior char-locators
