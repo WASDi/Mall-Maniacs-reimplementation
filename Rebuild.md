@@ -8,18 +8,18 @@ Use the Ghidra decompiled pseudo-C, disassembly when needed, and the documentati
 
 For every function or global that is reimplemented from the original, add a comment with its original address. Clearly label replacement code that has no direct original address. Preserve verified original data layouts where needed, using compile-time size and offset checks.
 
-For every function that is reimplemented, update Ghidra if new insights are made such as correcting types or more accurate naming of functions/parameters/globals. Also introduce new structs that supposedly existed in the original source code. Update the progress documentation in  after completing each chunk so a new agent can continue from the current state.
+For every function that is reimplemented, update Ghidra if new insights are made such as correcting types or more accurate naming of functions/parameters/globals. The reimplemented function name and signature should match Ghidra. This is important, update the Ghidra definition for the functions you reimplement. Also introduce new structs that supposedly existed in the original source code. Update the progress documentation in `docs/16-rebuild.md` after completing each chunk so a new agent can continue from the current state.
 
 Start with a minimal replacement `WinMain`: create a window, run a message loop, and call only app initialization, frame, and shutdown functions. Do not begin by reproducing the original `WinMain` or full original initialization path.
 
 The first milestone is a GUI vertical slice: launch `maniac_rebuild.exe` from the game-data directory, create a 640x480 window, load a known GUI asset, render one static menu or logo screen continuously, and close cleanly with the window close button or Escape. Build the slice from the rendering boundary upward: Win32 window, GXSOFT driver loader and narrow GX-compatible adapter, texture loading, static GUI screen, then menu text and input. Do not initially reproduce the original graphics driver registry configuration, DirectInput, or broad game initialization.
 
-Use real game assets where possible. The `.tpg` format is 256x256 indexed pixels followed by a 256-entry RGBA palette. Add startup, asset-load, and error logs so visual testing and a timeout are not the only diagnostics.
+Use real game assets. The `.tpg` format is 256x256 indexed pixels followed by a 256-entry RGBA palette. Add startup, asset-load, and error logs so visual testing and a timeout are not the only diagnostics.
 
 Keep future call sites for unfinished behavior through declared, deliberate interfaces. Every unresolved dependency needs a documented contract for inputs, outputs or error behavior, ownership, and state effects. Implement it as either a safe, clearly temporary stub that logs and returns a handled failure, or a known placeholder that permits the current milestone to proceed. Do not comment out unresolved calls. Keep temporary stubs in `stubs.c`/`stubs.h` or the relevant replacement subsystem, label them `TODO`, and include the original target/address when one exists. Replace the stub body later without changing callers or the interface.
 
 After the GUI vertical slice is stable, selectively absorb original initialization and state-machine semantics one subsystem at a time. When discovering multiple choices of which function to implement next, prioritize the dependencies required for the next visible, working single-player feature.
 
-To test and verify the build, place the new `maniac_rebuild.exe` beside the original in `/home/wasd/MallManiacsUnmodified/`, change directory there, and run `maniac_rebuild.exe` using wine. Do not touch the original `maniac.exe`. Run the GUI with a 5 second timeout as a crash smoke test and use the logs to confirm initialization and asset loading.
+To test and verify the build, place the new `maniac_rebuild.exe` beside the original in `/home/wasd/MallManiacsUnmodified/`, change directory there, and run `maniac_rebuild.exe` using wine. Do not touch the original `maniac.exe`. Run the GUI with a 5 second timeout as a crash smoke test and use the logs to confirm initialization and asset loading. Do not try to screenshot.
 
 The script `build.sh` should compile the project directly to `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe`, and `run.sh` should cd to the game directory and from there run `maniac_rebuild.exe`.

@@ -39,6 +39,7 @@
 - Prefer the highest-level MCP tool for each operation; avoid destructive ops
   (delete/clear/overwrite) without evidence.
 - Run `ghidra_save_program` periodically; do not commit to git unless asked.
+- Do not use `run_script_inline`. Instead use `run_ghidra_script` as documented in `Ghidra_scripts.md`.
 
 ## Key starting points (verified)
 - entry 0x43f18e -> WinMain 0x004160a0 (loop) -> init 0x00409d90 -> frame 0x0041a8c0

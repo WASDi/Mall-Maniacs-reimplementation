@@ -45,6 +45,10 @@
   key/transparent table @0x10109218, 2-colour blend @0x1010912c, float blend
   @0x10109334) then creates the DirectDraw surface (DAT_1006c858 vtable
   CreateSurface @+0x14) and attaches it (DAT_1006c81c @+0x7c).
+- Rebuild (maniac_rebuild.exe): the driver contract used by the GUI vertical
+  slice — gxSetMode @0x10001130, mode-struct layout, 8-bit framebuffer
+  DAT_10020fc0, palette-from-first-load rule, presentFrame @0x410310 — is
+  documented in [16-rebuild.md](16-rebuild.md).
 - Driver registry config helpers [renamed] (HKEY_CURRENT_USER, path
   `Software\UDS\No Fear\MTB Drivers\...`; config fatal-error on missing):
   gxRegSplitKeyValue @0x434cd0 (split "Key\ValueName" at last '\'),

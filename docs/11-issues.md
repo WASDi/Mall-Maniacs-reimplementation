@@ -40,8 +40,23 @@
 4. Update the docs/ files with each step's findings; save program regularly.
 5. Optional: archive_ingest_program to push the completed documentation set into
    the cross-version archive (re_kb).
+6. **Rebuild (see [16-rebuild.md](16-rebuild.md)) — next milestone after the
+   verified GUI slice (§16): extend the static intro-logo screen into the main
+   menu (menuUpdate @0x41b0b0) using gxDrawQuad/gxDrawPolygon + the font system
+   (fontPoolCreate @0x408f90, fontLoad) now that the driver's poly/TriUV/Quad
+   entries are mapped, then absorb input (pollKeyboard @0x416a10 / DirectInput
+   thunk @0x42d000) and the menu state machine.**
 
 ## 16. Completed work (short summaries — detail in the linked docs)
+- Rebuild milestone 1 — GUI vertical slice (CLOSED, verified): see
+  [16-rebuild.md](16-rebuild.md) for the full status, driver contract, and
+  source layout. Summary: source project in /home/wasd/auto-ghidra (maniac.c,
+  gx.c/h, util.c/h, stubs.c/h, build.sh, run.sh) compiles with
+  i686-w64-mingw32-gcc to maniac_rebuild.exe (KERNEL32/USER32/GDI32/WINMM) and
+  drives the original DRIVERS\GXSOFT.DLL via its GxDriverApi table; verified
+  under wine: window + driver + asset loads logged to rebuild.log, intro logo
+  presented until closed/Escape. TODO stubs retained in stubs.c/h for
+  gameInit/gameFrameUpdate/inputPollKeyboard.
 - Global-naming pass 5c (CLOSED): bulk-typed and named the last 608 non-
   protected `DAT_*` globals via a generated Java script (ApplyDatTypes.java,
   see ../Ghidra_scripts.md). Final counts: **605 renamed, 571 typed** (37

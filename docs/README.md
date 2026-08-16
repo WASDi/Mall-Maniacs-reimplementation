@@ -39,6 +39,7 @@ the open unknowns and the priority-ordered next-steps queue.
 | 13 | [13-msvc-crt.md](13-msvc-crt.md) | Statically-linked MSVC CRT (0x43c850-0x44966c): EH runtime, SBH/heap2 allocators, exit/lock/startup, stdio/ctype/format, strtold/tz/env naming | crtCxxFrameHandler 0x43dde1, crtSbhInit 0x443fc0 |
 | 14 | [14-animations.md](14-animations.md) | .anm animation format (keyframe stream), loader cluster, playback chain | anmLoad 0x433a90, sceneObjectAnimStep 0x434540 |
 | 15 | [15-retyping.md](15-retyping.md) | Undefined-type retyping plan (578 game funcs + 2 game globals; skips dispatch/switch tables + CRT) | census: FindUndefinedTypes.java |
+| 16 | [16-rebuild.md](16-rebuild.md) | maniac_rebuild.exe rebuild (Rebuild.md): source layout, GUI vertical-slice status, GX driver contract | gxSetMode 0x10001130, presentFrame 0x410310 |
 
 ## Address-range → file map (approximate, for lookup only)
 
