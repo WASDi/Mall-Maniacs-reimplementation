@@ -16,14 +16,14 @@
  *   - menuInit @0x419c20           (asset loads needed for the slice)
  * ===================================================================== */
 
-static HWND    g_hWnd;          /* maniac g_hMainWindow @0x459cd0 */
+static HWND    g_hWnd;          /* maniac g_hMainWindow @0x459ce0 */
 static HINSTANCE g_hInstance;   /* maniac g_hAppInstance @0x459cdc */
 static void   *g_pIntroTex;     /* maniac g_hIntroTexAddgames @0x45a618 */
 static int     g_bRunning = 1;
 
 /* WindowProc @0x4161b0 — narrowed to close/escape for the slice. The original
  * also routes keyboard to gameKeyHandler / DirectInput polling. */
-static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg) {
     case WM_CLOSE:                        /* 0x10 */
@@ -44,7 +44,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
 /* initWindowAndInput @0x4165f0 — window class + creation only (DirectInput
  * deferred; input via window messages for this milestone). */
-static int initWindow(void)
+static int initWindowAndInput(int nShowCmd)
 {
     WNDCLASSEXA wc;
     static const char *kClassName = "MallManiacsRebuild";
@@ -52,7 +52,7 @@ static int initWindow(void)
     ZeroMemory(&wc, sizeof(wc));
     wc.cbSize        = sizeof(WNDCLASSEXA);
     wc.style         = CS_HREDRAW | CS_VREDRAW;  /* original style = 3 */
-    wc.lpfnWndProc   = WndProc;
+    wc.lpfnWndProc   = WindowProc;
     wc.hInstance     = g_hInstance;
     wc.hCursor       = LoadCursorA(NULL, (LPCSTR)IDC_ARROW);
     wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
@@ -72,15 +72,16 @@ static int initWindow(void)
         appLog("[init] CreateWindowExA failed: %lu", (unsigned long)GetLastError());
         return 0;
     }
-    ShowWindow(g_hWnd, SW_SHOW);
+    ShowWindow(g_hWnd, nShowCmd);
     UpdateWindow(g_hWnd);
     appLog("[init] window created (hwnd=%08x)", (unsigned int)g_hWnd);
     return 1;
 }
 
-/* menuInit @0x419c20 — the asset loads required for the intro-logo screen:
- * intro_addgames.tga pixels + a .tpg to install the driver palette. */
-static int loadIntroAssets(void)
+/* menuInit @0x419c20 — narrowed to the asset loads required for the
+ * intro-logo screen: intro_addgames.tga pixels + a .tpg to install the
+ * driver palette. */
+static void menuInit(void)
 {
     size_t size = 0;
     void  *tpg;
@@ -91,12 +92,12 @@ static int loadIntroAssets(void)
     tpg = readFileAlloc("menu\\MERGED00.TPG", &size);
     if (tpg == NULL) {
         appLog("[assets] menu\\MERGED00.TPG missing");
-        return 0;
+        return;
     }
     if (size < 0x10400) {
         appLog("[assets] menu\\MERGED00.TPG too small (%u bytes)", (unsigned)size);
         free(tpg);
-        return 0;
+        return;
     }
     gxLoadTexture("MERGED00", tpg);
     appLog("[assets] MERGED00.TPG loaded (%u bytes, palette set)", (unsigned)size);
@@ -105,28 +106,26 @@ static int loadIntroAssets(void)
     g_pIntroTex = loadTga640x480("menu\\intro_addgames.tga");
     if (g_pIntroTex == NULL) {
         appLog("[assets] intro_addgames.tga load failed");
-        return 0;
+        return;
     }
     appLog("[assets] intro_addgames.tga -> 640x480 index buffer @%p", g_pIntroTex);
-    return 1;
 }
 
 /* WinMain @0x4160a0 — simplified: window, driver, intro logo loop, clean close. */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-                   LPSTR lpCmdLine, int nCmdShow)
+                   LPSTR lpCmdLine, int nShowCmd)
 {
     GxMode mode;
     MSG    msg;
 
     (void)hPrevInstance;
     (void)lpCmdLine;
-    (void)nCmdShow;
 
     g_hInstance = hInstance;
     appLog("[winmain] === start ===");
 
-    if (!initWindow()) {
-        appLog("[winmain] initWindow failed");
+    if (!initWindowAndInput(nShowCmd)) {
+        appLog("[winmain] initWindowAndInput failed");
         return 1;
     }
 
@@ -143,7 +142,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
     appLog("[winmain] gxSetMode done (640x480, bpp forced by driver)");
 
-    if (!loadIntroAssets()) {
+    menuInit();
+    if (g_pIntroTex == NULL) {
         appLog("[winmain] asset load failed");
         goto out;
     }

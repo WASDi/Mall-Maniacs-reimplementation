@@ -25,7 +25,7 @@ required offline GUI + single-player functionality of the original
 | File | Role |
 |---|---|
 | `Rebuild.md` | The plan/constraints being implemented |
-| `maniac.c` | WinMain @0x4160a0, window @0x4165f0, WndProc @0x4161b0, asset load, present loop |
+| `maniac.c` | WinMain @0x4160a0, initWindowAndInput @0x4165f0, WindowProc @0x4161b0, menuInit @0x419c20 (narrowed), present loop |
 | `gx.c` / `gx.h` | GX driver adapter: gxInit @0x4332f0, gxLoadTexture, presentFrame @0x410310, gxShutdown @0x432880; `GxMode` + `GxDriverApi` structs |
 | `util.c` / `util.h` | `appLog` → `rebuild.log`, file reads, TGA loader (tgaLoad16 @0x415df0) |
 | `stubs.c` / `stubs.h` | TODO stubs (gameInit @0x409d90, gameFrameUpdate @0x41abc0, inputPollKeyboard @0x416800) with contracts + original addresses |
@@ -113,3 +113,28 @@ using gxDrawQuad/gxDrawPolygon + the font system (fontPoolCreate @0x408f90,
 fontLoad) now that the driver's poly/TriUV/Quad entries are mapped, then absorb
 input (pollKeyboard @0x416a10 / DirectInput thunk @0x42d000) and the menu state
 machine.
+
+## Reimplementation progress tracker
+`TrackRebuildProgress.java` is a Ghidra script that enumerates the functions in
+the open `maniac.exe`, applies the rebuild scope exclusions, and compares the
+remaining function addresses with `@0x...` annotations in `maniac.c`. It prints
+the implemented count, remaining count, and percentages, and writes the full
+per-function report to `rebuild-progress.txt` by default.
+
+Run it through the Ghidra MCP bridge after placing/compiling the script in the
+configured Ghidra script directory:
+
+```text
+ghidra_run_ghidra_script(
+  script_name="TrackRebuildProgress.java",
+  program="maniac.exe",
+  args="source=/home/wasd/auto-ghidra/maniac.c output=/home/wasd/auto-ghidra/rebuild-progress.txt"
+)
+```
+
+The default exclusions match `Rebuild.md`: external/imported functions,
+thunks/import stubs, the statically linked CRT range `0x43c850-0x44966c`,
+CRT/compiler-glue-named functions, console command functions, and functions beginning with
+`net`, `mnet`, `stateNet`, `stateNetwork`, `console`, `command`, `startServer`,
+or `stateHost`. Override the last prefix group with
+`exclude_prefixes=a,b,c` when the rebuild scope changes.
