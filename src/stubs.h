@@ -16,14 +16,15 @@
  * failure. TODO: not implemented for the vertical slice. */
 int  gameInit(void);
 
-/* gameFrameUpdate @0x41abc0 — advance one game frame (update + render).
+/* gameFrameUpdate @0x41a8c0 — advance one game frame (update + render).
  * Contract: called when g_nFrameDue != 0; may request quit. TODO. */
 int  gameFrameUpdate(void);
 
-/* inputPollKeyboard @0x416800 — poll DirectInput keyboard state into the
- * shared key buffer. Contract: fills global 256-byte key state. TODO: the
- * slice uses window messages (WM_KEYDOWN) instead; DirectInput deferred. */
-int  inputPollKeyboard(void);
+/* pollKeyboard @0x416a10 — poll DirectInput keyboard state into the shared
+ * key buffer (__stdcall(callback, time); key events via callback). Contract:
+ * fills global 256-byte key state. TODO: the slice uses window messages
+ * (WM_KEYDOWN) instead; DirectInput deferred. */
+int  pollKeyboard(void);
 
 /* shutdownRenderer — original gxUnloadDriver @0x432880 path (see gx.c).
  * Contract: release driver, restore display. Implemented for the slice;

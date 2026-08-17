@@ -50,13 +50,14 @@
 ## 16. Completed work (short summaries — detail in the linked docs)
 - Rebuild milestone 1 — GUI vertical slice (CLOSED, verified): see
   [16-rebuild.md](16-rebuild.md) for the full status, driver contract, and
-  source layout. Summary: source project in /home/wasd/auto-ghidra (maniac.c,
-  gx.c/h, util.c/h, stubs.c/h, build.sh, run.sh) compiles with
+  source layout. Summary: source project in /home/wasd/auto-ghidra/src
+  (maniac.c, gx.c/h, util.c/h, pool.c/h, stubs.c/h, build.sh, run.sh in the
+  repo root) compiles with
   i686-w64-mingw32-gcc to maniac_rebuild.exe (KERNEL32/USER32/GDI32/WINMM) and
   drives the original DRIVERS\GXSOFT.DLL via its GxDriverApi table; verified
   under wine: window + driver + asset loads logged to rebuild.log, intro logo
-  presented until closed/Escape. TODO stubs retained in stubs.c/h for
-  gameInit/gameFrameUpdate/inputPollKeyboard.
+  presented until closed/Escape. TODO stubs retained in src/stubs.c/h for
+  gameInit/gameFrameUpdate/pollKeyboard.
 - Global-naming pass 5c (CLOSED): bulk-typed and named the last 608 non-
   protected `DAT_*` globals via a generated Java script (ApplyDatTypes.java,
   see ../Ghidra_scripts.md). Final counts: **605 renamed, 571 typed** (37

@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "gx.h"
+#include "pool.h"
+#include "util.h"
 
 /* Vertical-slice GX driver adapter. Reimplements the narrow slice of the
  * maniac-side gx* wrappers that the GUI vertical slice needs. Driver is the
@@ -15,6 +17,8 @@ static GxDriver g_driver;
 typedef int  (__cdecl *pfn_gxDLLInit)(GxDriverApi *api);
 typedef void (__cdecl *pfn_gxDLLExit)(void);
 
+/* gxInit @0x4332f0 — load GXSOFT.DLL, gxDLLInit, pSetMode (registry path
+ * deferred per Rebuild.md; file name is known). */
 int gxInit(GxMode *mode)
 {
     HMODULE         hMod;
@@ -67,6 +71,7 @@ fail:
     return 0;
 }
 
+/* gxShutdown @0x432880 (gxUnloadDriver) — gxDLLExit + FreeLibrary. */
 void gxShutdown(void)
 {
     HMODULE hMod = g_driver.hDriverModule;
@@ -108,6 +113,21 @@ void presentFrame(void *texture)
         gxFlip();
         gxClearScreen(1, 0);
     }
+}
+
+/* gxLoadTpgFile @0x416060 — fileReadRaw(0,path) -> gxLoadTexture(0,1,path,
+ * data,data+0x10000) -> memPoolFree(0,data); returns texture handle. Uses
+ * pool 0 ("DEFAULT", created by memPoolSystemInit). */
+int gxLoadTpgFile(const char *path)
+{
+    char *data;
+    int r;
+
+    data = fileReadRaw(0, path);
+    if (data == NULL) return 0;
+    r = gxLoadTexture(0, 1, path, data, data + 0x10000);
+    memPoolFree(0, data);
+    return r;
 }
 
 /* ------------------------------------------------------------------ */

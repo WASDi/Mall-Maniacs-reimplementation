@@ -8,7 +8,7 @@ software rasterizer through its GX driver interface; source lives in
 `/home/wasd/auto-ghidra/`.
 
 ## Goal
-Produce a source project with `maniac.c` as its main translation unit that
+Produce a source project with `src/maniac.c` as its main translation unit that
 compiles to `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` with the
 required offline GUI + single-player functionality of the original
 `maniac.exe`. Constraints (Rebuild.md):
@@ -21,20 +21,21 @@ required offline GUI + single-player functionality of the original
 - Comment every reimplemented function/global with its original address.
 - Update Ghidra + `docs/` after each chunk so a new agent can continue.
 
-## Source layout (/home/wasd/auto-ghidra/)
+## Source layout (/home/wasd/auto-ghidra/src/)
 | File | Role |
 |---|---|
-| `Rebuild.md` | The plan/constraints being implemented |
-| `maniac.c` | WinMain @0x4160a0, initWindowAndInput @0x4165f0, WindowProc @0x4161b0, menuInit @0x419c20 (narrowed), present loop |
-| `gx.c` / `gx.h` | GX driver adapter: gxInit @0x4332f0, gxShutdown @0x432880, presentFrame @0x410310, full maniac-side wrapper cluster @0x433310-0x433670 (gxGetMode/gxSnooze/gxFlip/gxClearScreen/gxSetViewport/gxGetViewport/gxResetState/gxLoadTexture/gxCreateSurface/gxDrawPolygon/gxBlitSurface/gxSetOrigin/gxDrawTriangle/gxDrawLine/gxDrawTriUV/gxDrawQuad); `GxMode` + `GxDriverApi` structs |
-| `util.c` / `util.h` | `appLog` → `rebuild.log`, file reads, TGA loader (tgaLoad16 @0x415df0) |
-| `stubs.c` / `stubs.h` | TODO stubs (gameInit @0x409d90, gameFrameUpdate @0x41abc0, inputPollKeyboard @0x416800) with contracts + original addresses |
+| `Rebuild.md` | The plan/constraints being implemented (repo root) |
+| `src/maniac.c` | WinMain @0x4160a0, initWindowAndInput @0x4165f0, WindowProc @0x4161b0, menuInit @0x419c20 (narrowed), present loop |
+| `src/gx.c` / `src/gx.h` | GX driver adapter: gxInit @0x4332f0, gxShutdown @0x432880, presentFrame @0x410310, gxLoadTpgFile @0x416060, full maniac-side wrapper cluster @0x433310-0x433670 (gxGetMode/gxSnooze/gxFlip/gxClearScreen/gxSetViewport/gxGetViewport/gxResetState/gxLoadTexture/gxCreateSurface/gxDrawPolygon/gxBlitSurface/gxSetOrigin/gxDrawTriangle/gxDrawLine/gxDrawTriUV/gxDrawQuad); `GxMode` + `GxDriverApi` structs |
+| `src/util.c` / `src/util.h` | `appLog` → `rebuild.log`, file reads, TGA loader (tgaLoad16 @0x415df0), file-helper cluster (fileOpenMode @0x408cd0, fileCloseStream @0x408d00, fileReadN @0x408d10, fileSeekTell @0x408d30, fileReadRaw @0x408d60, fileReadText @0x408e20, fileGetSizeOpen @0x408ee0, fileGetSize @0x408f20, fileExists @0x408f60) |
+| `src/pool.c` / `src/pool.h` | memPool cluster @0x4197a0-0x419bb0 (memPoolSystemInit/Create/Alloc/AllocZero/Free/Destroy/SystemShutdown) simplified to malloc/free over `g_apMemPools` @0x459f70 |
+| `src/stubs.c` / `src/stubs.h` | TODO stubs (gameInit @0x409d90, gameFrameUpdate @0x41a8c0, pollKeyboard @0x416a10) with contracts + original addresses |
 | `build.sh` | Compiles to `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` |
 | `run.sh` | `cd` game dir, `timeout 5 wine ./maniac_rebuild.exe`, prints `rebuild.log` |
 
 ## Milestone 1 — GUI vertical slice [VERIFIED]
-Builds clean with `i686-w64-mingw32-gcc maniac.c gx.c util.c stubs.c
--lkernel32 -luser32 -lgdi32 -lwinmm`. Under wine from the game dir it logs to
+Builds clean with `i686-w64-mingw32-gcc src/maniac.c src/gx.c src/util.c src/stubs.c
+src/pool.c -lkernel32 -luser32 -lgdi32 -lwinmm`. Under wine from the game dir it logs to
 `rebuild.log` and presents `intro_addgames.tga` until closed or Escape:
 
 ```
@@ -108,7 +109,7 @@ Slice flow (mirrors original call order):
   palette @+0x2c; gxTextureNodeAlloc/Free @0x10001e90/ee0).
 
 ## Maniac-side GX wrapper cluster [VERIFIED] (@0x433310-0x433670)
-Thin dispatches through `GxDriverApi`, reimplemented in `gx.c` with signatures
+Thin dispatches through `GxDriverApi`, reimplemented in `src/gx.c` with signatures
 matched to Ghidra (all `__cdecl`; 0-arg slots are ABI-identical either way):
 - `gxGetMode` @0x433310, `gxSnooze` @0x433330, `gxFlip` @0x433340,
   `gxClearScreen` @0x433350, `gxSetViewport` @0x433370, `gxGetViewport`
@@ -130,6 +131,48 @@ api table directly. `GxDriverApi` @0x45eb40 extended with the decompiled fields
 `nDrawEnabled` +0x60, `pDrawTriangle` +0x6c, `pDrawLine` +0x70, `nSoftwareMode`
 +0x7c; `GxMode` struct (16 B) created in Ghidra to type `gxGetMode`.
 
+## Foundation chunk — memPool + file helpers [VERIFIED]
+
+First isolated slice toward the menu milestone. Self-contained layer with no
+renderer/state-machine dependency; verified by building clean and wiring
+`memPoolSystemInit` into the running slice (rebuild.log shows `pool 0 = DEFAULT`
+created before the asset loads).
+
+- `src/pool.c`/`src/pool.h` — memPool cluster @0x4197a0-0x419bb0:
+  - `memPoolSystemInit` @0x4197a0 zeroes `g_apMemPools` @0x459f70 (0x100
+    slots) and creates pool 0 `"DEFAULT"` (s_DEFAULT @0x4500e4).
+  - `memPoolCreate` @0x4197d0 (name -> pool index, -1 on fail/full).
+  - `memPoolAlloc` @0x419870 / `memPoolAllocZero` @0x419a20 / `memPoolFree`
+    @0x419a60 / `memPoolDestroy` @0x419ae0 / `memPoolSystemShutdown` @0x419bb0.
+  - Original is a hierarchical slab allocator over a 0x140-B handle (0x40-B
+    name @+0, 0x40 slots @+0x40). Per Rebuild.md simplified to malloc/free;
+    pool-handle interface preserved so callers keep their contracts.
+- `src/util.c` — file-helper cluster, CRT-backed:
+  - `fileOpenMode` @0x408cd0 (mode 1 -> `"wb"` @0x44e6c8 else `"rb"` @0x44e6c0,
+    FILE* as int, -1 on fail); `fileCloseStream` @0x408d00; `fileReadN`
+    @0x408d10; `fileSeekTell` @0x408d30 (0/1/2 -> SEEK_SET/CUR/END);
+    `fileReadRaw` @0x408d60 and `fileReadText` @0x408e20 (pool-owned buffers via
+    memPoolAlloc, NULL on any failure); `fileGetSizeOpen` @0x408ee0;
+    `fileGetSize` @0x408f20 and `fileExists` @0x408f60 (open mode = `"rb"`, the
+    same string as g_szCmdFont).
+  - Original thunks go to the statically-linked MSVC CRT (fileOpen @0x43e68a =
+    fopen, fileRead @0x43e306 = fread, fileSeek @0x43e5a0 = fseek, fileTell
+    @0x43e41d = ftell, fileClose @0x43e289 = fclose); CRT used directly per
+    Rebuild.md.
+- `src/gx.c` — `gxLoadTpgFile` @0x416060: `fileReadRaw(0,path)` ->
+  `gxLoadTexture(0,1,path,data,data+0x10000)` -> `memPoolFree(0,data)`.
+
+Build: `./build.sh` clean (-Wall -Wextra). Smoke test: rebuild.log confirms
+`memPoolSystemInit` -> pool 0 before MERGED00/intro loads, intro still presents.
+
+Ghidra signatures aligned with the rebuild for all 17 functions (previously
+`undefined4`/`int *`/`char` from auto-analysis): memPool cluster return types ->
+`int`/`void *`, `memPoolAllocZero(int, size_t)`, `memPoolFree(int, void *)`;
+file helpers -> `FILE *` handles (`fileCloseStream`, `fileReadN`,
+`fileSeekTell`, `fileGetSizeOpen`), `char *` buffer for `fileReadN`; `fileExists`
+and `gxLoadTpgFile` return `int`. `memPoolSystemInit`/`memPoolSystemShutdown`
+keep their binary `__stdcall` convention; the rest `__cdecl`. Saved in Ghidra.
+
 ## Next milestone (from docs/11-issues.md §15)
 Extend the static intro-logo screen into the main menu (menuUpdate @0x41b0b0)
 using gxDrawQuad/gxDrawPolygon + the font system (fontPoolCreate @0x408f90,
@@ -140,7 +183,7 @@ machine.
 ## Reimplementation progress tracker
 `TrackRebuildProgress.java` is a Ghidra script that enumerates the functions in
 the open `maniac.exe`, applies the rebuild scope exclusions, and compares the
-remaining function addresses with `@0x...` annotations in `maniac.c`. It prints
+remaining function addresses with `@0x...` annotations in `src/maniac.c`. It prints
 the implemented count, remaining count, and percentages, and writes the full
 per-function report to `rebuild-progress.txt` by default.
 
@@ -151,7 +194,7 @@ configured Ghidra script directory:
 ghidra_run_ghidra_script(
   script_name="TrackRebuildProgress.java",
   program="maniac.exe",
-  args="source=/home/wasd/auto-ghidra/maniac.c output=/home/wasd/auto-ghidra/rebuild-progress.txt"
+  args="source=/home/wasd/auto-ghidra/src/maniac.c output=/home/wasd/auto-ghidra/rebuild-progress.txt"
 )
 ```
 

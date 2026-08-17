@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "gx.h"
+#include "pool.h"
 #include "util.h"
 
 /* =====================================================================
@@ -85,6 +86,12 @@ static void menuInit(void)
 {
     size_t size = 0;
     void  *tpg;
+
+    /* memPoolSystemInit @0x4197a0 first (original order: commandDispatch,
+     * then memPoolSystemInit, then gx/reset/asset loads). Creates pool 0
+     * "DEFAULT" used by fileReadRaw/gxLoadTpgFile. */
+    memPoolSystemInit();
+    appLog("[menu] memPoolSystemInit: pool 0 = DEFAULT");
 
     /* First .tpg load installs the DirectDraw palette (gxLoadTexture
      * @0x100019b0, first-call branch). MERGED00 shares the intro palette

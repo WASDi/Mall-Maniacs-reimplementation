@@ -72,6 +72,8 @@ int  gxInit(GxMode *mode);
 void gxShutdown(void);
 /* Reimplementation of maniac presentFrame @0x410310. */
 void presentFrame(void *texture);
+/* Reimplementation of maniac gxLoadTpgFile @0x416060 (tpg -> gxLoadTexture). */
+int gxLoadTpgFile(const char *path);
 
 /* Maniac-side GX wrapper cluster (thin dispatches through GxDriverApi).
  * Each matches the maniac.exe function at the noted address. */

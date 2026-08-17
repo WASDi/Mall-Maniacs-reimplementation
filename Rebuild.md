@@ -1,4 +1,30 @@
-Goal: Produce a source project with `maniac.c` as its main translation unit that can be compiled into `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` with the required offline GUI and single-player functionality from `/home/wasd/MallManiacsUnmodified/maniac.exe` that is currently open in Ghidra.
+Goal: Produce a source project with `src/maniac.c` as its main translation unit that can be compiled into `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` with the required offline GUI and single-player functionality from `/home/wasd/MallManiacsUnmodified/maniac.exe` that is currently open in Ghidra.
+
+## VERY IMPORTANT — function signatures must match and stay in sync
+
+The reimplemented function signature (return type, parameter types, parameter
+names, calling convention) MUST match the Ghidra definition exactly, and the
+two MUST be kept up to date together. Every time you reimplement a function —
+or make any change to a signature on either side — update BOTH sides in the
+same session:
+
+1. Apply the exact same signature in Ghidra via `set_function_prototype` (or
+   `validate_function_prototype` first), including the calling convention
+   (`__cdecl`/`__stdcall` as Ghidra analyzed) and meaningful parameter names.
+2. Change the rebuild source to the identical signature, then rebuild
+   (`./build.sh`) to confirm it compiles.
+3. Save the Ghidra program (`ghidra_save_program`) and note the sync in
+   `docs/16-rebuild.md`.
+
+Do not rely on Ghidra's auto-analysis defaults (`undefined4`, `int *`, bare
+`char`, `undefined *`) — these are placeholders, not signatures. Refine them to
+the precise types (`int`, `FILE *`, `size_t`, `LPCSTR`, ...) the
+reimplementation uses, then keep the two in lockstep. A drift between Ghidra
+and the rebuild is a bug: the Ghidra definition is the reference for the
+original binary, and the rebuild is the ground truth for the replacement. If a
+discrepancy is found, fix both sides immediately.
+
+## More instructions
 
 Do not reimplement system libraries such as MSVC, imported APIs, C++ runtime support, import stubs, or compiler-generated glue. Network features and the in-game console are also out of scope. Simplify or replace original implementation details where possible to avoid reimplementing anything redundant.
 
@@ -16,7 +42,7 @@ The first milestone is a GUI vertical slice: launch `maniac_rebuild.exe` from th
 
 Use real game assets. The `.tpg` format is 256x256 indexed pixels followed by a 256-entry RGBA palette. Add startup, asset-load, and error logs so visual testing and a timeout are not the only diagnostics.
 
-Keep future call sites for unfinished behavior through declared, deliberate interfaces. Every unresolved dependency needs a documented contract for inputs, outputs or error behavior, ownership, and state effects. Implement it as either a safe, clearly temporary stub that logs and returns a handled failure, or a known placeholder that permits the current milestone to proceed. Do not comment out unresolved calls. Keep temporary stubs in `stubs.c`/`stubs.h` or the relevant replacement subsystem, label them `TODO`, and include the original target/address when one exists. Replace the stub body later without changing callers or the interface.
+Keep future call sites for unfinished behavior through declared, deliberate interfaces. Every unresolved dependency needs a documented contract for inputs, outputs or error behavior, ownership, and state effects. Implement it as either a safe, clearly temporary stub that logs and returns a handled failure, or a known placeholder that permits the current milestone to proceed. Do not comment out unresolved calls. Keep temporary stubs in `src/stubs.c`/`src/stubs.h` or the relevant replacement subsystem, label them `TODO`, and include the original target/address when one exists. Replace the stub body later without changing callers or the interface.
 
 After the GUI vertical slice is stable, selectively absorb original initialization and state-machine semantics one subsystem at a time. When discovering multiple choices of which function to implement next, prioritize the dependencies required for the next visible, working single-player feature.
 

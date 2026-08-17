@@ -1,0 +1,39 @@
+#ifndef UTIL_H
+#define UTIL_H
+
+#include <windows.h>
+#include <stdio.h>
+
+/* Startup / asset / error logging. Appends a line to "rebuild.log" in the
+ * working directory (the game-data dir per Rebuild.md) so visual testing and
+ * the 5s timeout are not the only diagnostics. */
+void appLog(const char *fmt, ...);
+
+/* Read an entire file into a malloc'd buffer. Returns NULL on failure;
+ * *outSize receives the byte count. No direct original address (replacement
+ * helper for the fileReadRaw family used by menuInit @0x419c20). */
+void *readFileAlloc(const char *path, size_t *outSize);
+
+/* Load an 8-bit indexed 640x480 TGA (type 1 / type 3 / uncompressed) into a
+ * malloc'd 0x4b000 byte index buffer, matching tgaLoad16 @0x415df0's pixel
+ * extraction (same palette buffer is NOT stored — the DD palette comes from
+ * the first .tpg load, matching menuInit's ordering). Returns NULL on failure. */
+void *loadTga640x480(const char *path);
+
+/* File helper cluster — reimplementation of the maniac file* wrappers.
+ * The original functions thunk to the statically-linked MSVC CRT
+ * (fileOpen @0x43e68a = fopen, fileRead @0x43e306 = fread, fileSeek
+ * @0x43e5a0 = fseek, fileTell @0x43e41d = ftell, fileClose @0x43e289 =
+ * fclose); per Rebuild.md the CRT equivalents are used directly. */
+
+int  fileOpenMode(const char *path, int mode); /* @0x408cd0 mode 1 -> "wb" else "rb"; -1 on fail */
+void fileCloseStream(FILE *fp);                /* @0x408d00 */
+void fileReadN(FILE *fp, void *buf, unsigned int count); /* @0x408d10 */
+void fileSeekTell(FILE *fp, int offset, int mode);       /* @0x408d30 mode 0/1/2 -> SET/CUR/END */
+char *fileReadRaw(int pool, const char *path);  /* @0x408d60 pool-owned buffer or NULL */
+char *fileReadText(int pool, const char *path); /* @0x408e20 NUL-terminated pool buffer or NULL */
+int  fileGetSizeOpen(FILE *fp);                 /* @0x408ee0 current offset preserved */
+int  fileGetSize(const char *path);             /* @0x408f20 0 on failure */
+int  fileExists(const char *path);              /* @0x408f60 */
+
+#endif /* UTIL_H */
