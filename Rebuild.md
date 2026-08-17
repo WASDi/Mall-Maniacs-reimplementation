@@ -1,31 +1,5 @@
 Goal: Produce a source project with `src/maniac.c` as its main translation unit that can be compiled into `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` with the required offline GUI and single-player functionality from `/home/wasd/MallManiacsUnmodified/maniac.exe` that is currently open in Ghidra.
 
-## VERY IMPORTANT — function signatures must match and stay in sync
-
-The reimplemented function signature (return type, parameter types, parameter
-names, calling convention) MUST match the Ghidra definition exactly, and the
-two MUST be kept up to date together. Every time you reimplement a function —
-or make any change to a signature on either side — update BOTH sides in the
-same session:
-
-1. Apply the exact same signature in Ghidra via `set_function_prototype` (or
-   `validate_function_prototype` first), including the calling convention
-   (`__cdecl`/`__stdcall` as Ghidra analyzed) and meaningful parameter names.
-2. Change the rebuild source to the identical signature, then rebuild
-   (`./build.sh`) to confirm it compiles.
-3. Save the Ghidra program (`ghidra_save_program`) and note the sync in
-   `docs/16-rebuild.md`.
-
-Do not rely on Ghidra's auto-analysis defaults (`undefined4`, `int *`, bare
-`char`, `undefined *`) — these are placeholders, not signatures. Refine them to
-the precise types (`int`, `FILE *`, `size_t`, `LPCSTR`, ...) the
-reimplementation uses, then keep the two in lockstep. A drift between Ghidra
-and the rebuild is a bug: the Ghidra definition is the reference for the
-original binary, and the rebuild is the ground truth for the replacement. If a
-discrepancy is found, fix both sides immediately.
-
-## More instructions
-
 Do not reimplement system libraries such as MSVC, imported APIs, C++ runtime support, import stubs, or compiler-generated glue. Network features and the in-game console are also out of scope. Simplify or replace original implementation details where possible to avoid reimplementing anything redundant.
 
 Build a 32-bit Windows executable with `i686-w64-mingw32-gcc` and use the original system-library family rather than a cross-platform framework: `KERNEL32`, `USER32`, `GDI32`, and `WINMM` as required by implemented functionality. Link only the original libraries that the replacement actually uses; do not introduce DirectInput, DirectSound, or Winsock while their related features remain out of scope. Use the original `DRIVERS\\GXSOFT.DLL` software rasterizer through its GX driver interface rather than a GDI replacement graphics backend.
@@ -34,7 +8,7 @@ Use the Ghidra decompiled pseudo-C, disassembly when needed, and the documentati
 
 For every function or global that is reimplemented from the original, add a comment with its original address. Clearly label replacement code that has no direct original address. Preserve verified original data layouts where needed, using compile-time size and offset checks.
 
-For every function that is reimplemented, update Ghidra if new insights are made such as correcting types or more accurate naming of functions/parameters/globals. The reimplemented function name and signature should match Ghidra. This is important, update the Ghidra definition for the functions you reimplement. Also introduce new structs that supposedly existed in the original source code. Update the progress documentation in `docs/16-rebuild.md` after completing each chunk so a new agent can continue from the current state.
+For every function that is reimplemented, update Ghidra if new insights are made such as correcting types or more accurate naming of functions/parameters/globals. The reimplemented function name and signature should match Ghidra. This is important, update the Ghidra definition for the functions you reimplement. Also introduce new structs that supposedly existed in the original source code. Update the progress documentation in `docs/16-rebuild.md` after completing each chunk so a new agent can continue from the current state. Insights about `gxSoft.dll` should also be updated in Ghidra.
 
 Start with a minimal replacement `WinMain`: create a window, run a message loop, and call only app initialization, frame, and shutdown functions. Do not begin by reproducing the original `WinMain` or full original initialization path.
 

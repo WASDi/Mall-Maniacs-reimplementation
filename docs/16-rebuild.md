@@ -2,7 +2,10 @@
 
 [Back to README](README.md)
 
-Status: **Milestone 1 (GUI vertical slice) CLOSED + VERIFIED.** The plan in
+Status: **Chunk 2 (intro logo timeline) DONE + VERIFIED** — all six intro logos
+render in sequence from the original timeline (`introUpdate @0x41ae50`), then
+the app transitions to a `menuUpdate @0x41b0b0` stub that holds the last frame.
+Milestone 1 (GUI vertical slice) remains CLOSED + VERIFIED below. The plan in
 `/home/wasd/auto-ghidra/Rebuild.md` drives the original `DRIVERS\GXSOFT.DLL`
 software rasterizer through its GX driver interface; source lives in
 `/home/wasd/auto-ghidra/`.
@@ -25,7 +28,7 @@ required offline GUI + single-player functionality of the original
 | File | Role |
 |---|---|
 | `Rebuild.md` | The plan/constraints being implemented (repo root) |
-| `src/maniac.c` | WinMain @0x4160a0, initWindowAndInput @0x4165f0, WindowProc @0x4161b0, menuInit @0x419c20 (narrowed), present loop |
+| `src/maniac.c` | WinMain @0x4160a0, initWindowAndInput @0x4165f0, WindowProc @0x4161b0, menuInit @0x419c20 (narrowed), introUpdate @0x41ae50 (6-logo timeline), menuUpdate @0x41b0b0 (TODO stub), 25ms-gated frame loop (gameFrameUpdate @0x41a8c0 timing) |
 | `src/gx.c` / `src/gx.h` | GX driver adapter: gxInit @0x4332f0, gxShutdown @0x432880, presentFrame @0x410310, gxLoadTpgFile @0x416060, full maniac-side wrapper cluster @0x433310-0x433670 (gxGetMode/gxSnooze/gxFlip/gxClearScreen/gxSetViewport/gxGetViewport/gxResetState/gxLoadTexture/gxCreateSurface/gxDrawPolygon/gxBlitSurface/gxSetOrigin/gxDrawTriangle/gxDrawLine/gxDrawTriUV/gxDrawQuad); `GxMode` + `GxDriverApi` structs |
 | `src/util.c` / `src/util.h` | `appLog` → `rebuild.log`, file reads, TGA loader (tgaLoad16 @0x415df0), file-helper cluster (fileOpenMode @0x408cd0, fileCloseStream @0x408d00, fileReadN @0x408d10, fileSeekTell @0x408d30, fileReadRaw @0x408d60, fileReadText @0x408e20, fileGetSizeOpen @0x408ee0, fileGetSize @0x408f20, fileExists @0x408f60) |
 | `src/pool.c` / `src/pool.h` | memPool cluster @0x4197a0-0x419bb0 (memPoolSystemInit/Create/Alloc/AllocZero/Free/Destroy/SystemShutdown) simplified to malloc/free over `g_apMemPools` @0x459f70 |
@@ -173,8 +176,67 @@ file helpers -> `FILE *` handles (`fileCloseStream`, `fileReadN`,
 and `gxLoadTpgFile` return `int`. `memPoolSystemInit`/`memPoolSystemShutdown`
 keep their binary `__stdcall` convention; the rest `__cdecl`. Saved in Ghidra.
 
+## Chunk 2 — intro logo timeline (introUpdate @0x41ae50) [VERIFIED]
+
+All six intro logos now render in the original order/timing instead of a static
+`intro_addgames.tga`. Under wine from the game dir (`timeout 22`), rebuild.log
+shows the full 17.45s timeline:
+
+```
+[winmain] running intro timeline (6 logos)
+[intro] logo 1/6 menu\intro_addgames.tga @25 ms
+[intro] logo 2/6 menu\intro_och.tga @2603 ms
+[intro] logo 3/6 menu\intro_uds.tga @3704 ms
+[intro] logo 4/6 menu\intro_samarbete.tga @6279 ms
+[intro] logo 5/6 menu\intro_mcd.tga @7379 ms
+[intro] logo 6/6 menu\intro_presenterar.tga @9954 ms
+[intro] timeline complete (17454 ms) -> menuUpdate
+[stub TODO] menuUpdate @0x41b0b0 not implemented (holds last frame)
+```
+
+The standard 5s `run.sh` smoke test now shows logo 1 (addgames) then logo 2
+(och) plus the start of logo 3 (uds) in the log — the second logo renders
+inside the default smoke-test window. `run.sh` also fixed: it used `set -e`,
+so `timeout` returning 124 (its exit when it kills the app) aborted the script
+before the log was printed; removed `set -e` so the smoke-test output always
+appears.
+
+What was implemented in `src/maniac.c` (mirroring the original):
+- `g_pStateFunc @0x45a6f8` state-function pointer, called `(type, key,
+  keyType)` per `dispatchKeyEvent @0x41ade0`; `type 0` = frame update,
+  `type 1` = key event.
+- `introUpdate @0x41ae50` — timeline accumulator `g_introFade_2 @0x45d444`
+  advanced by `g_flFrameDelta * 25.0` (g_flFrameDelta @0x45a6cc = elapsed ms *
+  0.04, so the accumulator tracks real ms). Threshold floats
+  @0x44b660-0x44b684 (+17450 @0x44b65c) select the logo; the ~90ms gaps
+  (2500-2590, 3590-3680, 6180-6270, 7270-7360, 9860-9950) clear to
+  `g_nClearColor` (black) — the original's fade-to-black between logos. Any
+  keydown skips to the menu (original skips on key 4, type 2; docs note "any
+  key or ENTER" — we accept all keys). ≥17450 ms -> `g_pStateFunc =
+  menuUpdate` (@0x41ae50 LAB_0041b082).
+- `menuUpdate @0x41b0b0` — TODO stub (Rebuild.md §19): logs once, holds the
+  last drawn frame; body to be replaced when the main menu is built.
+- `menuInit @0x419c20` (narrowed) now loads all six intro TGAs in the original
+  load order (`g_hIntroTexAddgames..g_hIntroTexPresenterar @0x45a618-0x45a62c`,
+  paths @0x450794-0x450720), after the MERGED00 palette install, then sets
+  `g_nLastFrameTime = timeGetTime()` and `g_pStateFunc = introUpdate` (the
+  original selects the intro because `g_menuMode @0x45022c` is preinitialized
+  to 0x101 in .data and clears it after; the rebuild always starts with the
+  intro).
+- Frame loop now gates at 25 ms (`g_nLastFrameTime + 0x19 <= now`) and calls
+  `g_pStateFunc(0,0,0)`, matching `gameFrameUpdate @0x41a8c0` timing so the
+  timeline advances in real time.
+- WindowProc @0x4161b0 forwards non-Escape WM_KEYDOWN to `g_pStateFunc(1,
+  vkToKeyId, 2)` (vkToKeyId maps VK_* -> the docs/12-input key ids 0-7; Escape
+  still quits the slice).
+
+Ghidra sync: `introUpdate` and `menuUpdate` prototypes refined to
+`int (int nType, int nKey, int nKeyType)` `__cdecl` (previously undefined4
+params); plate comments added on the threshold table @0x44b660 (full logo/ms
+map) and on `g_introFade_2` @0x45d444. Saved.
+
 ## Next milestone (from docs/11-issues.md §15)
-Extend the static intro-logo screen into the main menu (menuUpdate @0x41b0b0)
+Extend the intro timeline into the main menu (menuUpdate @0x41b0b0)
 using gxDrawQuad/gxDrawPolygon + the font system (fontPoolCreate @0x408f90,
 fontLoad) now that the driver's poly/TriUV/Quad entries are mapped, then absorb
 input (pollKeyboard @0x416a10 / DirectInput thunk @0x42d000) and the menu state
@@ -197,6 +259,8 @@ ghidra_run_ghidra_script(
   args="source=/home/wasd/auto-ghidra/src/maniac.c output=/home/wasd/auto-ghidra/rebuild-progress.txt"
 )
 ```
+
+Note: `rebuild-progress.txt` might be stale, re-run `TrackRebuildProgress.java` if unsure.
 
 The default exclusions match `Rebuild.md`: external/imported functions,
 thunks/import stubs, the statically linked CRT range `0x43c850-0x44966c`,

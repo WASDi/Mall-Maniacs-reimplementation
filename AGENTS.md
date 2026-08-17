@@ -3,20 +3,6 @@
 ## Project
 - Binary: `/home/wasd/MallManiacsUnmodified/maniac.exe` (Mall Maniacs, 1999,
   AddGames/UDS). Ghidra project: `/home/wasd/ghidra/MMUnmod` (program `maniac.exe`).
-- Goal: static de-obfuscation + semantic reconstruction (rename FUN_*, retype,
-  build structs/enums, map architecture). Progress docs in `docs/` (index =
-  `docs/README.md`, working queue = `docs/11-issues.md` — open unknowns/next
-  steps §14/§15, short completed-work summaries §16).
-- Progress: 1178/1178 documented functions = 100% (maniac.exe) — the
-  FUN_* naming drive-down is COMPLETE. Major subsystems renamed (game flow,
-  networking, config, renderer, sound, file formats, input); the statically-
-  linked MSVC CRT region 0x43c850-0x44966c is fully mapped/renamed. Completed:
-  AI movement-mesh/zone-graph region 0x428840-0x42a7xx, SceneObject struct
-  (typed SceneObject[8] @0x456210), class-0x1f MCDMAN bonus-item pickup verified
-  end-to-end, CRT naming tail (stdio/locale/ctype/strtold/tz/env clusters).
-- Ongoing work per docs/11-issues.md §15: semantics polish (verify hypothesis
-  plate comments -> [VERIFIED]), retype CRT/scene globals, optional
-  archive_ingest_program into the cross-version archive.
 - Game data files in `/home/wasd/MallManiacsUnmodified/` are evidence for file formats
   (`.sen`, `.tpg`, `.tga`, `.ai`, `.eo`, XOR-obfuscated `maniac.cfg`/`config.mm`,
   plaintext temp `sommar.sol`).
@@ -33,23 +19,51 @@
   `scene*`, `eventObject*`, `player*`).
 - Addresses are 32-bit absolute (base 0x400000).
 
-## Safety (MANDATORY)
-- **If any script/tool call fails with an unexpected error, ABORT immediately**
-  and report before proceeding. Do not retry blindly or mask errors.
+## Instructions
+- When completing a chunk of work, always update documentation before moving on to the next task.
+- When researching, focus on the core game code and not statically linked libraries.
 - Prefer the highest-level MCP tool for each operation; avoid destructive ops
   (delete/clear/overwrite) without evidence.
 - Run `ghidra_save_program` periodically; do not commit to git unless asked.
 - Do not use `run_script_inline`. Instead use `run_ghidra_script` as documented in `Ghidra_scripts.md`.
 
-## Key starting points (verified)
-- entry 0x43f18e -> WinMain 0x004160a0 (loop) -> init 0x00409d90 -> frame 0x0041a8c0
-- Renderer: gxInit @0x432f0, gxDrawPolygon @0x33440, driver pick via GXSOFT/GXGLIDE
-  (see docs/04-renderer.md)
-- Networking: netInit @0x426b00, mnet* sockets, UDP GS_* protocol
-  (see docs/05-networking.md)
-- Input: initWindowAndInput @0x004165f0 -> DirectInputCreateA thunk @0x42d000
-  (see docs/12-input.md)
+## Phase 1 — Static Analysis & Documentation (COMPLETE)
+- 1178/1178 functions documented = 100% — the FUN_* naming drive-down is COMPLETE.
+- Major subsystems renamed (game flow, networking, config, renderer, sound, file
+  formats, input); the statically-linked MSVC CRT region 0x43c850-0x44966c fully
+  mapped/renamed.
+- Progress docs in `docs/`.
 
-## Instructions
-- When completing a chunk of work, always update documentation before moving on to the next task.
-- When researching, focus on the core game code and not statically linked libraries.
+## Phase 2 — Source Reconstruction & Rebuild (ACTIVE)
+**Read `Rebuild.md` — it is the authoritative guide for this phase.**
+
+Goal: Produce a compilable `src/maniac.c` that builds to
+`/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` with offline GUI and
+single-player functionality. When continuing work, follow "Next milestone" in `docs/16-rebuild.md`.
+Pick a small chunk of work at a time.
+
+## VERY IMPORTANT — function signatures must match and stay in sync
+
+The reimplemented function signature (return type, parameter types, parameter
+names, calling convention) MUST match the Ghidra definition exactly, and the
+two MUST be kept up to date together. Every time you reimplement a function —
+or make any change to a signature on either side — update BOTH sides in the
+same session:
+
+1. Apply the exact same signature in Ghidra via `set_function_prototype` (or
+   `validate_function_prototype` first), including the calling convention
+   (`__cdecl`/`__stdcall` as Ghidra analyzed) and meaningful parameter names.
+2. Change the rebuild source to the identical signature, then rebuild
+   (`./build.sh`) to confirm it compiles.
+3. Save the Ghidra program (`ghidra_save_program`) and note the sync in
+   `docs/16-rebuild.md`.
+
+Do not rely on Ghidra's auto-analysis defaults (`undefined4`, `int *`, bare
+`char`, `undefined *`) — these are placeholders, not signatures. Refine them to
+the precise types (`int`, `FILE *`, `size_t`, `LPCSTR`, ...) the
+reimplementation uses, then keep the two in lockstep. A drift between Ghidra
+and the rebuild is a bug: the Ghidra definition is the reference for the
+original binary, and the rebuild is the ground truth for the replacement. If a
+discrepancy is found, fix both sides immediately.
+
+Prefer working on fewer functions at a time from a single subsystem, and implementing them before moving on to the next chunk of functions.
