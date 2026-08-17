@@ -235,6 +235,77 @@ Ghidra sync: `introUpdate` and `menuUpdate` prototypes refined to
 params); plate comments added on the threshold table @0x44b660 (full logo/ms
 map) and on `g_introFade_2` @0x45d444. Saved.
 
+## Font / text rendering module — ANALYSIS COMPLETE (full disasm verified)
+
+All stack offsets re-derived from the raw disassembly; every earlier
+"discrepancy" was a stale-ESP tracking error (missing `PUSH ESI`, and the
+6-arg poly call's stack frame). The Ghidra decompiler is correct on all points.
+
+Signature (all `__cdecl`, verified against `textDrawCentered` and the
+`menuUpdate` call site @0x41b440):
+```c
+int     textDraw(font, color, x, y, text);   // @0x409420, returns final x cursor
+int     textWidth(font, text);               // @0x409810
+int     textDrawCentered(font, color, x, y, text); // @0x409860, x = x - w/2 + 0x140
+int     textDrawInt(font, color, x, y, value);     // @0x4098a0 (itoa + textDraw)
+int     textIntWidth(font, value);                 // @0x409940 (itoa + textWidth)
+gxFont *fontParse(text, texture, posX, posY, param5); // @0x4090c0, memPoolAlloc(g_fontPool,0x510)
+gxFont *fontLoad(path, texture, posX, posY, param5);  // @0x409070, fileReadText(0,path)+fontParse
+```
+
+`gxFont` object (0x510 bytes, struct created in Ghidra):
+```
++0x00 u16 height       +0x02 u16 pad
++0x04 texture (node*)  +0x08 param5
++0x0c u16 globalSpace  +0x2e u8  spacepos (== glyphWidth[0x20], the space char)
++0x0e u8  glyphWidth[256]
++0x10e u16 uvx[256]    +0x30e u16 uvy[256]
+```
+
+`textDraw` draw path (per char c):
+- gw = glyphWidth[c], U = uvx[c], V = uvy[c], h = height
+- verts v0..v3 = {x0,y0} {x1,y0} {x1,y1} {x0,y1}, each `{x<<8, y<<8, 0, color}`
+- top color (v0,v1) = g_textColor2, bottom (v2,v3) = g_textColor; `u8 {0,R,G,B}`
+- colorUv (0x1c bytes) = `{texture, param5, 0, U,V, gw<<8|U,V, gw<<8|U,h<<8|V, U,h<<8|V}` (u16s)
+- `gxDrawPolygon(&v0,&v1,&v2,&v3, color, &colorUv)` — `color` arg doubles as flags
+- advances: space `x += globalSpace + spacepos`; char `x += gw + globalSpace`
+
+Tags parsed inline from the text string (decompiler was right; not `[R+0x18]`):
+`{X:n}`/`{Y:n}` decimal → x/y cursor; `{RGB:h}` → g_textColor2; `{RGB2:h}` →
+g_textColor; `{{` renders literal `{`. Globals renamed in Ghidra:
+`g_szTextTagX`@0x44ed40, `g_szTextTagY`@0x44ed3c, `g_szTextTagRGB`@0x44f0d4,
+`g_szTextTagRGB2`@0x44f0cc.
+
+Known ambiguity: the char-advance read at 0x4097bd loads `[ESP+0xc8]`, which is
+`param_2` if you count the 6 poly args literally but `param_1+0xc` per Ghidra's
+call-return-address stack model. The game works, so the intended/introduced
+behavior is `font->globalSpace` (`param_1+0xc`); we implement that.
+
+Ghidra sync: prototypes refined to the above with `gxFont *` (struct created);
+plate comments added on textDraw/textWidth/textDrawCentered/textDrawInt/
+fontParse/fontLoad and the 4 tag globals. Saved.
+
+## Font module — IMPLEMENTED in src/font.c (builds clean)
+
+`src/font.h` + `src/font.c` added to build.sh; `./build.sh` compiles
+`maniac_rebuild.exe` with `-Wall -Wextra` clean.
+
+Implemented (all match the Ghidra prototypes exactly):
+- `fontPoolCreate`/`fontPoolDestroy` (g_fontPool = memPoolCreate("FONT"))
+- `fontDefGetKey` (strstr), `fontParseSkipToValue`/`SkipLine`/`SkipSpaces`
+- `fontParse` — full descriptor parser (keys, glyph map, widths, case
+  fallback, spacewidth/spacepos, UV tables with atlas-pitch wrapping)
+- `fontLoad` — fileReadText(0,path) + fontParse + memPoolFree
+- `textWidth`, `textDraw`, `textDrawCentered`, `textDrawInt`, `textIntWidth`
+- textDraw tag parser ({X:}/{Y:} dec, {RGB:}/{RGB2:} hex, "{{" literal)
+- gxFont struct (0x510 alloc), g_abFontGlyphMap[256], g_textColor/g_textColor2
+
+Note: `g_fontPool` retyped to `int` (pool id, memPoolCreate returns int).
+Helper prototypes in Ghidra refined to `char * __cdecl` returns.
+
+Next: wire `fontPoolCreate` + `fontLoad("menu\tinyfont.txt", gxLoadTpgFile("menu\tiny00.tpg"),0,0,0)`
+etc. into menuInit @0x419c20 and draw the main menu with textDraw.
+
 ## Next milestone (from docs/11-issues.md §15)
 Extend the intro timeline into the main menu (menuUpdate @0x41b0b0)
 using gxDrawQuad/gxDrawPolygon + the font system (fontPoolCreate @0x408f90,

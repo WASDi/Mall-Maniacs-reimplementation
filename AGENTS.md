@@ -37,7 +37,7 @@
 ## Phase 2 — Source Reconstruction & Rebuild (ACTIVE)
 **Read `Rebuild.md` — it is the authoritative guide for this phase.**
 
-Goal: Produce a compilable `src/maniac.c` that builds to
+Goal: Produce a compilable `src/maniac.c` (with additional .c-files per subsystem) that builds to
 `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` with offline GUI and
 single-player functionality. When continuing work, follow "Next milestone" in `docs/16-rebuild.md`.
 Pick a small chunk of work at a time.
