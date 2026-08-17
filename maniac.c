@@ -99,7 +99,7 @@ static void menuInit(void)
         free(tpg);
         return;
     }
-    gxLoadTexture("MERGED00", tpg);
+    gxLoadTexture(0, 1, "MERGED00", tpg, (char *)tpg + 0x10000);
     appLog("[assets] MERGED00.TPG loaded (%u bytes, palette set)", (unsigned)size);
     free(tpg);
 

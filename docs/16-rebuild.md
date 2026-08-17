@@ -26,7 +26,7 @@ required offline GUI + single-player functionality of the original
 |---|---|
 | `Rebuild.md` | The plan/constraints being implemented |
 | `maniac.c` | WinMain @0x4160a0, initWindowAndInput @0x4165f0, WindowProc @0x4161b0, menuInit @0x419c20 (narrowed), present loop |
-| `gx.c` / `gx.h` | GX driver adapter: gxInit @0x4332f0, gxLoadTexture, presentFrame @0x410310, gxShutdown @0x432880; `GxMode` + `GxDriverApi` structs |
+| `gx.c` / `gx.h` | GX driver adapter: gxInit @0x4332f0, gxShutdown @0x432880, presentFrame @0x410310, full maniac-side wrapper cluster @0x433310-0x433670 (gxGetMode/gxSnooze/gxFlip/gxClearScreen/gxSetViewport/gxGetViewport/gxResetState/gxLoadTexture/gxCreateSurface/gxDrawPolygon/gxBlitSurface/gxSetOrigin/gxDrawTriangle/gxDrawLine/gxDrawTriUV/gxDrawQuad); `GxMode` + `GxDriverApi` structs |
 | `util.c` / `util.h` | `appLog` → `rebuild.log`, file reads, TGA loader (tgaLoad16 @0x415df0) |
 | `stubs.c` / `stubs.h` | TODO stubs (gameInit @0x409d90, gameFrameUpdate @0x41abc0, inputPollKeyboard @0x416800) with contracts + original addresses |
 | `build.sh` | Compiles to `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` |
@@ -106,6 +106,29 @@ Slice flow (mirrors original call order):
   gxDrawTriUV 0x33640, gxDrawQuad 0x33670. Texture nodes are a 0x42c-B linked
   list (head DAT_10010fbc, name@+4, aligned pixel buf @+0x24, raw malloc @+0x28,
   palette @+0x2c; gxTextureNodeAlloc/Free @0x10001e90/ee0).
+
+## Maniac-side GX wrapper cluster [VERIFIED] (@0x433310-0x433670)
+Thin dispatches through `GxDriverApi`, reimplemented in `gx.c` with signatures
+matched to Ghidra (all `__cdecl`; 0-arg slots are ABI-identical either way):
+- `gxGetMode` @0x433310, `gxSnooze` @0x433330, `gxFlip` @0x433340,
+  `gxClearScreen` @0x433350, `gxSetViewport` @0x433370, `gxGetViewport`
+  @0x433390, `gxResetState` @0x4333b0 (zeroes `nDriverActive` before dispatch),
+  `gxCreateSurface` @0x433420.
+- `gxLoadTexture` @0x4333d0 — 5-arg; bumps `nDriverActive` when loading
+  (data!=0, mode==0), decrements when freeing (data==0, mode!=0).
+- `gxDrawPolygon` @0x433440 — software mode (`nSoftwareMode==1`) truncates the
+  four (x,y) float vertex pairs to int in place; flags bit 2 (4) repacks the
+  color/uv arg into a local 0x20-byte buffer (bytes 0..3,4..5,8..9 then
+  0xd,0xf,0x11,0x13,0x15,0x17,0x19,0x1b) before dispatch.
+- `gxBlitSurface` @0x433580 — gated on `nDrawEnabled` (+0x60), 9 args.
+- `gxSetOrigin` @0x4335d0; `gxDrawTriangle` @0x4335f0; `gxDrawLine` @0x433610,
+  `gxDrawTriUV` @0x433640, `gxDrawQuad` @0x433670 — line/tri/quad all gate on
+  `pDrawTriangle` (+0x6c) non-NULL then dispatch via their own slot.
+`presentFrame` @0x410310 now calls the wrappers (`gxBlitSurface(1,0,0,tex,
+0,0,0x280,0x280,0x1e0); gxFlip(); gxClearScreen(1,0)`) instead of poking the
+api table directly. `GxDriverApi` @0x45eb40 extended with the decompiled fields
+`nDrawEnabled` +0x60, `pDrawTriangle` +0x6c, `pDrawLine` +0x70, `nSoftwareMode`
++0x7c; `GxMode` struct (16 B) created in Ghidra to type `gxGetMode`.
 
 ## Next milestone (from docs/11-issues.md §15)
 Extend the static intro-logo screen into the main menu (menuUpdate @0x41b0b0)

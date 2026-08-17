@@ -5,7 +5,7 @@
 
 /* GX driver interface (gxSoft.dll). Layout matches the table filled by
  * gxDLLInit @0x10001000 in gxSoft.dll. Original struct: GxDriverApi @0x45eb40
- * in maniac.exe (136 bytes total, 0x7c driver-owned + 0x80 hModule + 0x84 active).
+ * in maniac.exe (136 bytes total, 0x80 driver-owned + 0x80 hModule + 0x84 active).
  * Offsets below verified against gxDLLInit's fills. */
 
 typedef struct GxMode {
@@ -18,40 +18,45 @@ typedef struct GxMode {
 } GxMode;                     /* 16 bytes */
 
 typedef struct GxDriverApi {
-    void *pUnused00;                       /* +0x00 (zero) */
+    void *pField_0;                        /* +0x00 (zero) */
     int  (*pSetMode)(GxMode *mode);        /* +0x04 -> gxSetMode @0x10001130 */
     int  (*pGetMode)(GxMode *mode);        /* +0x08 -> gxGetMode @0x10001110 */
-    void (*pSnooze)(void);                 /* +0x0c -> gxSnooze @0x100014e0 */
-    void *pField10;                        /* +0x10 -> gxField10 @0x10001760 */
-    void *pField14;                        /* +0x14 -> gxField14 @0x10001890 */
+    int  (*pSnooze)(void);                 /* +0x0c -> gxSnooze @0x100014e0 */
+    void *pField_10;                       /* +0x10 -> gxField10 @0x10001760 */
+    void *pField_14;                       /* +0x14 -> gxField14 @0x10001890 */
     int  (*pFlip)(void);                   /* +0x18 -> gxFlip @0x10001520 */
-    void *pUnused1c;                       /* +0x1c (zero) */
-    void (*pClearScreen)(int, int);        /* +0x20 -> gxClearScreen @0x10001730 */
-    void *pUnused24;                       /* +0x24 */
-    void *pUnused28;                       /* +0x28 */
-    void *pUnused2c;                       /* +0x2c */
-    void *pUnused30;                       /* +0x30 */
-    void *pUnused34;                       /* +0x34 */
-    void *pSetViewport;                    /* +0x38 -> gxSetViewport @0x100018f0 */
-    void *pGetViewport;                    /* +0x3c -> gxGetViewport @0x10001950 */
-    void (*pResetState)(void);             /* +0x40 -> gxResetState @0x10001980 */
+    void *pField_1c;                       /* +0x1c (zero) */
+    int  (*pClearScreen)(int, int);        /* +0x20 -> gxClearScreen @0x10001730 */
+    void *pField_24;                       /* +0x24 */
+    void *pField_28;                       /* +0x28 */
+    void *pField_2c;                       /* +0x2c */
+    void *pField_30;                       /* +0x30 */
+    void *pField_34;                       /* +0x34 */
+    int  (*pSetViewport)(void *rect);      /* +0x38 -> gxSetViewport @0x100018f0 */
+    int  (*pGetViewport)(void *rect);      /* +0x3c -> gxGetViewport @0x10001950 */
+    int  (*pResetState)(void);             /* +0x40 -> gxResetState @0x10001980 */
     int  (*pLoadTexture)(int, int, const char *, void *, void *);
                                            /* +0x44 -> gxLoadTexture @0x100019b0 */
     void (*pUpdate)(void);                 /* +0x48 -> gxDLLUpdate @0x10001f20 */
-    void *pCreateSurface;                  /* +0x4c -> gxCreateSurface @0x10001f30 */
+    int  (*pCreateSurface)(const char *path); /* +0x4c -> gxCreateSurface @0x10001f30 */
     void *pData50;                         /* +0x50 -> &DAT_10002050 */
     void *pData54;                         /* +0x54 -> &DAT_10002050 */
     void *pData58;                         /* +0x58 -> &LAB_10002060 */
-    void *pDrawPolygon;                    /* +0x5c -> gxDrawPolygon @0x100020e0 */
-    void (*pUpdate2)(void);                /* +0x60 -> gxDLLUpdate */
-    void (*pBlitSurface)(int, int, int, void *, int, int, int, int, int);
+    void (*pDrawPolygon)(void *, void *, void *, void *, int, void *);
+                                           /* +0x5c -> gxDrawPolygon @0x100020e0 */
+    int  nDrawEnabled;                     /* +0x60 gate flag (decompiled
+                                              GxDriverApi.nDrawEnabled) */
+    int  (*pBlitSurface)(int, int, int, void *, int, int, int, int, int);
                                            /* +0x64 -> gxBlitSurface @0x10002950 */
-    void *pSetOrigin;                      /* +0x68 -> gxSetOrigin @0x10001f90 */
-    void *pData6c;                         /* +0x6c -> &DAT_10002050 */
-    void *pData70;                         /* +0x70 -> &DAT_10002050 */
-    void *pDrawTriUV;                      /* +0x74 -> gxDrawTriUV @0x100021f0 */
-    void *pDrawQuad;                       /* +0x78 -> gxDrawQuad @0x10002540 */
-} GxDriverApi;                             /* 0x7c bytes driver-owned */
+    void (*pSetOrigin)(int);               /* +0x68 -> gxSetOrigin @0x10001f90 */
+    void (*pDrawTriangle)(void *, int);    /* +0x6c -> gxDrawTriangle @0x10002000 */
+    void (*pDrawLine)(void *, void *, int);/* +0x70 -> gxDrawLine @0x10002060 */
+    void (*pDrawTriUV)(void *, void *, void *, int, void *);
+                                           /* +0x74 -> gxDrawTriUV @0x100021f0 */
+    void (*pDrawQuad)(void *, void *, void *, void *, int, void *);
+                                           /* +0x78 -> gxDrawQuad @0x10002540 */
+    int  nSoftwareMode;                    /* +0x7c (driver forces poly coords to int) */
+} GxDriverApi;                             /* 0x80 bytes driver-owned */
 
 /* maniac-side extension of GxDriverApi (struct @0x45eb40, 136 bytes):
  * +0x80 hDriverModule, +0x84 nDriverActive */
@@ -67,7 +72,28 @@ int  gxInit(GxMode *mode);
 void gxShutdown(void);
 /* Reimplementation of maniac presentFrame @0x410310. */
 void presentFrame(void *texture);
-/* Wrapper for gxLoadTexture(0,1,name,data,data+0x10000); data = .tpg file bytes. */
-int  gxLoadTexture(const char *name, void *data);
+
+/* Maniac-side GX wrapper cluster (thin dispatches through GxDriverApi).
+ * Each matches the maniac.exe function at the noted address. */
+int  gxGetMode(GxMode *mode);              /* @0x433310 */
+int  gxSnooze(void);                       /* @0x433330 */
+int  gxFlip(void);                         /* @0x433340 */
+int  gxClearScreen(int clearMode, int color); /* @0x433350 */
+int  gxSetViewport(void *rect);            /* @0x433370 */
+int  gxGetViewport(void *rect);            /* @0x433390 */
+int  gxResetState(void);                   /* @0x4333b0 */
+int  gxLoadTexture(int mode, int reserved, const char *name, void *data,
+                   void *palette);         /* @0x4333d0 */
+int  gxCreateSurface(const char *path);    /* @0x433420 */
+void gxDrawPolygon(void *v0, void *v1, void *v2, void *v3, int flags,
+                   void *colorUv);         /* @0x433440 */
+int  gxBlitSurface(int a, int b, int c, void *tex, int x, int y,
+                   int w, int h, int h2);  /* @0x433580 */
+void gxSetOrigin(int packedOrigin);        /* @0x4335d0 */
+void gxDrawTriangle(void *v0, int color);  /* @0x4335f0 */
+void gxDrawLine(void *v0, void *v1, int color); /* @0x433610 */
+void gxDrawTriUV(void *v0, void *v1, void *v2, int color, void *uv); /* @0x433640 */
+void gxDrawQuad(void *v0, void *v1, void *v2, void *v3, int color,
+                void *uv);                 /* @0x433670 */
 
 #endif /* GX_H */
