@@ -45,7 +45,7 @@ char *fontParseSkipToValue(char *p);
 char *fontParseSkipLine(char *p);
 char *fontParseSkipSpaces(char *p);
 
-/* Font load / text render @0x409070-0x409940 (all __cdecl). */
+/* Font load / text render @0x409070-0x409940 (default compiler convention). */
 gxFont *fontLoad(char *path, void *texture, int posX, int posY, void *param5);
 gxFont *fontParse(char *text, void *texture, int posX, int posY, void *param5);
 int     textWidth(gxFont *font, char *text);

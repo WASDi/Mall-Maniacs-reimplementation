@@ -1,5 +1,7 @@
 #include <windows.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "gx.h"
@@ -7,6 +9,7 @@
 #include "font.h"
 #include "menu.h"
 #include "custom_helpers.h"
+#include "stubs.h"
 
 /* =====================================================================
  * Menu subsystem — reimplementation of the intro + main-menu state
@@ -29,6 +32,9 @@
 PStateFunc g_pStateFunc;          /* @0x45a6f8 */
 float      g_flFrameDelta;        /* @0x45a6cc = elapsed ms * 0.04 */
 DWORD      g_nLastFrameTime;      /* @0x45a65c */
+int        g_nMenuInit;           /* @0x45a658, one-time menu initialization */
+unsigned char g_menuMode = 1;     /* @0x45022c, initial value is 0x101 */
+PStateFunc g_pResumeStateFunc;    /* @0x45a710, deferred resume state */
 
 /* Intro timeline accumulator (maniac g_introFade_2 @0x45d444, ms). Non-static:
  * introPresent/introClear in custom_helpers.c read it. */
@@ -54,12 +60,19 @@ int     g_nMenuFadeTarget; /* @0x45a6f0 (fade anim out of scope) */
  * menuFramePost in custom_helpers.c compares g_pStateFunc against it. */
 int stateQuitConfirm(int nType, int nKey, int nKeyType)
 {
-    if (g_hMenuQuitTex != NULL) {
-        presentFrame(g_hMenuQuitTex);
-    }
+    presentFrame(g_hMenuQuitTex);
     if (nType == 1) {
+        if (nKeyType == 0 &&
+            (nKey == 'J' || nKey == 'Y' || nKey == 'j' || nKey == 'y')) {
+            /* Original stateQuitConfirm @0x4200b0 accepts J/Y character
+             * events. The key-id cases retain the rebuild's WM_KEYDOWN
+             * bridge because the vertical slice does not use WM_CHAR. */
+            appLog("[menu] quit confirmed");
+            PostQuitMessage(0);
+            return 0;
+        }
         if (nKeyType == 2) {
-            if (nKey == 4 || nKey == 6) {       /* "Ja" (original: J/Y) */
+            if (nKey == 4 || nKey == 6) {       /* rebuild key-id bridge */
                 appLog("[menu] quit confirmed");
                 PostQuitMessage(0);
                 return 0;
@@ -135,13 +148,15 @@ int menuUpdate(int nType, int nKey, int nKeyType)
  * menuFramePost in custom_helpers.c compares g_pStateFunc against it. */
 int introUpdate(int nType, int nKey, int nKeyType)
 {
-    (void)nKey;
     if (nType == 1) {                  /* key event (dispatchKeyEvent path) */
-        if (nKeyType == 2) {           /* keydown -> skip to menu */
+        if (nKeyType != 2) {           /* original returns before timing update */
+            return 0;
+        }
+        if (nKey == 4) {               /* original: Space/fire skips */
             appLog("[intro] skipped to menu by key @%.0f ms", g_introFade_2);
             g_pStateFunc = menuUpdate;
+            return 0;
         }
-        return 0;
     }
 
     /* Accumulate elapsed ms (g_flFrameDelta == elapsed ms * 0.04; *25.0 -> ms). */
@@ -171,16 +186,27 @@ int introUpdate(int nType, int nKey, int nKeyType)
  * (fontPoolCreate @0x408f90 + five fontLoad pairs) and quit.tga. The
  * original selects introUpdate because g_menuMode @0x45022c is
  * preinitialized to 0x101 in .data (low byte = 1 -> intro) and clears it
- * after; the rebuild always starts with the intro. nRestartMode mirrors the
- * original's argument (0 = first init, 1 = return from options with music
- * track 7) but is unused here since the rebuild always runs the intro. */
+ * after; a normal non-intro start selects menuUpdate or the deferred resume
+ * state. nRestartMode mirrors the original's argument (0 = normal start,
+ * 1 = return from options with music track 7). */
 void menuInit(int nRestartMode)
 {
     size_t size = 0;
     void  *tpg;
     int    i;
 
-    (void)nRestartMode;
+    /* menuInit @0x419c20 is guarded by g_nMenuInit @0x45a658. The original
+     * re-enters this function only after the teardown path resets that flag. */
+    if (g_nMenuInit != 0) {
+        return;
+    }
+    g_nMenuInit = 1;
+
+    /* The original clears a pending resume state when starting in intro
+     * mode; the rebuild has no producer for that slot yet. */
+    if (g_menuMode != 0) {
+        g_pResumeStateFunc = NULL;
+    }
 
     /* memPoolSystemInit @0x4197a0 first (original order: commandDispatch,
      * then memPoolSystemInit, then gx/reset/asset loads). Creates pool 0
@@ -245,11 +271,25 @@ void menuInit(int nRestartMode)
         appLog("[assets] menu\\quit.tga load failed");
     }
 
-    /* Mirror menuInit: g_nLastFrameTime = getGameTime(); g_pStateFunc =
-     * introUpdate (intro selected; see header comment on g_menuMode). */
+    /* Mirror menuInit's final timing/input reset. pollKeyboard is still the
+     * documented DirectInput stub; window messages drive this slice instead. */
     g_nMenuRow        = 0;
     g_nMenuFadeTarget = 0;
     g_nLastFrameTime  = timeGetTime();
+    g_flFrameDelta    = 0.0f;
+    pollKeyboard();
     g_introFade_2     = 0.0f;
-    g_pStateFunc      = introUpdate;
+
+    /* Original state selection: initial mode byte selects the intro; after
+     * mode is cleared, a normal start enters menuUpdate and may be replaced
+     * by a deferred resume state. The current rebuild starts in intro mode. */
+    if (g_menuMode != 0) {
+        g_pStateFunc = introUpdate;
+    } else if (nRestartMode == 0) {
+        g_pStateFunc = menuUpdate;
+        if (g_pResumeStateFunc != NULL) {
+            g_pStateFunc = g_pResumeStateFunc;
+        }
+    }
+    g_menuMode = 0;
 }

@@ -21,9 +21,9 @@ original software rasterizer rather than a GDI backend. Network, console,
 DirectInput, DirectSound, and other out-of-scope systems remain deferred.
 
 Reimplemented functions and globals retain their original addresses in source
-comments, and matching signatures are maintained in both Ghidra and the
-rebuild. Detailed reverse-engineering notes belong in subsystem documentation,
-not in this progress overview.
+comments, and their source signatures use the compiler's default calling
+convention. Detailed reverse-engineering notes belong in subsystem
+documentation, not in this progress overview.
 
 ## Current implementation
 
@@ -37,8 +37,12 @@ not in this progress overview.
   the original 640x480 resolution.
 - **Foundation:** `src/pool.c` and `src/util.c` provide the reconstructed pool
   and file-helper interfaces used by the menu and font code.
-- **Fonts:** `src/font.c` parses the original font descriptors and renders
-  tagged text, including the two-font menu rows.
+- **Fonts:** `src/font.c` implements the original font/text range
+  `0x408f90–0x409940`: descriptor parsing, atlas UV setup, tagged text
+  rendering, centering, and integer formatting, including the two-font menu
+  rows. The original static utility `fmtParseInt` (`0x43e860`) is represented
+  by the CRT-compatible `strtol` substitution; `strFindSubstring` is likewise
+  represented by `strstr`.
 - **Stubs and helpers:** `src/stubs.c` contains deferred original functions;
   rebuild-only support code is isolated in `src/custom_helpers.c`.
 
@@ -49,7 +53,8 @@ not in this progress overview.
 
 1. The GX driver initializes and installs the palette from `MERGED00.TPG`.
 2. All six intro logos play in the original order and timing, then enter the
-   main menu; any key currently skips the intro.
+   main menu; the original Space/fire key skips the intro (the current
+   key-ID adapter maps unknown window keys to that fire ID).
 3. Up/Down navigation wraps across `Spela`, `Nätverk`, `Alternativ`, `Rekord`,
    and `Avsluta`; Enter dispatches the selected row.
 4. Escape opens quit confirmation. Escape returns to the menu, while
@@ -74,3 +79,9 @@ it when an implementation chunk changes; the report may otherwise be stale.
 
 Continue to follow `Rebuild.md` for constraints and update this overview,
 Ghidra, and relevant subsystem documentation after each completed chunk.
+
+The font comparison is complete: direct function control flow and the
+`gxDrawPolygon` glyph contract match the original. The extracted rebuild
+helpers `textDrawGlyph` and `textIntToStr` preserve the original behavior;
+the only known fidelity limitation is malformed-input behavior in the
+deferred static numeric parser substitution.

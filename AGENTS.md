@@ -27,6 +27,8 @@
 - Run `ghidra_save_program` periodically; do not commit to git unless asked.
 - Do not use `run_script_inline`. Instead use `run_ghidra_script` as documented in `Ghidra_scripts.md`.
 
+Keep each document focused on a concise current-state overview: preserve verified findings, evidence, limitations, and next direction, while removing exhaustive histories, step-by-step work logs, duplicate notes, and complete symbol inventories.
+
 ## Phase 1 — Static Analysis & Documentation (COMPLETE)
 - 1178/1178 functions documented = 100% — the FUN_* naming drive-down is COMPLETE.
 - Major subsystems renamed (game flow, networking, config, renderer, sound, file
@@ -35,7 +37,7 @@
 - Progress docs in `docs/`.
 
 ## Phase 2 — Source Reconstruction & Rebuild (ACTIVE)
-**Read `Rebuild.md` — it is the authoritative guide for this phase.**
+**Read `Rebuild.md` — it is the authoritative guide for this phase. ALWAYS read this before starting new work after a compaction of the session.**
 
 Goal: Produce a compilable `src/maniac.c` (with additional .c-files per subsystem) that builds to
 `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` with offline GUI and
@@ -69,6 +71,7 @@ discrepancy is found, fix both sides immediately.
 PARTICULARILY IMPORTANT:
 * All reimplemented functions and globals should have a comment saying their original address.
 * The original code architecture and call hierarchy should be replicated. Only necessary exceptions go into `custom_helpers.c`.
+* All logic inside functions should be preserved.
 * All stubs go into stubs.c.
 
 Prefer working on fewer functions at a time from a single subsystem, and implementing them before moving on to the next chunk of functions.

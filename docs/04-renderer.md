@@ -36,9 +36,14 @@ them.
   `gxDLLInit` and maintains the software texture list. Its first texture load
   initializes palette/colour-conversion state and the backing DirectDraw
   surface; this explains the rebuild's palette-from-first-load rule.
-- Font descriptors and tagged text use the original font-pool interface; the
-  rebuild's font implementation is summarized in
-  [16-rebuild.md](16-rebuild.md).
+- Font descriptors and tagged text use the original font-pool interface. The
+  rebuild's `textDrawGlyph` helper mirrors `textDraw` (`0x409420`): it builds
+  four fixed-point vertices and the `0x1c`-byte texture/UV record before
+  calling `gxDrawPolygon`. Its explicit zero alpha byte normalizes a vertex
+  byte that the original leaves unwritten; this has no observed visual effect.
+  The full font implementation is summarized in [16-rebuild.md](16-rebuild.md);
+  its static `fmtParseInt`/`strFindSubstring` dependencies are substituted by
+  `strtol`/`strstr` within the rebuild scope.
 
 ## Scene renderer
 

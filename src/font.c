@@ -12,6 +12,9 @@
  * Font / text rendering module — reimplementation of maniac font/text
  * functions @0x408f90-0x409940 (see docs/16-rebuild.md). Verified against
  * the raw disassembly; the Ghidra decompiler is correct on all points.
+ * Numeric conversion uses the CRT-compatible strtol substitution for
+ * fmtParseInt @0x43e860; the original parser is a statically linked utility
+ * outside the rebuild scope.
  *
  *   fontPoolCreate/destroy  @0x408f90 / @0x408fc0
  *   fontDefGetKey           @0x408fe0  = strstr(text, key)
@@ -103,6 +106,8 @@ gxFont *fontParse(char *text, void *texture, int posX, int posY, void *param5)
     font->pTexture = texture;
     font->pParam5 = param5;
 
+    /* fmtParseInt @0x43e860 is the original static-library decimal parser;
+     * strtol preserves its result for the shipped descriptor grammar. */
     p = fontDefGetKey(text, "width");
     p = fontParseSkipToValue(p);
     font->wHeight = (unsigned short)strtol(p, NULL, 10);
