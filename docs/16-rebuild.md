@@ -53,12 +53,13 @@ documentation, not in this progress overview.
 
 1. The GX driver initializes and installs the palette from `MERGED00.TPG`.
 2. All six intro logos play in the original order and timing, then enter the
-   main menu; the original Space/fire key skips the intro (the current
-   key-ID adapter maps unknown window keys to that fire ID).
+   main menu; only the Space/fire key skips the intro, while unmapped window
+   keys are ignored.
 3. Up/Down navigation wraps across `Spela`, `Nätverk`, `Alternativ`, `Rekord`,
    and `Avsluta`; Enter dispatches the selected row.
-4. Escape opens quit confirmation. Escape returns to the menu, while
-   Space/Enter exits cleanly.
+4. Escape opens quit confirmation. Enter selects `Avsluta` without immediately
+   cancelling the newly displayed screen; Escape returns to the menu, while
+   the original J/Y character confirmations exit cleanly.
 
 The first four row targets currently log a TODO message and return to the main
 menu. This is intentional until those states are reconstructed.

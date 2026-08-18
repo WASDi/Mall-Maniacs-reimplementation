@@ -54,10 +54,9 @@ int     g_nMenuRow;        /* @0x45d448 selected row (0..4) */
 int     g_nMenuFadeTarget; /* @0x45a6f0 (fade anim out of scope) */
 
 /* stateQuitConfirm @0x4200b0 — "Avsluta" row / Escape. Presents menu\quit.tga;
- * a confirm key quits the app, any other keydown returns to the main menu.
- * The original tests the J/Y/j/y characters; the rebuild's key-id layer
- * accepts the confirm keys 4=Space and 6=Enter instead. Non-static:
- * menuFramePost in custom_helpers.c compares g_pStateFunc against it. */
+ * the original confirms only J/Y/j/y character events; every other key event
+ * returns to menuUpdate. Non-static: menuFramePost in custom_helpers.c
+ * compares g_pStateFunc against it. */
 int stateQuitConfirm(int nType, int nKey, int nKeyType)
 {
     presentFrame(g_hMenuQuitTex);
@@ -65,20 +64,12 @@ int stateQuitConfirm(int nType, int nKey, int nKeyType)
         if (nKeyType == 0 &&
             (nKey == 'J' || nKey == 'Y' || nKey == 'j' || nKey == 'y')) {
             /* Original stateQuitConfirm @0x4200b0 accepts J/Y character
-             * events. The key-id cases retain the rebuild's WM_KEYDOWN
-             * bridge because the vertical slice does not use WM_CHAR. */
+             * events; src/maniac.c supplies them through WM_CHAR. */
             appLog("[menu] quit confirmed");
             PostQuitMessage(0);
             return 0;
         }
-        if (nKeyType == 2) {
-            if (nKey == 4 || nKey == 6) {       /* rebuild key-id bridge */
-                appLog("[menu] quit confirmed");
-                PostQuitMessage(0);
-                return 0;
-            }
-            appLog("[menu] quit-confirm: key %d returns to menu", nKey);
-        }
+        appLog("[menu] quit-confirm: key %d returns to menu", nKey);
         g_pStateFunc = menuUpdate;
     }
     g_nMenuFadeTarget = 0;
@@ -141,8 +132,8 @@ int menuUpdate(int nType, int nKey, int nKeyType)
 
 /* introUpdate @0x41ae50 — intro logo timeline. g_introFade_2 (ms) selects the
  * logo; paired thresholds leave a ~90ms cleared gap (fade-to-black) between
- * logos. Any keydown skips to the menu (the original skips on key 4, type 2;
- * docs/03-gameflow.md note "any key or ENTER skips" — we accept all keys).
+ * logos. Only key 4 (Space/fire), type 2, skips to the menu; other keydowns
+ * continue the timeline as in the original.
  * Threshold floats @0x44b660-0x44b684: 2500/2590/3590/3680/6180/6270/7270/
  * 7360/9860/9950 + 17450 @0x44b65c. g_fl_25 @0x44b468 = 25.0f. Non-static:
  * menuFramePost in custom_helpers.c compares g_pStateFunc against it. */

@@ -117,7 +117,7 @@ void *loadTga640x480(const char *path)
 
 /* Map Win32 virtual key -> game key id (Key id map, docs/12-input.md:
  * 0=Right, 1=Left, 2=Up, 3=Down, 4=Space, 6=Enter, 7=Esc). Unknown keys
- * report as 4 so any keypress advances the intro. */
+ * report as -1 so they remain ignored by states that have no such input. */
 int vkToKeyId(int vk)
 {
     switch (vk) {
@@ -128,7 +128,7 @@ int vkToKeyId(int vk)
     case VK_SPACE:  return 4;
     case VK_RETURN: return 6;
     case VK_ESCAPE: return 7;
-    default:        return 4;   /* treat any other key as "fire" (advance) */
+    default:        return -1;  /* no original game key for this VK */
     }
 }
 

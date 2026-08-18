@@ -38,10 +38,16 @@ path when gameplay input or controller/mouse support becomes a milestone.
 ## Rebuild status and next direction
 
 `src/maniac.c` currently implements only the window portion of
-`initWindowAndInput`; its `WindowProc` forwards `WM_KEYDOWN` directly to the
-active menu state. `pollKeyboard` @0x00416a10 remains a logged stub, and the
-rebuild does not link DirectInput or implement the original keyboard repeat,
-gameplay, or editor mouse paths. This is consistent with the scope and current
-milestone in [16-rebuild.md](16-rebuild.md); implement the real poll/dispatch
-path after a GUI row-target state, when it is needed for gameplay or additional
-input devices.
+`initWindowAndInput`; its `WindowProc` forwards `WM_CHAR` messages as
+character events and queues mapped menu `WM_KEYDOWN` messages. The queued
+key-down event is delivered after the message batch, matching the original
+ordering where DirectInput polling follows `TranslateMessage`; this keeps an
+Enter used to select `Avsluta` from immediately cancelling the quit screen.
+`vkToKeyId` is only the rebuild's Win32 boundary adapter: it maps known menu
+virtual keys to the original game key IDs and returns `-1` for all others.
+`pollKeyboard` @0x00416a10 remains a logged stub, and the rebuild does not
+link DirectInput or implement the original keyboard repeat, gameplay, or
+editor mouse paths. This is consistent with the scope and current milestone in
+[16-rebuild.md](16-rebuild.md); implement the real poll/dispatch path after a
+GUI row-target state, when it is needed for gameplay or additional input
+devices.

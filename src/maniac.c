@@ -18,12 +18,15 @@
 
 static HWND      g_hWnd;          /* maniac g_hMainWindow @0x459ce0 */
 static HINSTANCE g_hInstance;     /* maniac g_hAppInstance @0x459cdc */
+static int       g_pendingKeyId;  /* rebuild input bridge: DirectInput-like event */
+static int       g_pendingKey;    /* one key event is polled after messages */
 
 /* WindowProc @0x4161b0 — narrowed to close/escape for the slice. The
- * original also routes keyboard to gameKeyHandler / DirectInput polling;
- * we forward every keydown to the state function (dispatchKeyEvent analog,
- * see 0x41ade0): intro skips, the menu navigates, Escape opens the
- * quit-confirm screen. */
+ * original routes inactive-menu keydowns through DirectInput polling and
+ * dispatches WM_CHAR immediately. The rebuild queues its mapped keydown and
+ * polls that queue after the message batch, preserving the original ordering;
+ * this prevents the translated character for Enter from being consumed by
+ * the newly selected quit-confirm state. */
 static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg) {
@@ -32,7 +35,21 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
     case WM_KEYDOWN:                      /* 0x100 */
         if (g_pStateFunc != NULL) {
-            g_pStateFunc(1, vkToKeyId((int)wParam), 2);
+            int key = vkToKeyId((int)wParam);
+
+            /* The original inactive-menu WindowProc does not dispatch this
+             * message; pollKeyboard later emits (key, 2). Keep only the
+             * latest mapped key, which is the one-event-per-poll behavior
+             * needed by this replacement input boundary. */
+            if (key >= 0) {
+                g_pendingKeyId = key;
+                g_pendingKey = 1;
+            }
+        }
+        break;
+    case WM_CHAR:                         /* 0x102 */
+        if (g_pStateFunc != NULL) {
+            g_pStateFunc(1, (int)wParam, 0);
         }
         break;
     case WM_DESTROY:                      /* 0x2 */
@@ -40,6 +57,21 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
     }
     return DefWindowProcA(hWnd, uMsg, wParam, lParam);
+}
+
+/* Replacement boundary for pollKeyboard @0x416a10: deliver the queued
+ * DirectInput-like key event only after TranslateMessage/WM_CHAR processing,
+ * as the original game loop does before its frame poll. */
+static void dispatchPendingKey(void)
+{
+    int key;
+
+    if (!g_pendingKey) return;
+    key = g_pendingKeyId;
+    g_pendingKey = 0;
+    if (g_pStateFunc != NULL) {
+        g_pStateFunc(1, key, 2);
+    }
 }
 
 /* initWindowAndInput @0x4165f0 — window class + creation only (DirectInput
@@ -131,6 +163,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
+        if (!g_bRunning) break;
+        dispatchPendingKey();
         if (!g_bRunning) break;
 
         now = timeGetTime();

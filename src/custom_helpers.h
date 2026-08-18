@@ -22,7 +22,7 @@ void *readFileAlloc(const char *path, size_t *outSize);  /* fileReadRaw-family h
 void *loadTga640x480(const char *path);              /* mirrors tgaLoad16 @0x415df0 */
 
 /* Input + main-loop glue (formerly maniac.c). */
-int  vkToKeyId(int vk);                              /* Win32 VK -> game key id (0..7) */
+int  vkToKeyId(int vk);                              /* Win32 VK -> game key id, or -1 */
 extern int g_bRunning;                               /* main-loop run flag */
 
 /* Menu frame gate (formerly menu.c) — mirrors gameFrameUpdate @0x41a8c0's

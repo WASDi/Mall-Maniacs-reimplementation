@@ -24,7 +24,7 @@ the original binary functions.
 ## Current-state flow
 
 - **Startup and menu:** `introUpdate` (`0x0041ae50`) advances the six-logo
-timeline and allows a key to skip to `menuUpdate` (`0x0041b0b0`). The five
+  timeline and allows only Space/fire to skip to `menuUpdate` (`0x0041b0b0`). The five
 rows are `Spela`, `Nätverk`, `Alternativ`, `Rekord`, and `Avsluta`; selection
 wraps, Enter dispatches the selected target, and Escape opens quit confirm
 (`0x004200b0`).
