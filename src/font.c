@@ -39,26 +39,10 @@ const char g_szTextTagY[]   = "Y";    /* @0x44ed3c */
 const char g_szTextTagRGB[] = "RGB";  /* @0x44f0d4 */
 const char g_szTextTagRGB2[]= "RGB2"; /* @0x44f0cc */
 
-typedef struct {
-    int x;
-    int y;
-    int pad;
-    unsigned char r, g, b, a;
-} GxVert;
-
-typedef struct {
-    void *pTexture;
-    void *pParam5;
-    int pad;
-    unsigned short U;
-    unsigned short V;
-    unsigned short gwU;
-    unsigned short V2;
-    unsigned short gwU2;
-    unsigned short hV;
-    unsigned short U2;
-    unsigned short hV2;
-} GxColorUv;
+/* Glyph quads use the shared GxVert (16 bytes: x, y, z, r, g, b, a) from
+ * gx.h. The explicit z=0 / alpha byte normalizes the GXSOFT driver reads at
+ * vertex +0x8 and +0xc..+0xf, which the original textDraw left as unwritten
+ * stack bytes. */
 
 /* fontPoolCreate @0x408f90 — create the "FONT" pool, reset text colors. */
 int fontPoolCreate(void)
@@ -354,7 +338,7 @@ int textDraw(gxFont *font, unsigned int color, int x, int y, char *text)
         v1.x = (xPos + gw) << 8; v1.y = yPos << 8;
         v2.x = (xPos + gw) << 8; v2.y = (yPos + h) << 8;
         v3.x = xPos << 8; v3.y = (yPos + h) << 8;
-        v0.pad = v1.pad = v2.pad = v3.pad = 0;
+        v0.z = v1.z = v2.z = v3.z = 0;
         v0.r = (unsigned char)(g_textColor2 >> 0x10);
         v0.g = (unsigned char)(g_textColor2 >> 8);
         v0.b = (unsigned char)g_textColor2;

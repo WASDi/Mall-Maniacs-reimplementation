@@ -18,6 +18,12 @@ typedef void (__cdecl *pfn_gxDLLExit)(void);
 /* GxDriverApi extension @0x45eb40, populated by gxDLLInit. */
 GxDriver g_driver;
 
+/* gxDrawPolygon scale globals @0x45eb38/@0x45eb3c. The registry-driven
+ * option loading that supplies alternate driver scales is deferred; the
+ * fixed-point scale is the GXSOFT-compatible default for this rebuild. */
+static float g_gxScaleY = 1.0f / 256.0f; /* @0x45eb38 */
+static float g_gxScaleX = 1.0f / 256.0f; /* @0x45eb3c */
+
 /* gxLoadDriver @0x432ea0 — the registry-selected driver path is deferred;
  * this slice accepts the known GXSOFT DLL path directly. */
 int gxLoadDriver(char *driverName)
@@ -219,31 +225,35 @@ int gxCreateSurface(char *path)
     return 0;
 }
 
-/* gxDrawPolygon @0x433440 — in software mode (nSoftwareMode==1) the four
- * vertex pointers are (x,y) float pairs truncated to int in place before
- * dispatch. flags bit 2 (value 4) triggers a color/uv repack of param_6 into
- * a local 0x20-byte buffer. */
-void gxDrawPolygon(void *v0, void *v1, void *v2, void *v3, int flags,
-                   void *colorUv)
+/* gxDrawPolygon @0x433440 — when nSoftwareMode is 1, convert each vertex's
+ * integer coordinate with the original X/Y float scales and __ftol-equivalent
+ * truncating cast before dispatch. GXSOFT leaves nSoftwareMode at zero and
+ * therefore receives textDraw's original 8.8 fixed-point coordinates.
+ * flags bit 2 (value 4) triggers a color/uv repack of colorUv into a local
+ * 0x10-byte packed record. Signature matches the Ghidra definition:
+ * void gxDrawPolygon(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3,
+ *                    int flags, GxColorUv *colorUv). */
+void gxDrawPolygon(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3, int flags,
+                   GxColorUv *colorUv)
 {
-    unsigned char local[0x20] = { 0 };
+    unsigned char local[0x10] = { 0 };
 
     if (g_driver.api.pDrawPolygon == NULL) return;
 
     if (g_driver.api.nSoftwareMode == 1) {
-        float *f[4] = { (float *)v0, (float *)v1, (float *)v2, (float *)v3 };
-        int i;
-        for (i = 0; i < 4; i++) {
-            if (f[i] != NULL) {
-                f[i][0] = (float)(int)f[i][0];
-                f[i][1] = (float)(int)f[i][1];
-            }
-        }
+        v0->x = (int)((float)v0->x * g_gxScaleX);
+        v0->y = (int)((float)v0->y * g_gxScaleY);
+        v1->x = (int)((float)v1->x * g_gxScaleX);
+        v1->y = (int)((float)v1->y * g_gxScaleY);
+        v2->x = (int)((float)v2->x * g_gxScaleX);
+        v2->y = (int)((float)v2->y * g_gxScaleY);
+        v3->x = (int)((float)v3->x * g_gxScaleX);
+        v3->y = (int)((float)v3->y * g_gxScaleY);
     }
 
     if (((unsigned)flags & 4) == 4) {
         /* Color/uv repack: copy bytes 0..3,4..5,8..9 then 0xd,0xf,0x11,
-         * 0x13,0x15,0x17,0x19,0x1b of colorUv into a local 0x20-byte
+         * 0x13,0x15,0x17,0x19,0x1b of colorUv into a local 0x10-byte
          * struct (see decompile of gxDrawPolygon @0x433440). */
         const unsigned char *src = (const unsigned char *)colorUv;
         unsigned char *dst = local;

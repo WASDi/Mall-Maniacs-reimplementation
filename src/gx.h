@@ -82,6 +82,33 @@ void presentFrame(int texture);
 /* Reimplementation of maniac gxLoadTpgFile @0x416060 (tpg -> gxLoadTexture). */
 int gxLoadTpgFile(char *path);
 
+/* Vertex and texture/UV record types for the indexed-draw wrappers. Layouts
+ * match the Ghidra structs GxVert / GxColorUv (see gxDrawPolygon @0x433440
+ * and gxDrawQuadColor @0x414470). */
+typedef struct GxVert {
+    int x;   /* +0x00 8.8 fixed-point (software mode) / float (hardware mode) */
+    int y;   /* +0x04 */
+    int z;   /* +0x08 depth (gxDrawQuadColor sets 0) */
+    unsigned char r; /* +0x0c vertex color (GXSOFT reads +0xc..+0xe) */
+    unsigned char g; /* +0x0d */
+    unsigned char b; /* +0x0e */
+    unsigned char a; /* +0x0f */
+} GxVert;    /* 0x10 bytes */
+
+typedef struct GxColorUv {
+    void          *pTexture;   /* +0x00 texture node (record word 0) */
+    void          *pParam5;    /* +0x04 */
+    int            pad;        /* +0x08 */
+    unsigned short U;          /* +0x0c */
+    unsigned short V;          /* +0x0e */
+    unsigned short gwU;        /* +0x10 */
+    unsigned short V2;         /* +0x12 */
+    unsigned short gwU2;       /* +0x14 */
+    unsigned short hV;         /* +0x16 */
+    unsigned short U2;         /* +0x18 */
+    unsigned short hV2;        /* +0x1a */
+} GxColorUv;                   /* 0x1c */
+
 /* Maniac-side GX wrapper cluster (thin dispatches through GxDriverApi).
  * Each matches the maniac.exe function at the noted address. */
 int  gxGetMode(GxMode *mode);              /* @0x433310 */
@@ -94,8 +121,8 @@ int  gxResetState(void);                   /* @0x4333b0 */
 int  gxLoadTexture(int mode, int reserved, char *name, void *data,
                    void *palette);         /* @0x4333d0 */
 int  gxCreateSurface(char *path);          /* @0x433420 */
-void gxDrawPolygon(void *v0, void *v1, void *v2, void *v3, int flags,
-                   void *colorUv);         /* @0x433440 */
+void gxDrawPolygon(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3, int flags,
+                   GxColorUv *colorUv);    /* @0x433440 */
 int  gxBlitSurface(int a, int b, int c, void *tex, int x, int y,
                    int w, int h, int h2);  /* @0x433580 */
 void gxSetOrigin(int packedOrigin);        /* @0x4335d0 */

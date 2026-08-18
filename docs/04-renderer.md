@@ -24,10 +24,12 @@ The wrappers are mostly thin dispatches. The rebuild separates the original
 driver-load boundary (`gxLoadDriver`, `0x00432ea0`, narrowed to the known
 `GXSOFT.DLL`) from the original mode wrapper (`gxInit`, `0x004332f0`), while
 registry selection and driver-info validation remain deferred. `gxUnloadDriver`
-(`0x00433280`) is represented by the narrowed `gxUnloadDriver` implementation. In software
-mode, polygon coordinates are converted before dispatch; the active GUI path
-uses the driver's normal mode and the full original software conversion remains
-deferred with scene rendering. The rebuild currently needs mode setup, texture
+(`0x00433280`) is represented by the narrowed `gxUnloadDriver` implementation.
+`gxDrawPolygon` (`0x00433440`) preserves the original `nSoftwareMode == 1`
+branch: it applies the original X/Y float scales and truncating conversion to
+each vertex before dispatch. The active GXSOFT path leaves that flag at zero,
+so its original 8.8 fixed-point coordinates pass through to GXSOFT for clipping
+and sampling. The rebuild currently needs mode setup, texture
 loading, blitting, flipping, and clearing; the remaining table entries can be
 added as visible features require them.
 

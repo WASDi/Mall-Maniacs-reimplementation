@@ -3,7 +3,6 @@
 #include <windows.h>
 
 #include "custom_helpers.h"
-#include "stubs.h"
 
 /* =====================================================================
  * Custom helpers — rebuild-only code with NO counterpart in Ghidra's

@@ -91,4 +91,9 @@ fidelity limitation is malformed-input behavior in the deferred static numeric
 parser substitution.
 The GX adapter now separates driver loading from `gxInit`/mode setup, and the
 pool/file review corrected pool initialization return semantics and the
-file-seek handling for all nonzero end-relative modes.
+file-seek handling for all nonzero end-relative modes. The GX polygon adapter
+now preserves the original `nSoftwareMode == 1` branch from
+`gxDrawPolygon @0x433440`: it applies the original X/Y float scales and
+truncating conversion only when that flag is set. The active GXSOFT path leaves
+the flag at zero, so `textDraw`'s 8.8 fixed-point vertices remain unchanged for
+GXSOFT; the packed color/UV record remains identical to the original wrapper.

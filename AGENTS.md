@@ -71,7 +71,8 @@ discrepancy is found, fix both sides immediately.
 PARTICULARILY IMPORTANT:
 * All reimplemented functions and globals should have a comment saying their original address.
 * The original code architecture and call hierarchy should be replicated. Only necessary exceptions go into `custom_helpers.c`.
-* All logic inside functions should be preserved.
-* All stubs go into stubs.c.
+* When you implement a function, implement it fully including all function calls and symbol references so it matches the original function. Add stubs in `src/ stubs.c` for called functions that are not yet implemented.
+* All logic inside functions should be preserved. Do not inline or put logic where it wasn't in the original executable.
+* Ghidra is considered the source of truth. Before reimplementing a function, update its signature in ghidra to give correct names and types to parameters.
 
 Prefer working on fewer functions at a time from a single subsystem, and implementing them before moving on to the next chunk of functions.
