@@ -12,7 +12,7 @@
  *   - WinMain @0x4160a0           (simplified: no DirectInput, no net loop)
  *   - initWindowAndInput @0x4165f0 (window class + creation only)
  *   - WindowProc @0x4161b0         (close/escape + key events to state fn)
- *   - gxInit/gxLoadTexture/presentFrame  (see gx.c)
+ *   - gxLoadDriver/gxInit/gxLoadTexture/presentFrame (see gx.c)
  *   - menuInit/introUpdate/menuUpdate/stateQuitConfirm (see menu.c)
  * ===================================================================== */
 
@@ -20,6 +20,7 @@ static HWND      g_hWnd;          /* maniac g_hMainWindow @0x459ce0 */
 static HINSTANCE g_hInstance;     /* maniac g_hAppInstance @0x459cdc */
 static int       g_pendingKeyId;  /* rebuild input bridge: DirectInput-like event */
 static int       g_pendingKey;    /* one key event is polled after messages */
+static int       g_bRunning = 1;  /* rebuild loop state; no original global */
 
 /* WindowProc @0x4161b0 — narrowed to close/escape for the slice. The
  * original routes inactive-menu keydowns through DirectInput polling and
@@ -31,11 +32,22 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 {
     switch (uMsg) {
     case WM_CLOSE:                        /* 0x10 */
-        PostQuitMessage(0);
-        return 0;
+        /* The original lets DefWindowProc destroy the window; WM_DESTROY
+         * posts WM_QUIT after the window teardown. */
+        break;
     case WM_KEYDOWN:                      /* 0x100 */
         if (g_pStateFunc != NULL) {
-            int key = vkToKeyId((int)wParam);
+            int key = -1;
+
+            switch (wParam) {
+            case VK_RIGHT:  key = 0; break;
+            case VK_LEFT:   key = 1; break;
+            case VK_UP:     key = 2; break;
+            case VK_DOWN:   key = 3; break;
+            case VK_SPACE:  key = 4; break;
+            case VK_RETURN: key = 6; break;
+            case VK_ESCAPE: key = 7; break;
+            }
 
             /* The original inactive-menu WindowProc does not dispatch this
              * message; pollKeyboard later emits (key, 2). Keep only the
@@ -53,25 +65,11 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         }
         break;
     case WM_DESTROY:                      /* 0x2 */
+        g_hWnd = NULL;
         PostQuitMessage(0);
         return 0;
     }
     return DefWindowProcA(hWnd, uMsg, wParam, lParam);
-}
-
-/* Replacement boundary for pollKeyboard @0x416a10: deliver the queued
- * DirectInput-like key event only after TranslateMessage/WM_CHAR processing,
- * as the original game loop does before its frame poll. */
-static void dispatchPendingKey(void)
-{
-    int key;
-
-    if (!g_pendingKey) return;
-    key = g_pendingKeyId;
-    g_pendingKey = 0;
-    if (g_pStateFunc != NULL) {
-        g_pStateFunc(1, key, 2);
-    }
 }
 
 /* initWindowAndInput @0x4165f0 — window class + creation only (DirectInput
@@ -137,8 +135,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     mode.hInstance = (unsigned int)g_hInstance;
     mode.hwnd     = (unsigned int)g_hWnd;
 
+    if (!gxLoadDriver("DRIVERS\\GXSOFT.DLL")) {
+        appLog("[winmain] gxLoadDriver failed");
+        goto out;
+    }
     if (!gxInit(&mode)) {
-        appLog("[winmain] gxInit failed");
+        appLog("[winmain] gxInit/pSetMode failed");
         goto out;
     }
     appLog("[winmain] gxSetMode done (640x480, bpp forced by driver)");
@@ -152,8 +154,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     /* Message loop + frame update — mirrors the original WinMain idle path
      * (gameFrameUpdate timing, see 0x41a8c0): the state advances at most
-     * every 25ms with g_flFrameDelta = elapsed ms * 0.04, then menuFramePost
-     * flips/clears for the menu states. */
+     * every 25ms with g_flFrameDelta = elapsed ms * 0.04, then flips/clears
+     * for the menu states. */
     while (g_bRunning) {
         while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
@@ -164,7 +166,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             DispatchMessageA(&msg);
         }
         if (!g_bRunning) break;
-        dispatchPendingKey();
+        if (g_pendingKey) {
+            int key = g_pendingKeyId;
+            g_pendingKey = 0;
+            if (g_pStateFunc != NULL) g_pStateFunc(1, key, 2);
+        }
         if (!g_bRunning) break;
 
         now = timeGetTime();
@@ -173,7 +179,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             g_nLastFrameTime = now;
             if (g_pStateFunc != NULL) {
                 g_pStateFunc(0, 0, 0);
-                menuFramePost();
+                if (g_pStateFunc != introUpdate &&
+                    g_pStateFunc != stateQuitConfirm) {
+                    gxFlip();
+                    gxClearScreen(1, 0);
+                }
             }
         }
     }
@@ -181,8 +191,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     appLog("[winmain] exiting cleanly");
 
 out:
-    gxShutdown();
-    if (g_hWnd) DestroyWindow(g_hWnd);
+    if (g_hWnd != NULL) {
+        HWND hWnd = g_hWnd;
+        g_hWnd = NULL;
+        DestroyWindow(hWnd);
+    }
+    gxUnloadDriver();
     appLog("[winmain] === done ===\n");
     return 0;
 }

@@ -15,44 +15,47 @@
 typedef int  (__cdecl *pfn_gxDLLInit)(GxDriverApi *api);
 typedef void (__cdecl *pfn_gxDLLExit)(void);
 
-/* gxInit @0x4332f0 — load GXSOFT.DLL, gxDLLInit, pSetMode (registry path
- * deferred per Rebuild.md; file name is known). */
-int gxInit(GxMode *mode)
+/* GxDriverApi extension @0x45eb40, populated by gxDLLInit. */
+GxDriver g_driver;
+
+/* gxLoadDriver @0x432ea0 — the registry-selected driver path is deferred;
+ * this slice accepts the known GXSOFT DLL path directly. */
+int gxLoadDriver(char *driverName)
 {
     HMODULE         hMod;
     pfn_gxDLLInit   pInit;
     GxDriverApi    *api = &g_driver.api;
 
-    /* gxLoadDriver @0x432ea0: registry-sourced path; we use the known file. */
-    hMod = LoadLibraryA("DRIVERS\\GXSOFT.DLL");
+    /* gxLoadDriver @0x432ea0 unloads an existing module first. */
+    if (g_driver.hDriverModule != NULL) {
+        gxUnloadDriver();
+    }
+    /* Registry-sourced path is deferred; use the known file when the caller
+     * supplies the original NULL/configuration form. */
+    hMod = LoadLibraryA(driverName != NULL ? driverName : "DRIVERS\\GXSOFT.DLL");
     if (hMod == NULL) {
-        fprintf(stderr, "[gxInit] LoadLibraryA(DRIVERS\\GXSOFT.DLL) failed: %lu\n",
+        fprintf(stderr, "[gxLoadDriver] LoadLibraryA(DRIVERS\\GXSOFT.DLL) failed: %lu\n",
                 (unsigned long)GetLastError());
         return 0;
     }
     g_driver.hDriverModule = hMod;
 
     memset(api, 0, sizeof(*api));
+    /* The original loader clears this before gxDLLInit; the driver may then
+     * set the software-mode flag while filling its table. */
+    g_driver.api.nSoftwareMode = 0;
+    g_driver.nDriverActive = 0;
 
     pInit = (pfn_gxDLLInit)GetProcAddress(hMod, "gxDLLInit");
     if (pInit == NULL) {
-        fprintf(stderr, "[gxInit] gxDLLInit not found\n");
+        fprintf(stderr, "[gxLoadDriver] gxDLLInit not found\n");
         goto fail;
     }
     if (pInit(api) == 0) {
-        fprintf(stderr, "[gxInit] gxDLLInit failed\n");
+        fprintf(stderr, "[gxLoadDriver] gxDLLInit failed\n");
         goto fail;
     }
 
-    if (api->pSetMode == NULL || api->pSetMode(mode) == 0) {
-        fprintf(stderr, "[gxInit] pSetMode failed\n");
-        goto fail;
-    }
-    /* gxLoadDriver @0x432ea0 zeroes nSoftwareMode then nDriverActive after a
-     * successful gxDLLInit (software mode check is off; texture loads drive
-     * nDriverActive). */
-    g_driver.api.nSoftwareMode = 0;
-    g_driver.nDriverActive = 0;
 
     /* First texture load installs the DirectDraw palette (gxLoadTexture
      * @0x100019b0, DAT_1006bff0 branch). Callers should load a .tpg before
@@ -69,26 +72,35 @@ fail:
     return 0;
 }
 
-/* gxShutdown @0x432880 (gxUnloadDriver) — gxDLLExit + FreeLibrary. */
-void gxShutdown(void)
+/* gxInit @0x4332f0 — the original is only the pSetMode dispatch. */
+int gxInit(GxMode *mode)
+{
+    if (g_driver.api.pSetMode != NULL) {
+        return g_driver.api.pSetMode(mode);
+    }
+    return 0;
+}
+
+/* gxUnloadDriver @0x433280 — gxDLLExit + FreeLibrary. */
+int gxUnloadDriver(void)
 {
     HMODULE hMod = g_driver.hDriverModule;
 
     if (hMod != NULL) {
-        /* gxUnloadDriver @0x432880: gxDLLExit then FreeLibrary. */
+        /* gxUnloadDriver @0x433280: gxDLLExit then FreeLibrary. */
         pfn_gxDLLExit pExit = (pfn_gxDLLExit)GetProcAddress(hMod, "gxDLLExit");
         if (pExit != NULL) pExit();
         FreeLibrary(hMod);
     }
     g_driver.hDriverModule = NULL;
     g_driver.nDriverActive = 0;
-    memset(&g_driver.api, 0, sizeof(g_driver.api));
+    return 1;
 }
 
 /* gxLoadTexture @0x4333d0 — maniac wrapper around GxDriverApi.pLoadTexture.
  * param_1 selects the .tpg load/free action; when loading (data!=0, mode==0)
  * bumps nDriverActive, when freeing (data==0, mode!=0) decrements it. */
-int gxLoadTexture(int mode, int reserved, const char *name, void *data,
+int gxLoadTexture(int mode, int reserved, char *name, void *data,
                   void *palette)
 {
     if (data == 0) {
@@ -104,11 +116,11 @@ int gxLoadTexture(int mode, int reserved, const char *name, void *data,
 /* presentFrame @0x410310:
  *   gxBlitSurface(1,0,0,tex,0,0,0x280,0x280,0x1e0); gxFlip(); gxClearScreen(1,g_nClearColor);
  * g_nClearColor @0x45892c is 0. */
-void presentFrame(void *texture)
+void presentFrame(int texture)
 {
-    
-    if (texture != NULL) {
-        gxBlitSurface(1, 0, 0, texture, 0, 0, 0x280, 0x280, 0x1e0);
+    if (texture != 0) {
+        gxBlitSurface(1, 0, 0, (void *)(size_t)texture,
+                      0, 0, 0x280, 0x280, 0x1e0);
         gxFlip();
         gxClearScreen(1, 0);
     }
@@ -117,7 +129,7 @@ void presentFrame(void *texture)
 /* gxLoadTpgFile @0x416060 — fileReadRaw(0,path) -> gxLoadTexture(0,1,path,
  * data,data+0x10000) -> memPoolFree(0,data); returns texture handle. Uses
  * pool 0 ("DEFAULT", created by memPoolSystemInit). */
-int gxLoadTpgFile(const char *path)
+int gxLoadTpgFile(char *path)
 {
     char *data;
     int r;
@@ -199,7 +211,7 @@ int gxResetState(void)
 }
 
 /* gxCreateSurface @0x433420 */
-int gxCreateSurface(const char *path)
+int gxCreateSurface(char *path)
 {
     if (g_driver.api.pCreateSurface != NULL) {
         return g_driver.api.pCreateSurface(path);
@@ -214,6 +226,8 @@ int gxCreateSurface(const char *path)
 void gxDrawPolygon(void *v0, void *v1, void *v2, void *v3, int flags,
                    void *colorUv)
 {
+    unsigned char local[0x20] = { 0 };
+
     if (g_driver.api.pDrawPolygon == NULL) return;
 
     if (g_driver.api.nSoftwareMode == 1) {
@@ -231,7 +245,6 @@ void gxDrawPolygon(void *v0, void *v1, void *v2, void *v3, int flags,
         /* Color/uv repack: copy bytes 0..3,4..5,8..9 then 0xd,0xf,0x11,
          * 0x13,0x15,0x17,0x19,0x1b of colorUv into a local 0x20-byte
          * struct (see decompile of gxDrawPolygon @0x433440). */
-        unsigned char local[0x20];
         const unsigned char *src = (const unsigned char *)colorUv;
         unsigned char *dst = local;
         memcpy(dst + 0,  src + 0,  4);
@@ -245,11 +258,10 @@ void gxDrawPolygon(void *v0, void *v1, void *v2, void *v3, int flags,
         dst[13] = src[0x17];
         dst[14] = src[0x19];
         dst[15] = src[0x1b];
-        g_driver.api.pDrawPolygon(v0, v1, v2, v3, flags, &local[0]);
-        return;
     }
-
-    g_driver.api.pDrawPolygon(v0, v1, v2, v3, flags, colorUv);
+    /* The original always passes its local record, even when flags bit 2 is
+     * clear; the driver ignores the unused fields in that case. */
+    g_driver.api.pDrawPolygon(v0, v1, v2, v3, flags, &local[0]);
 }
 
 /* gxBlitSurface @0x433580 — gated on nDrawEnabled (decompiled

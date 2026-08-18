@@ -43,9 +43,9 @@ character events and queues mapped menu `WM_KEYDOWN` messages. The queued
 key-down event is delivered after the message batch, matching the original
 ordering where DirectInput polling follows `TranslateMessage`; this keeps an
 Enter used to select `Avsluta` from immediately cancelling the quit screen.
-`vkToKeyId` is only the rebuild's Win32 boundary adapter: it maps known menu
-virtual keys to the original game key IDs and returns `-1` for all others.
-`pollKeyboard` @0x00416a10 remains a logged stub, and the rebuild does not
+The Win32 boundary maps known menu virtual keys inline before queuing the
+corresponding original game key IDs; unmapped keys are ignored. `pollKeyboard`
+@0x00416a10 remains a logged stub, and the rebuild does not
 link DirectInput or implement the original keyboard repeat, gameplay, or
 editor mouse paths. This is consistent with the scope and current milestone in
 [16-rebuild.md](16-rebuild.md); implement the real poll/dispatch path after a

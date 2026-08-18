@@ -6,7 +6,6 @@
 #include "gx.h"
 #include "pool.h"
 #include "util.h"
-#include "custom_helpers.h"
 
 /* =====================================================================
  * Font / text rendering module — reimplementation of maniac font/text
@@ -39,6 +38,27 @@ const char g_szTextTagX[]   = "X";    /* @0x44ed40 */
 const char g_szTextTagY[]   = "Y";    /* @0x44ed3c */
 const char g_szTextTagRGB[] = "RGB";  /* @0x44f0d4 */
 const char g_szTextTagRGB2[]= "RGB2"; /* @0x44f0cc */
+
+typedef struct {
+    int x;
+    int y;
+    int pad;
+    unsigned char r, g, b, a;
+} GxVert;
+
+typedef struct {
+    void *pTexture;
+    void *pParam5;
+    int pad;
+    unsigned short U;
+    unsigned short V;
+    unsigned short gwU;
+    unsigned short V2;
+    unsigned short gwU2;
+    unsigned short hV;
+    unsigned short U2;
+    unsigned short hV2;
+} GxColorUv;
 
 /* fontPoolCreate @0x408f90 — create the "FONT" pool, reset text colors. */
 int fontPoolCreate(void)
@@ -259,6 +279,12 @@ int textDraw(gxFont *font, unsigned int color, int x, int y, char *text)
     int          i = 0;
     char         c = *text;
     unsigned char b;
+    int          gw;
+    int          h;
+    unsigned int U;
+    unsigned int V;
+    GxVert       v0, v1, v2, v3;
+    GxColorUv    cuv;
 
     for (;;) {
         if (c == '\0') {
@@ -320,7 +346,37 @@ int textDraw(gxFont *font, unsigned int color, int x, int y, char *text)
         continue;
 
     draw_glyph:
-        textDrawGlyph(font, color, b, &xPos, yPos);
+        gw = font->pGlyphWidth[b];
+        h = (short)font->wPad2;
+        U = font->pUvx[b];
+        V = font->pUvy[b];
+        v0.x = xPos << 8; v0.y = yPos << 8;
+        v1.x = (xPos + gw) << 8; v1.y = yPos << 8;
+        v2.x = (xPos + gw) << 8; v2.y = (yPos + h) << 8;
+        v3.x = xPos << 8; v3.y = (yPos + h) << 8;
+        v0.pad = v1.pad = v2.pad = v3.pad = 0;
+        v0.r = (unsigned char)(g_textColor2 >> 0x10);
+        v0.g = (unsigned char)(g_textColor2 >> 8);
+        v0.b = (unsigned char)g_textColor2;
+        v1.r = v0.r; v1.g = v0.g; v1.b = v0.b;
+        v2.r = (unsigned char)(g_textColor >> 0x10);
+        v2.g = (unsigned char)(g_textColor >> 8);
+        v2.b = (unsigned char)g_textColor;
+        v3.r = v2.r; v3.g = v2.g; v3.b = v2.b;
+        v0.a = v1.a = v2.a = v3.a = 0;
+        cuv.pTexture = font->pTexture;
+        cuv.pParam5 = font->pParam5;
+        cuv.pad = 0;
+        cuv.U = (unsigned short)U;
+        cuv.V = (unsigned short)V;
+        cuv.gwU = (unsigned short)((gw << 8) | U);
+        cuv.V2 = (unsigned short)V;
+        cuv.gwU2 = (unsigned short)((gw << 8) | U);
+        cuv.hV = (unsigned short)((h << 8) | V);
+        cuv.U2 = (unsigned short)U;
+        cuv.hV2 = (unsigned short)((h << 8) | V);
+        gxDrawPolygon(&v0, &v1, &v2, &v3, color, &cuv);
+        xPos = xPos + (int)(short)font->wGlobalSpace + gw;
         c = text[i + 1];
         i = i + 1;
     }
@@ -339,8 +395,21 @@ int textDrawCentered(gxFont *font, unsigned int color, int x, int y, char *text)
 int textDrawInt(void *font, unsigned int color, int x, int y, int value)
 {
     char buf[32];
+    int i;
+    int digit;
+    int negative = value < 0;
 
-    textIntToStr(value, buf);
+    buf[0] = '\0';
+    do {
+        for (i = 0x1c; i >= 0; i--) buf[i + 1] = buf[i];
+        digit = value % 10;
+        buf[0] = (char)(abs(digit) + '0');
+        value = (value - digit) / 10;
+    } while (value != 0);
+    if (negative) {
+        for (i = 0x1c; i >= 0; i--) buf[i + 1] = buf[i];
+        buf[0] = '-';
+    }
     textDraw((gxFont *)font, color, x, y, buf);
     return 1;
 }
@@ -349,7 +418,20 @@ int textDrawInt(void *font, unsigned int color, int x, int y, int value)
 int textIntWidth(void *font, int value)
 {
     char buf[32];
+    int i;
+    int digit;
+    int negative = value < 0;
 
-    textIntToStr(value, buf);
+    buf[0] = '\0';
+    do {
+        for (i = 0x1c; i >= 0; i--) buf[i + 1] = buf[i];
+        digit = value % 10;
+        buf[0] = (char)(abs(digit) + '0');
+        value = (value - digit) / 10;
+    } while (value != 0);
+    if (negative) {
+        for (i = 0x1c; i >= 0; i--) buf[i + 1] = buf[i];
+        buf[0] = '-';
+    }
     return textWidth((gxFont *)font, buf);
 }

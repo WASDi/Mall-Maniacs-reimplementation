@@ -5,14 +5,13 @@
 
 /* memPool cluster — reimplementation of maniac memPool* @0x4197a0-0x419bb0.
  *
- * The original is a hierarchical slab allocator over a per-pool structure
- * (0x140 bytes: 0x40-byte name @+0x00, 0x40 slots of 0x40-byte blocks @+0x40,
- * growable arena). Per Rebuild.md the implementation is simplified to plain
- * malloc/free while preserving the pool-handle interface: callers allocate
- * from a named pool (e.g. pool 0 "DEFAULT", g_fontPool "FONT") and free to
- * the same pool. Pool membership is not enforced. */
+ * The original is a hierarchical slab allocator over a per-pool structure.
+ * This rebuild keeps the pool-handle interface with plain allocations plus
+ * an ownership list: pool destruction reclaims live allocations and a free
+ * succeeds only for a pointer owned by the selected pool. Slab layout and the
+ * original invalid-handle failure behavior remain deferred. */
 
-int  memPoolSystemInit(void);       /* @0x4197a0 */
+int  memPoolSystemInit(void);       /* @0x4197a0, returns 1 after init */
 int  memPoolCreate(char *name);     /* @0x4197d0  returns pool index, -1 on fail */
 void *memPoolAlloc(int pool, size_t size);      /* @0x419870 */
 void *memPoolAllocZero(int pool, size_t size);  /* @0x419a20 */

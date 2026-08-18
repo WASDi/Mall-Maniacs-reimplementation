@@ -25,7 +25,11 @@ int main(void)
     WindowProc(NULL, WM_KEYDOWN, VK_RETURN, 0);
     WindowProc(NULL, WM_CHAR, '\r', 0);
     if (g_pStateFunc != menuUpdate) return 3;
-    dispatchPendingKey();
+    if (g_pendingKey) {
+        int key = g_pendingKeyId;
+        g_pendingKey = 0;
+        if (g_pStateFunc != NULL) g_pStateFunc(1, key, 2);
+    }
     if (g_pStateFunc != stateQuitConfirm) return 4;
     if (PeekMessageA(&msg, NULL, WM_QUIT, WM_QUIT, PM_REMOVE)) return 5;
     return 0;

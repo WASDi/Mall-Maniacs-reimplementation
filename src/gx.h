@@ -66,18 +66,21 @@ typedef struct GxDriver {
     int         nDriverActive;   /* +0x84 */
 } GxDriver;
 
-/* Active driver state (defined in custom_helpers.c; mirrors the maniac-side
+/* Active driver state (defined in gx.c; mirrors the maniac-side
  * extension of GxDriverApi @0x45eb40). */
 extern GxDriver g_driver;
 
-/* Reimplementation of maniac gxInit @0x4332f0 (loads driver + pSetMode). */
+/* Reimplementation of maniac gxInit @0x4332f0: pSetMode dispatch. */
 int  gxInit(GxMode *mode);
-/* Reimplementation of maniac gxUnloadDriver @0x432880 (narrowed: no registry). */
-void gxShutdown(void);
+/* Reimplementation of maniac gxLoadDriver @0x432ea0; the known GXSOFT path
+ * is used instead of the deferred registry-selection branch. */
+int  gxLoadDriver(char *driverName);
+/* Reimplementation of maniac gxUnloadDriver @0x433280 (narrowed: no registry). */
+int  gxUnloadDriver(void);
 /* Reimplementation of maniac presentFrame @0x410310. */
-void presentFrame(void *texture);
+void presentFrame(int texture);
 /* Reimplementation of maniac gxLoadTpgFile @0x416060 (tpg -> gxLoadTexture). */
-int gxLoadTpgFile(const char *path);
+int gxLoadTpgFile(char *path);
 
 /* Maniac-side GX wrapper cluster (thin dispatches through GxDriverApi).
  * Each matches the maniac.exe function at the noted address. */
@@ -88,9 +91,9 @@ int  gxClearScreen(int clearMode, int color); /* @0x433350 */
 int  gxSetViewport(void *rect);            /* @0x433370 */
 int  gxGetViewport(void *rect);            /* @0x433390 */
 int  gxResetState(void);                   /* @0x4333b0 */
-int  gxLoadTexture(int mode, int reserved, const char *name, void *data,
+int  gxLoadTexture(int mode, int reserved, char *name, void *data,
                    void *palette);         /* @0x4333d0 */
-int  gxCreateSurface(const char *path);    /* @0x433420 */
+int  gxCreateSurface(char *path);          /* @0x433420 */
 void gxDrawPolygon(void *v0, void *v1, void *v2, void *v3, int flags,
                    void *colorUv);         /* @0x433440 */
 int  gxBlitSurface(int a, int b, int c, void *tex, int x, int y,

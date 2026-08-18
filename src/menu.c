@@ -6,6 +6,7 @@
 
 #include "gx.h"
 #include "pool.h"
+#include "util.h"
 #include "font.h"
 #include "menu.h"
 #include "custom_helpers.h"
@@ -20,9 +21,8 @@
  *   menuUpdate      @0x41b0b0  main menu: 5 rows, two-font render, nav
  *   stateQuitConfirm @0x4200b0 "Avsluta" / Escape quit-confirm screen
  *
- * Custom-only helpers used by these states (menuFramePost, the intro/menu
- * row tables, menuIsSmallChar/menuRowWidth/menuRowDraw, introPresent/
- * introClear, g_introFade_2) live in custom_helpers.c per Rebuild.md.
+ * Rebuild-only menu tables and deferred row-target stubs are kept outside
+ * this translation unit; the state logic remains in these original functions.
  * Row targets stateGameTypeSelect @0x41c010, stateNetworkMenu @0x420190,
  * gotoOptions @0x41d300, stateHighScoreTable @0x41dfd0 are TODO stubs in
  * stubs.c per Rebuild.md §19 (log + return to menu); the original
@@ -36,14 +36,12 @@ int        g_nMenuInit;           /* @0x45a658, one-time menu initialization */
 unsigned char g_menuMode = 1;     /* @0x45022c, initial value is 0x101 */
 PStateFunc g_pResumeStateFunc;    /* @0x45a710, deferred resume state */
 
-/* Intro timeline accumulator (maniac g_introFade_2 @0x45d444, ms). Non-static:
- * introPresent/introClear in custom_helpers.c read it. */
+/* Intro timeline accumulator (maniac g_introFade_2 @0x45d444, ms). */
 float g_introFade_2;
 
 /* Menu assets (maniac globals): fonts @0x45a644-0x45a654, quit texture
  * @0x45a640, selected row g_nMenuRow @0x45d448, fade target @0x45a6f0. The
- * original stores font/texture handles as uint; we use typed pointers.
- * Non-static: the custom row/intro helpers in custom_helpers.c use them. */
+ * original stores font/texture handles as uint; we use typed pointers. */
 gxFont *g_hMenuFontTiny;   /* @0x45a654 tinyfont.txt + TINY00.TPG */
 gxFont *g_hMenuFontSmall;  /* @0x45a644 menysmallfont.txt + MSFONT00.TPG */
 gxFont *g_hMenuFont;       /* @0x45a648 menyfont.txt + MFONT00.TPG */
@@ -53,13 +51,80 @@ void   *g_hMenuQuitTex;    /* @0x45a640 menu\quit.tga */
 int     g_nMenuRow;        /* @0x45d448 selected row (0..4) */
 int     g_nMenuFadeTarget; /* @0x45a6f0 (fade anim out of scope) */
 
+/* Rebuild storage for menuInit/menuUpdate's original string and handle
+ * tables. The original data lives in .rdata/.data at the noted addresses. */
+const char * const g_kIntroTga[6] = {
+    "menu\\intro_addgames.tga",    /* @0x450794 */
+    "menu\\intro_och.tga",         /* @0x45078c */
+    "menu\\intro_uds.tga",         /* @0x450780 */
+    "menu\\intro_samarbete.tga",   /* @0x450774 */
+    "menu\\intro_mcd.tga",         /* @0x450768 */
+    "menu\\intro_presenterar.tga"  /* @0x450720 */
+};
+void *g_hIntroTex[6];          /* @0x45a618-0x45a62c */
+const char * const g_kMenuRowLabel[5] = {
+    "Spela", "N\xe4tverk", "Alternativ", "Rekord", "Avsluta"
+};
+PStateFunc g_kMenuRowTarget[5] = {
+    stateGameTypeSelect, stateNetworkMenu, gotoOptions, stateHighScoreTable,
+    stateQuitConfirm
+};
+
+/* tgaLoad16 @0x415df0 — load the original 16-bit TGA surface buffer. */
+unsigned short *tgaLoad16(LPCSTR path)
+{
+    int             dataOffset;
+    char           *data;
+    unsigned short *surface;
+    unsigned short *dst;
+    int             row;
+    int             column;
+    int             nextColumn;
+    int             remaining;
+
+    data = fileReadRaw(0, path);
+    if (data == NULL) return NULL;
+
+    dataOffset = (int)data[0] + 0x12 +
+        (((int)data[7] * (unsigned int)*(unsigned short *)(data + 5) +
+          ((((int)data[7] * (unsigned int)*(unsigned short *)(data + 5)) >> 31) & 7U)) >> 3);
+    surface = (unsigned short *)memPoolAlloc(0, 0x4b000);
+
+    if ((data[0x11] & 0x20U) == 0) {
+        row = 0;
+        do {
+            column = 0;
+            dst = (unsigned short *)((char *)surface + row);
+            do {
+                nextColumn = column + 2;
+                *dst = *(unsigned short *)(data + (column - row) + 0x4ad80 + dataOffset);
+                column = nextColumn;
+                dst = dst + 1;
+            } while (nextColumn < 0x280);
+            row = row + 0x280;
+        } while (row < 0x4b000);
+        memPoolFree(0, data);
+        return surface;
+    }
+
+    remaining = 0x25800;
+    dst = surface;
+    do {
+        *dst = *(unsigned short *)(data + (dataOffset - (int)surface) +
+                                   (int)dst);
+        dst = dst + 1;
+        remaining = remaining - 1;
+    } while (remaining != 0);
+    memPoolFree(0, data);
+    return surface;
+}
+
 /* stateQuitConfirm @0x4200b0 — "Avsluta" row / Escape. Presents menu\quit.tga;
  * the original confirms only J/Y/j/y character events; every other key event
- * returns to menuUpdate. Non-static: menuFramePost in custom_helpers.c
- * compares g_pStateFunc against it. */
+ * returns to menuUpdate. */
 int stateQuitConfirm(int nType, int nKey, int nKeyType)
 {
-    presentFrame(g_hMenuQuitTex);
+    presentFrame((int)(size_t)g_hMenuQuitTex);
     if (nType == 1) {
         if (nKeyType == 0 &&
             (nKey == 'J' || nKey == 'Y' || nKey == 'j' || nKey == 'y')) {
@@ -96,8 +161,87 @@ int menuUpdate(int nType, int nKey, int nKeyType)
             appLog("[menu] main menu active (5 rows, two-font render)");
         }
         for (row = 0; row < 5; row++) {
-            menuRowDraw(g_kMenuRowLabel[row], row * 0x29 + 0xbe,
-                        (row == g_nMenuRow) ? 1 : 0);
+            const char *label = g_kMenuRowLabel[row];
+            gxFont *small = (row == g_nMenuRow) ? g_hMenuMsfnt : g_hMenuFontSmall;
+            gxFont *big = (row == g_nMenuRow) ? g_hMenuMfnt : g_hMenuFont;
+            char token[128];
+            const char *p;
+            const char *q;
+            int width = 0;
+            int x;
+            int n;
+
+            if (small == NULL || big == NULL) continue;
+            p = label;
+            while (*p != '\0') {
+                unsigned int u;
+                q = p;
+                while (*q != '\0') {
+                    u = (unsigned char)*q;
+                    if (!((u > 0x60 && u < 0x7b) || u == 0xe5 ||
+                          u == 0xe4 || u == 0xf6)) break;
+                    q++;
+                }
+                n = (int)(q - p);
+                if (n > 0) {
+                    memcpy(token, p, (size_t)n);
+                    token[n] = '\0';
+                    width += textWidth(g_hMenuFontSmall, token);
+                    p = q;
+                    continue;
+                }
+                q = p;
+                while (*q != '\0') {
+                    u = (unsigned char)*q;
+                    if ((u > 0x60 && u < 0x7b) || u == 0xe5 ||
+                        u == 0xe4 || u == 0xf6) break;
+                    q++;
+                }
+                n = (int)(q - p);
+                if (n > 0) {
+                    memcpy(token, p, (size_t)n);
+                    token[n] = '\0';
+                    width += textWidth(g_hMenuFont, token);
+                    p = q;
+                }
+            }
+
+            x = 0x226 - width;
+            p = label;
+            while (*p != '\0') {
+                unsigned int u;
+                q = p;
+                while (*q != '\0') {
+                    u = (unsigned char)*q;
+                    if (!((u > 0x60 && u < 0x7b) || u == 0xe5 ||
+                          u == 0xe4 || u == 0xf6)) break;
+                    q++;
+                }
+                n = (int)(q - p);
+                if (n > 0) {
+                    memcpy(token, p, (size_t)n);
+                    token[n] = '\0';
+                    textDraw(small, 0x2004, x, row * 0x29 + 0xbe, token);
+                    x += textWidth(small, token);
+                    p = q;
+                    continue;
+                }
+                q = p;
+                while (*q != '\0') {
+                    u = (unsigned char)*q;
+                    if ((u > 0x60 && u < 0x7b) || u == 0xe5 ||
+                        u == 0xe4 || u == 0xf6) break;
+                    q++;
+                }
+                n = (int)(q - p);
+                if (n > 0) {
+                    memcpy(token, p, (size_t)n);
+                    token[n] = '\0';
+                    textDraw(big, 0x2004, x, row * 0x29 + 0xbe, token);
+                    x += textWidth(big, token);
+                    p = q;
+                }
+            }
         }
     } else if (nType == 1 && nKeyType == 2) {
         switch (nKey) {
@@ -135,8 +279,7 @@ int menuUpdate(int nType, int nKey, int nKeyType)
  * logos. Only key 4 (Space/fire), type 2, skips to the menu; other keydowns
  * continue the timeline as in the original.
  * Threshold floats @0x44b660-0x44b684: 2500/2590/3590/3680/6180/6270/7270/
- * 7360/9860/9950 + 17450 @0x44b65c. g_fl_25 @0x44b468 = 25.0f. Non-static:
- * menuFramePost in custom_helpers.c compares g_pStateFunc against it. */
+ * 7360/9860/9950 + 17450 @0x44b65c. g_fl_25 @0x44b468 = 25.0f. */
 int introUpdate(int nType, int nKey, int nKeyType)
 {
     if (nType == 1) {                  /* key event (dispatchKeyEvent path) */
@@ -153,17 +296,17 @@ int introUpdate(int nType, int nKey, int nKeyType)
     /* Accumulate elapsed ms (g_flFrameDelta == elapsed ms * 0.04; *25.0 -> ms). */
     g_introFade_2 += g_flFrameDelta * 25.0f;
 
-    if (g_introFade_2 < 2500.0f)  { introPresent(0); return 0; }
-    if (g_introFade_2 < 2590.0f)  { introClear();    return 0; }
-    if (g_introFade_2 < 3590.0f)  { introPresent(1); return 0; }
-    if (g_introFade_2 < 3680.0f)  { introClear();    return 0; }
-    if (g_introFade_2 < 6180.0f)  { introPresent(2); return 0; }
-    if (g_introFade_2 < 6270.0f)  { introClear();    return 0; }
-    if (g_introFade_2 < 7270.0f)  { introPresent(3); return 0; }
-    if (g_introFade_2 < 7360.0f)  { introClear();    return 0; }
-    if (g_introFade_2 < 9860.0f)  { introPresent(4); return 0; }
-    if (g_introFade_2 < 9950.0f)  { introClear();    return 0; }
-    if (g_introFade_2 < 17450.0f) { introPresent(5); return 0; }
+    if (g_introFade_2 < 2500.0f)  { presentFrame((int)(size_t)g_hIntroTex[0]); return 0; }
+    if (g_introFade_2 < 2590.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
+    if (g_introFade_2 < 3590.0f)  { presentFrame((int)(size_t)g_hIntroTex[1]); return 0; }
+    if (g_introFade_2 < 3680.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
+    if (g_introFade_2 < 6180.0f)  { presentFrame((int)(size_t)g_hIntroTex[2]); return 0; }
+    if (g_introFade_2 < 6270.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
+    if (g_introFade_2 < 7270.0f)  { presentFrame((int)(size_t)g_hIntroTex[3]); return 0; }
+    if (g_introFade_2 < 7360.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
+    if (g_introFade_2 < 9860.0f)  { presentFrame((int)(size_t)g_hIntroTex[4]); return 0; }
+    if (g_introFade_2 < 9950.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
+    if (g_introFade_2 < 17450.0f) { presentFrame((int)(size_t)g_hIntroTex[5]); return 0; }
 
     /* Timeline done (>= 17450 ms): original sets g_pStateFunc = menuUpdate and
      * plays the menu CD track (introUpdate @0x41ae50 LAB_0041b082). */
@@ -182,8 +325,6 @@ int introUpdate(int nType, int nKey, int nKeyType)
  * 1 = return from options with music track 7). */
 void menuInit(int nRestartMode)
 {
-    size_t size = 0;
-    void  *tpg;
     int    i;
 
     /* menuInit @0x419c20 is guarded by g_nMenuInit @0x45a658. The original
@@ -204,26 +345,23 @@ void menuInit(int nRestartMode)
      * "DEFAULT" used by fileReadRaw/gxLoadTpgFile. */
     memPoolSystemInit();
     appLog("[menu] memPoolSystemInit: pool 0 = DEFAULT");
+    gxResetState();
+    gxClearScreen(1, 0);
+    gxFlip();
 
     /* First .tpg load installs the DirectDraw palette (gxLoadTexture
      * @0x100019b0, first-call branch). MERGED00 shares the intro palette
      * (249/256 entries), matching menuInit's ordering. */
-    tpg = readFileAlloc("menu\\MERGED00.TPG", &size);
-    if (tpg == NULL) {
+    if (gxLoadTpgFile("menu\\MERGED00.TPG") == 0) {
         appLog("[assets] menu\\MERGED00.TPG missing");
-    } else if (size < 0x10400) {
-        appLog("[assets] menu\\MERGED00.TPG too small (%u bytes)", (unsigned)size);
-        free(tpg);
     } else {
-        gxLoadTexture(0, 1, "MERGED00", tpg, (char *)tpg + 0x10000);
-        appLog("[assets] MERGED00.TPG loaded (%u bytes, palette set)", (unsigned)size);
-        free(tpg);
+        appLog("[assets] MERGED00.TPG loaded (palette set)");
     }
 
     /* Six intro logos in the original order (menuInit @0x419c20 load block;
-     * imageLoadByMode here == tgaLoad16 @0x415df0 path via loadTga640x480). */
+         * imageLoadByMode here == tgaLoad16 @0x415df0. */
     for (i = 0; i < 6; i++) {
-        g_hIntroTex[i] = loadTga640x480(g_kIntroTga[i]);
+        g_hIntroTex[i] = tgaLoad16(g_kIntroTga[i]);
         if (g_hIntroTex[i] == NULL) {
             appLog("[assets] %s load failed", g_kIntroTga[i]);
         }
@@ -257,7 +395,7 @@ void menuInit(int nRestartMode)
     }
 
     /* Quit-confirm background (menuInit @0x419c20 imageLoadByMode). */
-    g_hMenuQuitTex = loadTga640x480("menu\\quit.tga");
+    g_hMenuQuitTex = tgaLoad16("menu\\quit.tga");
     if (g_hMenuQuitTex == NULL) {
         appLog("[assets] menu\\quit.tga load failed");
     }

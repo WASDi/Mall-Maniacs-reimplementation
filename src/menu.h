@@ -26,8 +26,7 @@ extern DWORD g_nLastFrameTime;
  *     track 7). The rebuild always starts with the intro, so the arg is
  *     accepted and ignored.
  *   introUpdate   @0x41ae50 / stateQuitConfirm @0x4200b0 — the two states
- *     that present their own frames. Non-static so menuFramePost
- *     (custom_helpers.c) can compare g_pStateFunc against them. */
+ *     that present their own frames. */
 void menuInit(int nRestartMode);
 int  introUpdate(int nType, int nKey, int nKeyType);   /* @0x41ae50 */
 int  stateQuitConfirm(int nType, int nKey, int nKeyType); /* @0x4200b0 */
@@ -37,9 +36,10 @@ int  stateQuitConfirm(int nType, int nKey, int nKeyType); /* @0x4200b0 */
  * stubs.c can return to the main menu. */
 int  menuUpdate(int nType, int nKey, int nKeyType);
 
-/* Menu-state globals (maniac addresses). Non-static: the custom menu/intro
- * helpers in custom_helpers.c use them (menuRowWidth/menuRowDraw read the
- * fonts, introPresent reads g_introFade_2). */
+/* tgaLoad16 @0x415df0. */
+unsigned short *tgaLoad16(LPCSTR path);
+
+/* Menu-state globals (maniac addresses). */
 extern float  g_introFade_2;    /* @0x45d444 intro timeline ms */
 extern gxFont *g_hMenuFontTiny;   /* @0x45a654 tinyfont.txt + TINY00.TPG */
 extern gxFont *g_hMenuFontSmall;  /* @0x45a644 menysmallfont.txt + MSFONT00.TPG */

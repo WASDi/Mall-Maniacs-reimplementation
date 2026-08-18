@@ -20,7 +20,7 @@ void fileCloseStream(FILE *fp)
 }
 
 /* fileReadN @0x408d10 — fread buf, count bytes. */
-void fileReadN(FILE *fp, void *buf, unsigned int count)
+void fileReadN(FILE *fp, char *buf, unsigned int count)
 {
     if (fp != NULL && buf != NULL)
         (void)fread(buf, 1, count, fp);
@@ -31,7 +31,7 @@ void fileSeekTell(FILE *fp, int offset, int mode)
 {
     int whence;
     if (fp == NULL) return;
-    whence = (mode == 1) ? SEEK_CUR : (mode == 2) ? SEEK_END : SEEK_SET;
+    whence = (mode == 0) ? SEEK_SET : (mode == 1) ? SEEK_CUR : SEEK_END;
     (void)fseek(fp, offset, whence);
     (void)ftell(fp);
 }

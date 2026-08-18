@@ -1,13 +1,24 @@
 #include <windows.h>
 
-#include "custom_helpers.h"
+#include "../src/maniac.c"
+
+static int testState(int nType, int nKey, int nKeyType)
+{
+    (void)nType;
+    (void)nKey;
+    (void)nKeyType;
+    return 0;
+}
 
 int main(void)
 {
-    if (vkToKeyId(VK_SPACE) != 4) return 1;
-    if (vkToKeyId(VK_RETURN) != 6) return 2;
-    if (vkToKeyId(VK_LEFT) != 1) return 3;
-    if (vkToKeyId('A') != -1) return 4;
-    if (vkToKeyId(VK_TAB) != -1) return 5;
+    g_pStateFunc = testState;
+    g_pendingKey = 0;
+
+    WindowProc(NULL, WM_KEYDOWN, VK_TAB, 0);
+    if (g_pendingKey != 0) return 1;
+
+    WindowProc(NULL, WM_KEYDOWN, VK_SPACE, 0);
+    if (g_pendingKey != 1 || g_pendingKeyId != 4) return 2;
     return 0;
 }

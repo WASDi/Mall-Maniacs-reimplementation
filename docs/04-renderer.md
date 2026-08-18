@@ -20,11 +20,16 @@ GX is the game's pluggable graphics boundary. The original `gxLoadDriver`
 `GxDriverApi` table covers mode setup, viewport/state, texture and surface
 operations, indexed drawing, blitting, and frame presentation.
 
-The wrappers are mostly thin dispatches. In software mode, polygon coordinates
-are converted to the driver's fixed-point representation before dispatch. The
-rebuild currently needs mode setup, texture loading, blitting, flipping, and
-clearing; the remaining table entries can be added as visible features require
-them.
+The wrappers are mostly thin dispatches. The rebuild separates the original
+driver-load boundary (`gxLoadDriver`, `0x00432ea0`, narrowed to the known
+`GXSOFT.DLL`) from the original mode wrapper (`gxInit`, `0x004332f0`), while
+registry selection and driver-info validation remain deferred. `gxUnloadDriver`
+(`0x00433280`) is represented by the narrowed `gxUnloadDriver` implementation. In software
+mode, polygon coordinates are converted before dispatch; the active GUI path
+uses the driver's normal mode and the full original software conversion remains
+deferred with scene rendering. The rebuild currently needs mode setup, texture
+loading, blitting, flipping, and clearing; the remaining table entries can be
+added as visible features require them.
 
 ## Assets and software-driver evidence
 
@@ -36,11 +41,11 @@ them.
   `gxDLLInit` and maintains the software texture list. Its first texture load
   initializes palette/colour-conversion state and the backing DirectDraw
   surface; this explains the rebuild's palette-from-first-load rule.
-- Font descriptors and tagged text use the original font-pool interface. The
-  rebuild's `textDrawGlyph` helper mirrors `textDraw` (`0x409420`): it builds
-  four fixed-point vertices and the `0x1c`-byte texture/UV record before
-  calling `gxDrawPolygon`. Its explicit zero alpha byte normalizes a vertex
-  byte that the original leaves unwritten; this has no observed visual effect.
+- Font descriptors and tagged text use the original font-pool interface.
+  `textDraw` (`0x409420`) builds four fixed-point vertices and the `0x1c`-byte
+  texture/UV record before calling `gxDrawPolygon`. Its explicit zero alpha
+  byte normalizes a vertex byte that the original leaves unwritten; this has
+  no observed visual effect.
   The full font implementation is summarized in [16-rebuild.md](16-rebuild.md);
   its static `fmtParseInt`/`strFindSubstring` dependencies are substituted by
   `strtol`/`strstr` within the rebuild scope.
@@ -58,13 +63,16 @@ single-player scene work, but are not an exhaustive per-symbol inventory here.
 ## Rebuild status, limitations, and next direction
 
 `src/gx.c` implements the narrow vertical-slice adapter: it loads the known
-`DRIVERS\GXSOFT.DLL` directly, calls `gxDLLInit` and `pSetMode`, loads `.tpg`
-assets, and presents frames with blit/flip/clear. The mode contract, 8-bit
-framebuffer, and `presentFrame` behavior are verified in
-[16-rebuild.md](16-rebuild.md), and the GUI path is verified under Wine.
+`DRIVERS\GXSOFT.DLL` directly, calls `gxDLLInit`, then invokes the separate
+`gxInit`/`pSetMode` wrapper, loads `.tpg` assets, and presents frames with
+blit/flip/clear. `gxDrawPolygon` now preserves the original local packed-record
+call contract for both flag paths. The mode contract, 8-bit framebuffer, and
+`presentFrame` behavior are verified in [16-rebuild.md](16-rebuild.md), and the
+GUI path is verified under Wine.
 
 The rebuild intentionally defers registry-based driver selection and settings,
-alternate drivers, DirectDraw internals, and the original scene/gameplay
-render path. The next useful renderer work is to extend the existing adapter
-only when the next real GUI or single-player state needs it, then connect the
+alternate drivers, DirectDraw internals, focus-loss snooze/reinitialization,
+the animated menu decoration pass, and the original scene/gameplay render
+path. The next useful renderer work is to extend the existing adapter only
+when the next real GUI or single-player state needs it, then connect the
 verified scene-node and mesh pipeline incrementally.

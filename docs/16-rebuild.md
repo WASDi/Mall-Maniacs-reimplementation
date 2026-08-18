@@ -36,7 +36,10 @@ documentation, not in this progress overview.
   `GXSOFT.DLL`; indexed TGA assets and the `MERGED00.TPG` palette render at
   the original 640x480 resolution.
 - **Foundation:** `src/pool.c` and `src/util.c` provide the reconstructed pool
-  and file-helper interfaces used by the menu and font code.
+  and file-helper interfaces used by the menu and font code. The pool keeps
+  ownership records so live allocations are reclaimed by pool destruction and
+  cross-pool frees are rejected; the original slab hierarchy and invalid-handle
+  behavior remain deferred.
 - **Fonts:** `src/font.c` implements the original font/text range
   `0x408f90–0x409940`: descriptor parsing, atlas UV setup, tagged text
   rendering, centering, and integer formatting, including the two-font menu
@@ -82,7 +85,10 @@ Continue to follow `Rebuild.md` for constraints and update this overview,
 Ghidra, and relevant subsystem documentation after each completed chunk.
 
 The font comparison is complete: direct function control flow and the
-`gxDrawPolygon` glyph contract match the original. The extracted rebuild
-helpers `textDrawGlyph` and `textIntToStr` preserve the original behavior;
-the only known fidelity limitation is malformed-input behavior in the
-deferred static numeric parser substitution.
+`gxDrawPolygon` glyph contract are implemented inside the original
+`textDraw`/`textDrawInt`/`textIntWidth` boundaries. The only known font
+fidelity limitation is malformed-input behavior in the deferred static numeric
+parser substitution.
+The GX adapter now separates driver loading from `gxInit`/mode setup, and the
+pool/file review corrected pool initialization return semantics and the
+file-seek handling for all nonzero end-relative modes.
