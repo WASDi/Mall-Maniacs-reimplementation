@@ -66,4 +66,9 @@ and the rebuild is a bug: the Ghidra definition is the reference for the
 original binary, and the rebuild is the ground truth for the replacement. If a
 discrepancy is found, fix both sides immediately.
 
+PARTICULARILY IMPORTANT:
+* All reimplemented functions should have a comment saying their original address.
+* Keep the same call hierarchy.
+* All stubs go into stubs.c.
+
 Prefer working on fewer functions at a time from a single subsystem, and implementing them before moving on to the next chunk of functions.

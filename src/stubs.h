@@ -31,4 +31,14 @@ int  pollKeyboard(void);
  * kept here as the named shutdown entry point used by the full WinMain. */
 void shutdownRenderer(void);
 
+/* Main-menu row targets (menu.c dispatch table g_kMenuRowTarget, entered
+ * from menuUpdate @0x41b0b0 on Enter). Contract: state-func convention
+ * (nType 0 = frame update, nType 1 + nKeyType 2 = keydown); each sets
+ * g_pStateFunc to the next state. TODO stubs: log once + return to the
+ * menu. Interfaces stay fixed when the real bodies replace them. */
+int stateGameTypeSelect(int nType, int nKey, int nKeyType);  /* @0x41c010 */
+int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
+int gotoOptions(int nType, int nKey, int nKeyType);          /* @0x41d300 */
+int stateHighScoreTable(int nType, int nKey, int nKeyType);  /* @0x41dfd0 */
+
 #endif /* STUBS_H */

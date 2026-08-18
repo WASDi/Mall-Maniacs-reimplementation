@@ -2,9 +2,11 @@
 
 [Back to README](README.md)
 
-Status: **Chunk 2 (intro logo timeline) DONE + VERIFIED** — all six intro logos
-render in sequence from the original timeline (`introUpdate @0x41ae50`), then
-the app transitions to a `menuUpdate @0x41b0b0` stub that holds the last frame.
+Status: **Chunk 3 (main menu, menuUpdate @0x41b0b0) DONE + VERIFIED** — the intro
+logo timeline (chunk 2) now transitions into the real main menu: five rows
+("Spela"/"Nätverk"/"Alternativ"/"Rekord"/"Avsluta") rendered as two-font
+token streams, Up/Down wrap navigation, Enter fires each row's target state,
+Escape opens the quit-confirm screen (menu\quit.tga) and Space/Enter quits.
 Milestone 1 (GUI vertical slice) remains CLOSED + VERIFIED below. The plan in
 `/home/wasd/auto-ghidra/Rebuild.md` drives the original `DRIVERS\GXSOFT.DLL`
 software rasterizer through its GX driver interface; source lives in
@@ -28,11 +30,12 @@ required offline GUI + single-player functionality of the original
 | File | Role |
 |---|---|
 | `Rebuild.md` | The plan/constraints being implemented (repo root) |
-| `src/maniac.c` | WinMain @0x4160a0, initWindowAndInput @0x4165f0, WindowProc @0x4161b0, menuInit @0x419c20 (narrowed), introUpdate @0x41ae50 (6-logo timeline), menuUpdate @0x41b0b0 (TODO stub), 25ms-gated frame loop (gameFrameUpdate @0x41a8c0 timing) |
+| `src/maniac.c` | WinMain @0x4160a0, initWindowAndInput @0x4165f0, WindowProc @0x4161b0 (keydown -> state func), 25ms-gated frame loop (gameFrameUpdate @0x41a8c0 timing) + menuFramePost flip/clear |
+| `src/menu.c` / `src/menu.h` | Menu subsystem: menuInit @0x419c20 (palette MERGED00.TPG + 6 intro logos + 5 fonts + quit.tga), introUpdate @0x41ae50 (6-logo timeline), menuUpdate @0x41b0b0 (5-row two-font render, nav), stateQuitConfirm @0x4200b0, row-target stubs (stateGameTypeSelect @0x41c010, stateNetworkMenu @0x420190, stateHighScoreTable @0x41dfd0, gotoOptions @0x41d300), menuFramePost (gxFlip + gxClearScreen for menu states); exports PStateFunc/g_pStateFunc/g_flFrameDelta/g_nLastFrameTime + menuUpdate (non-static for the row-target stubs) |
 | `src/gx.c` / `src/gx.h` | GX driver adapter: gxInit @0x4332f0, gxShutdown @0x432880, presentFrame @0x410310, gxLoadTpgFile @0x416060, full maniac-side wrapper cluster @0x433310-0x433670 (gxGetMode/gxSnooze/gxFlip/gxClearScreen/gxSetViewport/gxGetViewport/gxResetState/gxLoadTexture/gxCreateSurface/gxDrawPolygon/gxBlitSurface/gxSetOrigin/gxDrawTriangle/gxDrawLine/gxDrawTriUV/gxDrawQuad); `GxMode` + `GxDriverApi` structs |
 | `src/util.c` / `src/util.h` | `appLog` → `rebuild.log`, file reads, TGA loader (tgaLoad16 @0x415df0), file-helper cluster (fileOpenMode @0x408cd0, fileCloseStream @0x408d00, fileReadN @0x408d10, fileSeekTell @0x408d30, fileReadRaw @0x408d60, fileReadText @0x408e20, fileGetSizeOpen @0x408ee0, fileGetSize @0x408f20, fileExists @0x408f60) |
 | `src/pool.c` / `src/pool.h` | memPool cluster @0x4197a0-0x419bb0 (memPoolSystemInit/Create/Alloc/AllocZero/Free/Destroy/SystemShutdown) simplified to malloc/free over `g_apMemPools` @0x459f70 |
-| `src/stubs.c` / `src/stubs.h` | TODO stubs (gameInit @0x409d90, gameFrameUpdate @0x41a8c0, pollKeyboard @0x416a10) with contracts + original addresses |
+| `src/stubs.c` / `src/stubs.h` | TODO stubs (gameInit @0x409d90, gameFrameUpdate @0x41a8c0, pollKeyboard @0x416a10, and the four menu row targets stateGameTypeSelect @0x41c010, stateNetworkMenu @0x420190, gotoOptions @0x41d300, stateHighScoreTable @0x41dfd0) with contracts + original addresses |
 | `build.sh` | Compiles to `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` |
 | `run.sh` | `cd` game dir, `timeout 5 wine ./maniac_rebuild.exe`, prints `rebuild.log` |
 
@@ -303,15 +306,105 @@ Implemented (all match the Ghidra prototypes exactly):
 Note: `g_fontPool` retyped to `int` (pool id, memPoolCreate returns int).
 Helper prototypes in Ghidra refined to `char * __cdecl` returns.
 
-Next: wire `fontPoolCreate` + `fontLoad("menu\tinyfont.txt", gxLoadTpgFile("menu\tiny00.tpg"),0,0,0)`
-etc. into menuInit @0x419c20 and draw the main menu with textDraw.
+Done in chunk 3 below: `fontPoolCreate` + all five `fontLoad` calls are wired into
+menuInit @0x419c20 and the main menu is drawn with textDraw (two-font rows).
+
+## Chunk 3 — main menu (menuUpdate @0x41b0b0) [VERIFIED]
+
+Moved the menu/intro subsystem out of maniac.c into `src/menu.c`/`src/menu.h`
+(maniac.c keeps only the app/window/loop glue; the frame loop calls
+`g_pStateFunc(0,0,0)` then `menuFramePost()`). Builds clean
+(`i686-w64-mingw32-gcc ... src/menu.c ...`).
+
+- `menuInit @0x419c20`: memPoolSystemInit, load `menu\MERGED00.TPG` palette,
+  load 6 intro logos, `fontPoolCreate` + 5 fonts (tiny/small/normal/200
+  variants), load `menu\quit.tga`; `g_nMenuRow=0`, `g_nMenuFadeTarget=0`,
+  `g_nLastFrameTime=timeGetTime()`, `g_introFade_2=0`, `g_pStateFunc=introUpdate`.
+- `menuUpdate`: 5 rows rendered x=0x226, y=row*0x29+0xbe as two-font token
+  streams (small font: a-z + å/ä/ö; normal font: rest), color 0x2004, selected
+  row uses the "200" highlight fonts; Up/Down wrap 0<->4, Enter fires the row
+  target, Escape opens stateQuitConfirm, Left/Right ignored; navigation is
+  logged to rebuild.log.
+- Row targets: row 0 "Spela" -> `stateGameTypeSelect @0x41c010`, row 1
+  "Nätverk" -> `stateNetworkMenu @0x420190`, row 2 "Alternativ" ->
+  `gotoOptions @0x41d300`, row 3 "Rekord" -> `stateHighScoreTable @0x41dfd0`,
+  row 4 "Avsluta" -> `stateQuitConfirm @0x4200b0`. The first four are TODO
+  stubs in `src/stubs.c` (log + return to menu, per Rebuild.md §19);
+  quit-confirm is real:
+  presents quit.tga, Space/Enter -> PostQuitMessage(0), any other key ->
+  back to menu.
+- Input: WindowProc forwards every WM_KEYDOWN to `g_pStateFunc(1, key, 2)`
+  (vkToKeyId map: Right=0 Left=1 Up=2 Down=3 Space=4 Enter=6 Esc=7; unknown ->
+  4). During the intro any keydown skips to the menu (introUpdate handles it).
+
+Verified interactively under wine (xdotool): Space skips intro -> menu; Down/Down/
+Up -> rows 1/2/1; Return on "Nätverk" -> stateNetworkMenu stub; Escape ->
+quit-confirm; Escape -> back to menu; Down x4 wraps 0->4; Return on "Avsluta"
+-> quit-confirm; Space -> `[menu] quit confirmed`, `[winmain] exiting cleanly`.
+Log excerpt:
+```
+[menu] main menu active (5 rows, two-font render)
+[menu] row 1 (Down)
+[menu] row 4 'Avsluta' selected
+[stub TODO] stateNetworkMenu @0x420190 not implemented (back to menu)
+[menu] quit confirmed
+```
+
+Ghidra sync (saved): prototypes refined to the state-func convention
+`int __cdecl <name>(int nType, int nKey, int nKeyType)` for menuUpdate,
+stateQuitConfirm, gotoOptions, stateGameTypeSelect, stateNetworkMenu,
+stateHighScoreTable; plate comments on menuUpdate (row table + two-font render)
+and stateQuitConfirm; string global `g_szMenuRowNetwork` @0x450820 retyped to
+`char[8]` with row-label cluster comment.
+
+### menu.c verification against Ghidra
+Re-verified all functions in `src/menu.c` against the open `maniac.exe`:
+- **Names** all match: `menuInit @0x419c20`, `introUpdate @0x41ae50`,
+  `menuUpdate @0x41b0b0`, `stateQuitConfirm @0x4200b0`, `stateGameTypeSelect
+  @0x41c010`, `stateNetworkMenu @0x420190`, `gotoOptions @0x41d300`,
+  `stateHighScoreTable @0x41dfd0`, `gameFrameUpdate @0x41a8c0` (mirrored by
+  `menuFramePost`). Every reimplemented function carries its original address
+  in a comment; the helper functions (menuIsSmallChar/menuRowWidth/menuRowDraw,
+  introPresent/introClear) have no direct original address and are labeled as
+  rebuild helpers.
+- **Call hierarchy** matches: `menuInit -> introUpdate -> menuUpdate`; the
+  five-row dispatch table (Spela/Nätverk/Alternativ/Rekord/Avsluta ->
+  stateGameTypeSelect/stateNetworkMenu/gotoOptions/stateHighScoreTable/
+  stateQuitConfirm) is identical in order and targets; `stateQuitConfirm`
+  returns to `menuUpdate`; all four row-target stubs return to `menuUpdate`
+  (matching the originals' ESC tails); `menuFramePost` mirrors the
+  gameFrameUpdate flip/clear gate. Rendering calls (textWidth/textDraw,
+  presentFrame, gxClearScreen/gxFlip, fontPoolCreate/fontLoad/gxLoadTpgFile,
+  memPoolSystemInit) mirror the originals' call sites.
+- **Stub placement**: the four row-target stubs moved from `src/menu.c` to
+  `src/stubs.c`/`src/stubs.h` (per Rebuild.md: "All stubs go into stubs.c");
+  `menuUpdate` became non-static (declared in `src/menu.h`) so the stubs can
+  return to the main menu. Interfaces and the dispatch table unchanged.
+- **Signature fix (this session): `menuInit`**. Disassembly at all three call
+  sites (gameFrameUpdate @0x41a8d0, dispatchKeyEvent @0x41adeb,
+  stateOptionsExit @0x41c679) pushes one dword (0 / 0 / 1) then `ADD ESP,4`,
+  and the callee ends in a plain `RET` — i.e. `__cdecl` with one `int`
+  argument. Ghidra previously had `void __stdcall menuInit(void)`. Corrected to
+  `void __cdecl menuInit(int nRestartMode)` (0 = first init, 1 = return from
+  options + music track 7) and the rebuild signature/caller updated in lockstep
+  (`src/menu.h`, `src/menu.c`, `src/maniac.c` calls `menuInit(0)`); rebuild is
+  clean.
+- **menuUpdate Escape path**: original `case 7` does `g_pStateFunc =
+  stateQuitConfirm; return 0;` without touching `g_nMenuFadeTarget`; the rebuild
+  now returns early the same way.
+- Documented divergences (intentional, in comments): intro skips on any keydown
+  (original only key 4); quit-confirm accepts Space/Enter keydown 4/6 (original
+  J/Y/j/y char events); stubs log + return to menu instead of the real targets.
 
 ## Next milestone (from docs/11-issues.md §15)
-Extend the intro timeline into the main menu (menuUpdate @0x41b0b0)
-using gxDrawQuad/gxDrawPolygon + the font system (fontPoolCreate @0x408f90,
-fontLoad) now that the driver's poly/TriUV/Quad entries are mapped, then absorb
-input (pollKeyboard @0x416a10 / DirectInput thunk @0x42d000) and the menu state
-machine.
+Main menu is in. The next isolated chunk is the first row-target state behind
+the menu: either the game-type select (`stateGameTypeSelect @0x41c010`,
+a real ~1500-byte function) or the options screen (`stateOptions @0x41c6a0`,
+the actual `gotoOptions` target). Both still need the real input path
+(`pollKeyboard @0x416a10` / DirectInput thunk @0x42d000) for mouse/controller
+support; the menu currently drives navigation purely through WM_KEYDOWN
+forwarding. Implementing a target state lets the two-font/menu assets be
+reused and gives the second GUI screen before wiring up actual gameplay.
 
 ## Reimplementation progress tracker
 `TrackRebuildProgress.java` is a Ghidra script that enumerates the functions in
