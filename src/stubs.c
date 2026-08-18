@@ -4,31 +4,44 @@
 #include "custom_helpers.h"
 
 /* =====================================================================
- * TODO stubs — see stubs.h for contracts. Safe, log-and-return-failure
- * placeholders so future milestones can wire real implementations without
+ * TODO stubs — see stubs.h for contracts. Safe, logged no-op or placeholder
+ * transitions let future milestones wire real implementations without
  * changing callers. Original addresses noted in stubs.h.
  * ===================================================================== */
 
-/* gameInit @0x409d90 — full game init. TODO stub: log + return 0. */
-int gameInit(void)
+/* gameInit @0x409d90 — full game init. TODO replacement: log + no-op.
+ * Original signature is void(void); this stub deliberately makes
+ * no success claim because the replacement WinMain bypasses gameInit. */
+void gameInit(void)
 {
-    appLog("[stub TODO] gameInit @0x409d90 not implemented (returns 0)");
-    return 0;
+    static int bLogged;
+    if (!bLogged) {
+        bLogged = 1;
+        appLog("[stub TODO] gameInit @0x409d90 not implemented (no-op)");
+    }
 }
 
-/* gameFrameUpdate @0x41a8c0 — advance one game frame. TODO stub. */
-int gameFrameUpdate(void)
+/* gameFrameUpdate @0x41a8c0 — advance one game frame. TODO replacement:
+ * log + no-op. Original signature is void(void). */
+void gameFrameUpdate(void)
 {
-    appLog("[stub TODO] gameFrameUpdate @0x41a8c0 not implemented (returns 0)");
-    return 0;
+    static int bLogged;
+    if (!bLogged) {
+        bLogged = 1;
+        appLog("[stub TODO] gameFrameUpdate @0x41a8c0 not implemented (no-op)");
+    }
 }
 
 /* pollKeyboard @0x416a10 — DirectInput keyboard poll. TODO stub; the slice
- * uses window messages instead. */
-int pollKeyboard(void)
+ * uses window messages instead. Original signature is void(void);
+ * this replacement has no DirectInput or quit-request side effects. */
+void pollKeyboard(void)
 {
-    appLog("[stub TODO] pollKeyboard @0x416a10 not implemented (returns 0)");
-    return 0;
+    static int bLogged;
+    if (!bLogged) {
+        bLogged = 1;
+        appLog("[stub TODO] pollKeyboard @0x416a10 not implemented (no-op)");
+    }
 }
 
 /* Main-menu row targets (menu.c dispatch table). TODO stubs: log once and

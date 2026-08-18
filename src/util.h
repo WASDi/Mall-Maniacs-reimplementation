@@ -10,14 +10,14 @@
  * @0x43e5a0 = fseek, fileTell @0x43e41d = ftell, fileClose @0x43e289 =
  * fclose); per Rebuild.md the CRT equivalents are used directly. */
 
-int  fileOpenMode(const char *path, int mode); /* @0x408cd0 mode 1 -> "wb" else "rb"; -1 on fail */
+int  fileOpenMode(LPCSTR path, int mode); /* @0x408cd0 mode 1 -> "wb" else "rb"; -1 on fail */
 void fileCloseStream(FILE *fp);                /* @0x408d00 */
 void fileReadN(FILE *fp, char *buf, unsigned int count); /* @0x408d10 */
-void fileSeekTell(FILE *fp, int offset, int mode);       /* @0x408d30 mode 0/1/2 -> SET/CUR/END */
-char *fileReadRaw(int pool, const char *path);  /* @0x408d60 pool-owned buffer or NULL */
-char *fileReadText(int pool, const char *path); /* @0x408e20 NUL-terminated pool buffer or NULL */
+void fileSeekTell(FILE *fp, int offset, int mode);       /* @0x408d30 mode 0/1/other -> SET/CUR/END */
+char *fileReadRaw(int pool, LPCSTR path);  /* @0x408d60 pool-owned buffer or NULL */
+char *fileReadText(int pool, LPCSTR path); /* @0x408e20 NUL-terminated pool buffer or NULL */
 int  fileGetSizeOpen(FILE *fp);                 /* @0x408ee0 current offset preserved */
-int  fileGetSize(const char *path);             /* @0x408f20 0 on failure */
-int  fileExists(const char *path);              /* @0x408f60 */
+int  fileGetSize(LPCSTR path);                  /* @0x408f20 0 on failure */
+int  fileExists(LPCSTR path);                   /* @0x408f60 */
 
 #endif /* UTIL_H */

@@ -33,7 +33,7 @@ PStateFunc g_pStateFunc;          /* @0x45a6f8 */
 float      g_flFrameDelta;        /* @0x45a6cc = elapsed ms * 0.04 */
 DWORD      g_nLastFrameTime;      /* @0x45a65c */
 int        g_nMenuInit;           /* @0x45a658, one-time menu initialization */
-unsigned char g_menuMode = 1;     /* @0x45022c, initial value is 0x101 */
+int        g_menuMode = 0x101;    /* @0x45022c, low byte starts intro; high byte starts CD cue */
 PStateFunc g_pResumeStateFunc;    /* @0x45a710, deferred resume state */
 
 /* Intro timeline accumulator (maniac g_introFade_2 @0x45d444, ms). */
@@ -282,6 +282,15 @@ int menuUpdate(int nType, int nKey, int nKeyType)
  * 7360/9860/9950 + 17450 @0x44b65c. g_fl_25 @0x44b468 = 25.0f. */
 int introUpdate(int nType, int nKey, int nKeyType)
 {
+    /* introUpdate @0x41ae50 consumes the high byte set in .data on the first
+     * call. The CD/audio call is outside this rebuild, but the flag and its
+     * early-return behavior are part of the original state transition. */
+    if ((g_menuMode & 0x100) != 0) {
+        g_menuMode &= ~0x100;
+        appLog("[intro] initial music transition deferred");
+        return 0;
+    }
+
     if (nType == 1) {                  /* key event (dispatchKeyEvent path) */
         if (nKeyType != 2) {           /* original returns before timing update */
             return 0;
@@ -295,6 +304,12 @@ int introUpdate(int nType, int nKey, int nKeyType)
 
     /* Accumulate elapsed ms (g_flFrameDelta == elapsed ms * 0.04; *25.0 -> ms). */
     g_introFade_2 += g_flFrameDelta * 25.0f;
+
+    /* The original updates the timeline for keydown events but only renders
+     * on frame events (introUpdate @0x41ae50). */
+    if (nType != 0) {
+        return 0;
+    }
 
     if (g_introFade_2 < 2500.0f)  { presentFrame((int)(size_t)g_hIntroTex[0]); return 0; }
     if (g_introFade_2 < 2590.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
@@ -336,7 +351,7 @@ void menuInit(int nRestartMode)
 
     /* The original clears a pending resume state when starting in intro
      * mode; the rebuild has no producer for that slot yet. */
-    if (g_menuMode != 0) {
+    if ((g_menuMode & 0xff) != 0) {
         g_pResumeStateFunc = NULL;
     }
 
@@ -412,7 +427,7 @@ void menuInit(int nRestartMode)
     /* Original state selection: initial mode byte selects the intro; after
      * mode is cleared, a normal start enters menuUpdate and may be replaced
      * by a deferred resume state. The current rebuild starts in intro mode. */
-    if (g_menuMode != 0) {
+    if ((g_menuMode & 0xff) != 0) {
         g_pStateFunc = introUpdate;
     } else if (nRestartMode == 0) {
         g_pStateFunc = menuUpdate;
@@ -420,5 +435,7 @@ void menuInit(int nRestartMode)
             g_pStateFunc = g_pResumeStateFunc;
         }
     }
-    g_menuMode = 0;
+    /* menuInit clears only the low mode byte. introUpdate consumes the high
+     * byte on its first invocation, matching the original two-byte flags. */
+    g_menuMode &= ~0xff;
 }

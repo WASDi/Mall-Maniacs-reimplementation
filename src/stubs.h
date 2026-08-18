@@ -5,26 +5,29 @@
 
 /* =====================================================================
  * Declared interfaces for unfinished behavior (Rebuild.md §19).
- * Each is a TODO stub: logs and returns a handled failure so the vertical
- * slice proceeds; callers keep their contract unchanged when the stub body
- * is later replaced. Original target/address noted where one exists.
+ * Each is a TODO stub: logs and performs a documented no-op or safe
+ * placeholder transition so the vertical slice proceeds; callers keep their
+ * contract unchanged when the stub body is later replaced. Original
+ * target/address noted where one exists.
  * ===================================================================== */
 
 /* gameInit @0x409d90 — full game initialization (level config, scene system,
- * sound, networking). Contract: called once after window + driver init; on
- * success the game enters its state machine. Returns 1 on success, 0 on
- * failure. TODO: not implemented for the vertical slice. */
-int  gameInit(void);
+ * sound, networking). Ghidra signature: void(void). Contract:
+ * replacement is a logged no-op; it does not initialize state or claim
+ * success. TODO: not implemented for the vertical slice. */
+void gameInit(void);
 
 /* gameFrameUpdate @0x41a8c0 — advance one game frame (update + render).
- * Contract: called when g_nFrameDue != 0; may request quit. TODO. */
-int  gameFrameUpdate(void);
+ * Ghidra signature: void(void). Contract: replacement is a logged
+ * no-op and does not update or render state. TODO. */
+void gameFrameUpdate(void);
 
-/* pollKeyboard @0x416a10 — poll DirectInput keyboard state into the shared
- * key buffer (__stdcall(callback, time); key events via callback). Contract:
- * fills global 256-byte key state. TODO: the slice uses window messages
- * (WM_KEYDOWN) instead; DirectInput deferred. */
-int  pollKeyboard(void);
+/* pollKeyboard @0x416a10 — poll DirectInput keyboard state, debounce key
+ * presses, and dispatch (key, 2) events through the active state callback.
+ * Ghidra signature: void(void). Contract: replacement is a logged
+ * no-op; window messages provide the vertical-slice input path instead, and
+ * DirectInput plus its quit-request side effects remain deferred. TODO. */
+void pollKeyboard(void);
 
 /* Main-menu row targets (menu.c dispatch table g_kMenuRowTarget, entered
  * from menuUpdate @0x41b0b0 on Enter). Contract: state-func convention

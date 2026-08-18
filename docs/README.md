@@ -1,25 +1,5 @@
 # Mall Maniacs (maniac.exe) — Architecture Notes
 
-Status: WORK IN PROGRESS. Substantial progress made (networking, GX renderer,
-game state machine mapped and renamed: full single-player flow, deferred-action
-"request" mechanism, results/game-over flow; navpoint subsystem + .ai/.tpg file
-formats closed; AI movement-mesh / zone-wall graph region 0x428840-0x42a7xx
-renamed + decoded; statically-linked MSVC CRT region 0x43c850-0x44966c fully
-mapped and renamed: config-save iostream stream layer, low-level CRT file I/O,
-memory (SBH/heap2 allocators), ctype/float helpers, TLS/errno, C++ EH runtime,
-C++-EH vec-ctor/dtor, atexit/exit + lock cluster, cmdline/env startup).
-1178/1178 functions documented = 100%. Data surface fully named (pass 5c):
-605 globals renamed, 571 typed; only documented aliases/artifacts remain as
-DAT_* (see 11-issues.md §16 pass 5c). Only facts marked [VERIFIED]
-were confirmed by reading decompilation/xrefs; everything else is hypothesis.
-
-## How to use these notes
-
-Split from the former single `architecture.md` into per-subsystem files so a
-work session loads only what it needs. Pick a file by subsystem (below) or by
-address range (map at the bottom). `11-issues.md` is the working set — it holds
-the open unknowns and the priority-ordered next-steps queue.
-
 ## Index
 
 | # | File | Covers | Key addresses |

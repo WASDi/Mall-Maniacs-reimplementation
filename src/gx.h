@@ -80,7 +80,7 @@ int  gxUnloadDriver(void);
 /* Reimplementation of maniac presentFrame @0x410310. */
 void presentFrame(int texture);
 /* Reimplementation of maniac gxLoadTpgFile @0x416060 (tpg -> gxLoadTexture). */
-int gxLoadTpgFile(char *path);
+int gxLoadTpgFile(LPCSTR path);
 
 /* Vertex and texture/UV record types for the indexed-draw wrappers. Layouts
  * match the Ghidra structs GxVert / GxColorUv (see gxDrawPolygon @0x433440

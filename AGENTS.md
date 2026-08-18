@@ -29,6 +29,8 @@
 
 Keep each document focused on a concise current-state overview: preserve verified findings, evidence, limitations, and next direction, while removing exhaustive histories, step-by-step work logs, duplicate notes, and complete symbol inventories.
 
+For further documentation per subsystem, see `docs/README.md`.
+
 ## Phase 1 — Static Analysis & Documentation (COMPLETE)
 - 1178/1178 functions documented = 100% — the FUN_* naming drive-down is COMPLETE.
 - Major subsystems renamed (game flow, networking, config, renderer, sound, file
@@ -71,7 +73,7 @@ discrepancy is found, fix both sides immediately.
 PARTICULARILY IMPORTANT:
 * All reimplemented functions and globals should have a comment saying their original address.
 * The original code architecture and call hierarchy should be replicated. Only necessary exceptions go into `custom_helpers.c`.
-* When you implement a function, implement it fully including all function calls and symbol references so it matches the original function. Add stubs in `src/ stubs.c` for called functions that are not yet implemented.
+* When you implement a function, implement it fully including all function calls and symbol references so it matches the original function. Add stubs in `src/ stubs.c` for called functions that are not yet implemented. Don't use custom calling conventions.
 * All logic inside functions should be preserved. Do not inline or put logic where it wasn't in the original executable.
 * Ghidra is considered the source of truth. Before reimplementing a function, update its signature in ghidra to give correct names and types to parameters.
 

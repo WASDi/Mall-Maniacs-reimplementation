@@ -11,9 +11,9 @@
  * original gxLoadDriver @0x432ea0 reads the driver path + options from the
  * registry; that configuration path is deferred per Rebuild.md). */
 
-/* gxDLLInit / gxDLLExit are cdecl exports of gxSoft.dll. */
-typedef int  (__cdecl *pfn_gxDLLInit)(GxDriverApi *api);
-typedef void (__cdecl *pfn_gxDLLExit)(void);
+/* gxDLLInit / gxDLLExit use the compiler's default C convention. */
+typedef int  (*pfn_gxDLLInit)(GxDriverApi *api);
+typedef void (*pfn_gxDLLExit)(void);
 
 /* GxDriverApi extension @0x45eb40, populated by gxDLLInit. */
 GxDriver g_driver;
@@ -135,14 +135,14 @@ void presentFrame(int texture)
 /* gxLoadTpgFile @0x416060 — fileReadRaw(0,path) -> gxLoadTexture(0,1,path,
  * data,data+0x10000) -> memPoolFree(0,data); returns texture handle. Uses
  * pool 0 ("DEFAULT", created by memPoolSystemInit). */
-int gxLoadTpgFile(char *path)
+int gxLoadTpgFile(LPCSTR path)
 {
     char *data;
     int r;
 
     data = fileReadRaw(0, path);
     if (data == NULL) return 0;
-    r = gxLoadTexture(0, 1, path, data, data + 0x10000);
+    r = gxLoadTexture(0, 1, (char *)path, data, data + 0x10000);
     memPoolFree(0, data);
     return r;
 }
@@ -236,7 +236,7 @@ int gxCreateSurface(char *path)
 void gxDrawPolygon(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3, int flags,
                    GxColorUv *colorUv)
 {
-    unsigned char local[0x10] = { 0 };
+    unsigned char local[0x10];
 
     if (g_driver.api.pDrawPolygon == NULL) return;
 
@@ -280,7 +280,6 @@ int gxBlitSurface(int a, int b, int c, void *tex, int x, int y,
                   int w, int h, int h2)
 {
     if (g_driver.api.nDrawEnabled == 0) return 0;
-    if (g_driver.api.pBlitSurface == NULL) return 0;
     return g_driver.api.pBlitSurface(a, b, c, tex, x, y, w, h, h2);
 }
 

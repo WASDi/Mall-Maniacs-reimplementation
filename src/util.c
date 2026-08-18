@@ -7,7 +7,7 @@
 /* --- file helper cluster (fileOpenMode @0x408cd0 .. fileExists @0x408f60) --- */
 
 /* fileOpenMode @0x408cd0 — fopen with "wb"/"rb"; FILE* as int, -1 on fail. */
-int fileOpenMode(const char *path, int mode)
+int fileOpenMode(LPCSTR path, int mode)
 {
     FILE *f = fopen(path, (mode == 1) ? "wb" : "rb");   /* g_sz_wb @0x44e6c8 / g_sz_rb @0x44e6c0 */
     return (f != NULL) ? (int)(size_t)f : -1;
@@ -26,7 +26,8 @@ void fileReadN(FILE *fp, char *buf, unsigned int count)
         (void)fread(buf, 1, count, fp);
 }
 
-/* fileSeekTell @0x408d30 — mode 0/1/2 -> SEEK_SET/SEEK_CUR/SEEK_END. */
+/* fileSeekTell @0x408d30 — mode 0 -> SEEK_SET, 1 -> SEEK_CUR, otherwise
+ * SEEK_END, then discard the resulting tell position. */
 void fileSeekTell(FILE *fp, int offset, int mode)
 {
     int whence;
@@ -38,7 +39,7 @@ void fileSeekTell(FILE *fp, int offset, int mode)
 
 /* fileReadRaw @0x408d60 — whole file into a pool-owned buffer (not NUL
  * terminated); NULL on any failure. */
-char *fileReadRaw(int pool, const char *path)
+char *fileReadRaw(int pool, LPCSTR path)
 {
     int size;
     char *buf;
@@ -61,7 +62,7 @@ char *fileReadRaw(int pool, const char *path)
 }
 
 /* fileReadText @0x408e20 — whole file + NUL terminator into a pool buffer. */
-char *fileReadText(int pool, const char *path)
+char *fileReadText(int pool, LPCSTR path)
 {
     int size;
     char *buf;
@@ -97,7 +98,7 @@ int fileGetSizeOpen(FILE *fp)
 }
 
 /* fileGetSize @0x408f20 — size by path, 0 on failure. */
-int fileGetSize(const char *path)
+int fileGetSize(LPCSTR path)
 {
     FILE *f;
     int size;
@@ -109,7 +110,7 @@ int fileGetSize(const char *path)
 }
 
 /* fileExists @0x408f60 — 1 if the path can be opened for read. */
-int fileExists(const char *path)
+int fileExists(LPCSTR path)
 {
     FILE *f = fopen(path, "rb");
     if (f == NULL) return 0;

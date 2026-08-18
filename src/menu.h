@@ -20,8 +20,8 @@ extern DWORD g_nLastFrameTime;
 
 /* Menu subsystem entry points (maniac addresses):
  *   menuInit      @0x419c20 — palette + intro logos + menu fonts + state setup.
- *     Signature `void __cdecl menuInit(int nRestartMode)` matches Ghidra; the
- *     original callers pass 0 (gameFrameUpdate/dispatchKeyEvent first frame)
+ *     Signature `void menuInit(int nRestartMode)` uses the default C
+ *     convention; the original callers pass 0 (gameFrameUpdate/dispatchKeyEvent first frame)
  *     or 1 (stateOptionsExit "return to options", which also starts music
  *     track 7). The rebuild always starts with the intro, so the arg is
  *     accepted and ignored.

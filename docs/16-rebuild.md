@@ -36,10 +36,10 @@ documentation, not in this progress overview.
   `GXSOFT.DLL`; indexed TGA assets and the `MERGED00.TPG` palette render at
   the original 640x480 resolution.
 - **Foundation:** `src/pool.c` and `src/util.c` provide the reconstructed pool
-  and file-helper interfaces used by the menu and font code. The pool keeps
-  ownership records so live allocations are reclaimed by pool destruction and
-  cross-pool frees are rejected; the original slab hierarchy and invalid-handle
-  behavior remain deferred.
+  and file-helper interfaces used by the menu and font code. The pool now
+  preserves the original 64-subpool × 64-chunk × 16-slot hierarchy, size-marked
+  records, pool-wide search/free, and finite-capacity behavior; invalid-handle
+  failure behavior remains intentionally non-defensive like the original.
 - **Fonts:** `src/font.c` implements the original font/text range
   `0x408f90–0x409940`: descriptor parsing, atlas UV setup, tagged text
   rendering, centering, and integer formatting, including the two-font menu
@@ -47,7 +47,16 @@ documentation, not in this progress overview.
   by the CRT-compatible `strtol` substitution; `strFindSubstring` is likewise
   represented by `strstr`.
 - **Stubs and helpers:** `src/stubs.c` contains deferred original functions;
-  rebuild-only support code is isolated in `src/custom_helpers.c`.
+  rebuild-only support code is isolated in `src/custom_helpers.c`. The three
+  void stubs (`gameInit @0x409d90`, `gameFrameUpdate @0x41a8c0`, and
+  `pollKeyboard @0x416a10`) use `void(void)` with the default C convention and
+  are logged no-ops with no false success return. Ghidra's
+  `pollKeyboard` body actually polls DirectInput, debounces key IDs, dispatches
+  `(key, 2)`, clears the quit flag, and may post `WM_CLOSE`; those effects are
+  intentionally absent because the slice uses queued window messages. The
+  four menu row entries remain deliberate `int(int, int, int)`
+  replacement stubs: they log once, return `0`, and route back to `menuUpdate`;
+  their original rendering/gameplay/network logic remains deferred.
 
 ## Verified behavior
 
@@ -67,6 +76,12 @@ documentation, not in this progress overview.
 The first four row targets currently log a TODO message and return to the main
 menu. This is intentional until those states are reconstructed.
 
+The stub contract review also confirmed that `gotoOptions @0x41d300` is an
+intentional replacement, not an incomplete copy of the original: the original
+copies `g_nGfxMode @0x4580c4` to `g_nRendererMode @0x45a390` and enters
+`stateOptions @0x41c6a0`, while the rebuild keeps both effects deferred and
+returns safely to `menuUpdate`.
+
 ## Next milestone
 
 Implement one real row-target state, preferably the game-type select
@@ -84,16 +99,18 @@ it when an implementation chunk changes; the report may otherwise be stale.
 Continue to follow `Rebuild.md` for constraints and update this overview,
 Ghidra, and relevant subsystem documentation after each completed chunk.
 
-The font comparison is complete: direct function control flow and the
-`gxDrawPolygon` glyph contract are implemented inside the original
-`textDraw`/`textDrawInt`/`textIntWidth` boundaries. The only known font
-fidelity limitation is malformed-input behavior in the deferred static numeric
-parser substitution.
-The GX adapter now separates driver loading from `gxInit`/mode setup, and the
-pool/file review corrected pool initialization return semantics and the
-file-seek handling for all nonzero end-relative modes. The GX polygon adapter
-now preserves the original `nSoftwareMode == 1` branch from
-`gxDrawPolygon @0x433440`: it applies the original X/Y float scales and
-truncating conversion only when that flag is set. The active GXSOFT path leaves
-the flag at zero, so `textDraw`'s 8.8 fixed-point vertices remain unchanged for
-GXSOFT; the packed color/UV record remains identical to the original wrapper.
+## Fidelity and limitations
+
+- Source audits for the application loop, menu, GX, pool, utility, font, and
+  stub code are complete. Reimplemented symbols retain original-address
+  comments and match the verified Ghidra parameter and return types; only the
+  required Win32 entry/callback declarations use explicit ABI markers.
+- The GXSOFT path preserves the original wrapper hierarchy, polygon conversion
+  branch, packed UV data, font rendering flow, file-helper behavior, and
+  64-subpool × 64-chunk × 16-slot pool capacity. The CRT-compatible
+  `strtol`/`strstr` substitutions and explicit vertex initialization are the
+  only known low-level deviations in the implemented slice.
+- Deferred behavior includes DirectInput polling, audio, scene/gameplay,
+  networking, registry-based driver selection, and real menu row targets.
+  `gotoOptions` and the first four row handlers intentionally return to the
+  menu instead of claiming those states are implemented.
