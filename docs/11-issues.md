@@ -51,8 +51,8 @@
 - Rebuild milestone 1 — GUI vertical slice (CLOSED, verified): see
   [16-rebuild.md](16-rebuild.md) for the full status, driver contract, and
   source layout. Summary: source project in /home/wasd/auto-ghidra/src
-  (maniac.c, gx.c/h, util.c/h, pool.c/h, stubs.c/h, build.sh, run.sh in the
-  repo root) compiles with
+  (maniac.c, gx.c/h, util.c/h, pool.c/h, stubs.c/h, custom_helpers.c/h,
+  build.sh, run.sh in the repo root) compiles with
   i686-w64-mingw32-gcc to maniac_rebuild.exe (KERNEL32/USER32/GDI32/WINMM) and
   drives the original DRIVERS\GXSOFT.DLL via its GxDriverApi table; verified
   under wine: window + driver + asset loads logged to rebuild.log, intro logo

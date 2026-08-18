@@ -4,10 +4,9 @@
 
 #include "gx.h"
 #include "pool.h"
-#include "util.h"
 #include "font.h"
 #include "menu.h"
-#include "stubs.h"
+#include "custom_helpers.h"
 
 /* =====================================================================
  * Menu subsystem — reimplementation of the intro + main-menu state
@@ -17,8 +16,10 @@
  *   introUpdate     @0x41ae50  6-logo intro timeline (fade-to-black gaps)
  *   menuUpdate      @0x41b0b0  main menu: 5 rows, two-font render, nav
  *   stateQuitConfirm @0x4200b0 "Avsluta" / Escape quit-confirm screen
- *   menuFramePost   gameFrameUpdate @0x41a8c0 flip/clear gate
  *
+ * Custom-only helpers used by these states (menuFramePost, the intro/menu
+ * row tables, menuIsSmallChar/menuRowWidth/menuRowDraw, introPresent/
+ * introClear, g_introFade_2) live in custom_helpers.c per Rebuild.md.
  * Row targets stateGameTypeSelect @0x41c010, stateNetworkMenu @0x420190,
  * gotoOptions @0x41d300, stateHighScoreTable @0x41dfd0 are TODO stubs in
  * stubs.c per Rebuild.md §19 (log + return to menu); the original
@@ -29,139 +30,29 @@ PStateFunc g_pStateFunc;          /* @0x45a6f8 */
 float      g_flFrameDelta;        /* @0x45a6cc = elapsed ms * 0.04 */
 DWORD      g_nLastFrameTime;      /* @0x45a65c */
 
-/* Intro timeline accumulator (maniac g_introFade_2 @0x45d444, ms). */
-static float g_introFade_2;
-
-/* Intro logos in load/present order — mirrors menuInit @0x419c20 and the
- * maniac globals g_hIntroTexAddgames..g_hIntroTexPresenterar @0x45a618-0x45a62c
- * (original string table s_menu_intro_*_tga @0x450794-0x450720). */
-static const char * const g_kIntroTga[6] = {
-    "menu\\intro_addgames.tga",    /* g_hIntroTexAddgames   @0x45a618 */
-    "menu\\intro_och.tga",         /* g_hIntroTexOch        @0x45a61c */
-    "menu\\intro_uds.tga",         /* g_hIntroTexUds        @0x45a620 */
-    "menu\\intro_samarbete.tga",   /* g_hIntroTexSamarbete  @0x45a624 */
-    "menu\\intro_mcd.tga",         /* g_hIntroTexMcd        @0x45a628 */
-    "menu\\intro_presenterar.tga"  /* g_hIntroTexPresenterar @0x45a62c */
-};
-static void *g_hIntroTex[6];
+/* Intro timeline accumulator (maniac g_introFade_2 @0x45d444, ms). Non-static:
+ * introPresent/introClear in custom_helpers.c read it. */
+float g_introFade_2;
 
 /* Menu assets (maniac globals): fonts @0x45a644-0x45a654, quit texture
  * @0x45a640, selected row g_nMenuRow @0x45d448, fade target @0x45a6f0. The
- * original stores font/texture handles as uint; we use typed pointers. */
-static gxFont *g_hMenuFontTiny;   /* @0x45a654 tinyfont.txt + TINY00.TPG */
-static gxFont *g_hMenuFontSmall;  /* @0x45a644 menysmallfont.txt + MSFONT00.TPG */
-static gxFont *g_hMenuFont;       /* @0x45a648 menyfont.txt + MFONT00.TPG */
-static gxFont *g_hMenuMsfnt;      /* @0x45a64c menysmallfont.txt + MSFNT200.TPG */
-static gxFont *g_hMenuMfnt;       /* @0x45a650 menyfont.txt + MFNT200.TPG */
-static void   *g_hMenuQuitTex;    /* @0x45a640 menu\quit.tga */
-static int     g_nMenuRow;        /* @0x45d448 selected row (0..4) */
-static int     g_nMenuFadeTarget; /* @0x45a6f0 (fade anim out of scope) */
-
-static int stateQuitConfirm(int nType, int nKey, int nKeyType);    /* @0x4200b0 */
-static void introPresent(int idx);
-static void introClear(void);
-
-/* Main-menu rows (menuUpdate @0x41b0b0). Labels mirror the .rdata strings
- * s_Spela @0x450828 / "Nätverk" @0x450820 / s_Alternativ @0x450814 /
- * s_Rekord @0x45080c / s_Avsluta @0x450804. Targets mirror the local_4e0
- * dispatch table; the first four are stubs declared in stubs.h. */
-static const char * const g_kMenuRowLabel[5] = {
-    "Spela", "N\xe4tverk", "Alternativ", "Rekord", "Avsluta"
-};
-static PStateFunc g_kMenuRowTarget[5] = {
-    stateGameTypeSelect, stateNetworkMenu, gotoOptions, stateHighScoreTable,
-    stateQuitConfirm
-};
-
-/* menuUpdate @0x41b0b0 stream splitter: a-z plus the Swedish lowercase
- * vowels å/ä/ö (0xe5/0xe4/0xf6) are drawn with the small menu font; every
- * other character (uppercase, digits, space) with the large font. */
-static int menuIsSmallChar(int c)
-{
-    unsigned int u = (unsigned char)c;
-    return (u > 0x60 && u < 0x7b) || u == 0xe5 || u == 0xe4 || u == 0xf6;
-}
-
-/* Measure one menu row. The small-font and large-font tokens are measured
- * with g_hMenuFontSmall / g_hMenuFont (menuUpdate @0x41b0b0 width passes;
- * the "200" highlight fonts share the same descriptor so their widths match). */
-static int menuRowWidth(const char *label)
-{
-    char         tok[128];
-    int          w = 0;
-    const char  *p = label;
-
-    while (*p != '\0') {
-        const char *q;
-        int         n;
-
-        q = p;
-        while (*q != '\0' && menuIsSmallChar((unsigned char)*q)) q = q + 1;
-        n = (int)(q - p);
-        if (n > 0) {
-            memcpy(tok, p, (size_t)n); tok[n] = '\0';
-            w += textWidth(g_hMenuFontSmall, tok);
-            p = q;
-            continue;
-        }
-        q = p;
-        while (*q != '\0' && !menuIsSmallChar((unsigned char)*q)) q = q + 1;
-        n = (int)(q - p);
-        if (n > 0) {
-            memcpy(tok, p, (size_t)n); tok[n] = '\0';
-            w += textWidth(g_hMenuFont, tok);
-            p = q;
-        }
-    }
-    return w;
-}
-
-/* Draw one menu row centered on x = 0x226 at the given y. Selected row uses
- * the "200" highlight fonts g_hMenuMsfnt/g_hMenuMfnt, unselected rows
- * g_hMenuFontSmall/g_hMenuFont; both at color 0x2004 (menuUpdate @0x41b0b0). */
-static void menuRowDraw(const char *label, int y, int bSelected)
-{
-    gxFont      *small = bSelected ? g_hMenuMsfnt : g_hMenuFontSmall;
-    gxFont      *big   = bSelected ? g_hMenuMfnt  : g_hMenuFont;
-    char         tok[128];
-    int          x;
-    const char  *p;
-
-    if (small == NULL || big == NULL) return;
-    x = 0x226 - menuRowWidth(label);
-    p = label;
-
-    while (*p != '\0') {
-        const char *q;
-        int         n;
-
-        q = p;
-        while (*q != '\0' && menuIsSmallChar((unsigned char)*q)) q = q + 1;
-        n = (int)(q - p);
-        if (n > 0) {
-            memcpy(tok, p, (size_t)n); tok[n] = '\0';
-            textDraw(small, 0x2004, x, y, tok);
-            x += textWidth(small, tok);
-            p = q;
-            continue;
-        }
-        q = p;
-        while (*q != '\0' && !menuIsSmallChar((unsigned char)*q)) q = q + 1;
-        n = (int)(q - p);
-        if (n > 0) {
-            memcpy(tok, p, (size_t)n); tok[n] = '\0';
-            textDraw(big, 0x2004, x, y, tok);
-            x += textWidth(big, tok);
-            p = q;
-        }
-    }
-}
+ * original stores font/texture handles as uint; we use typed pointers.
+ * Non-static: the custom row/intro helpers in custom_helpers.c use them. */
+gxFont *g_hMenuFontTiny;   /* @0x45a654 tinyfont.txt + TINY00.TPG */
+gxFont *g_hMenuFontSmall;  /* @0x45a644 menysmallfont.txt + MSFONT00.TPG */
+gxFont *g_hMenuFont;       /* @0x45a648 menyfont.txt + MFONT00.TPG */
+gxFont *g_hMenuMsfnt;      /* @0x45a64c menysmallfont.txt + MSFNT200.TPG */
+gxFont *g_hMenuMfnt;       /* @0x45a650 menyfont.txt + MFNT200.TPG */
+void   *g_hMenuQuitTex;    /* @0x45a640 menu\quit.tga */
+int     g_nMenuRow;        /* @0x45d448 selected row (0..4) */
+int     g_nMenuFadeTarget; /* @0x45a6f0 (fade anim out of scope) */
 
 /* stateQuitConfirm @0x4200b0 — "Avsluta" row / Escape. Presents menu\quit.tga;
  * a confirm key quits the app, any other keydown returns to the main menu.
  * The original tests the J/Y/j/y characters; the rebuild's key-id layer
- * accepts the confirm keys 4=Space and 6=Enter instead. */
-static int stateQuitConfirm(int nType, int nKey, int nKeyType)
+ * accepts the confirm keys 4=Space and 6=Enter instead. Non-static:
+ * menuFramePost in custom_helpers.c compares g_pStateFunc against it. */
+int stateQuitConfirm(int nType, int nKey, int nKeyType)
 {
     if (g_hMenuQuitTex != NULL) {
         presentFrame(g_hMenuQuitTex);
@@ -240,8 +131,9 @@ int menuUpdate(int nType, int nKey, int nKeyType)
  * logos. Any keydown skips to the menu (the original skips on key 4, type 2;
  * docs/03-gameflow.md note "any key or ENTER skips" — we accept all keys).
  * Threshold floats @0x44b660-0x44b684: 2500/2590/3590/3680/6180/6270/7270/
- * 7360/9860/9950 + 17450 @0x44b65c. g_fl_25 @0x44b468 = 25.0f. */
-static int introUpdate(int nType, int nKey, int nKeyType)
+ * 7360/9860/9950 + 17450 @0x44b65c. g_fl_25 @0x44b468 = 25.0f. Non-static:
+ * menuFramePost in custom_helpers.c compares g_pStateFunc against it. */
+int introUpdate(int nType, int nKey, int nKeyType)
 {
     (void)nKey;
     if (nType == 1) {                  /* key event (dispatchKeyEvent path) */
@@ -272,26 +164,6 @@ static int introUpdate(int nType, int nKey, int nKeyType)
     appLog("[intro] timeline complete (%.0f ms) -> menuUpdate", g_introFade_2);
     g_pStateFunc = menuUpdate;
     return 0;
-}
-
-/* Present one intro logo, logging the first time each logo is shown. */
-static void introPresent(int idx)
-{
-    static int nShown = -1;
-    if (idx != nShown) {
-        nShown = idx;
-        appLog("[intro] logo %d/%d %s @%.0f ms", idx + 1, 6,
-               g_kIntroTga[idx], g_introFade_2);
-    }
-    presentFrame(g_hIntroTex[idx]);
-}
-
-/* Clear to g_nClearColor (0) + flip — the gap between intro logos
- * (introUpdate @0x41ae50: gxClearScreen(1,g_nClearColor); gxFlip();). */
-static void introClear(void)
-{
-    gxClearScreen(1, 0);   /* g_nClearColor @0x45892c = 0 */
-    gxFlip();
 }
 
 /* menuInit @0x419c20 — asset loads + intro/menu state setup. Narrowed to:
@@ -380,15 +252,4 @@ void menuInit(int nRestartMode)
     g_nLastFrameTime  = timeGetTime();
     g_introFade_2     = 0.0f;
     g_pStateFunc      = introUpdate;
-}
-
-/* menuFramePost — mirrors gameFrameUpdate @0x41a8c0's tail: after the state
- * update the menu states flip + clear. introUpdate and stateQuitConfirm are
- * excluded because they present their own frames. */
-void menuFramePost(void)
-{
-    if (g_pStateFunc != introUpdate && g_pStateFunc != stateQuitConfirm) {
-        gxFlip();
-        gxClearScreen(1, 0);   /* g_nClearColor @0x45892c = 0 */
-    }
 }

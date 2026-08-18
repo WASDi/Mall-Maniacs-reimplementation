@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+#include "font.h"
+
 /* Game state-function pointer (maniac g_pStateFunc @0x45a6f8). Called with
  * (type, key, keyType): type 0 = frame update, type 1 = key event (key,
  * keyType 2 = keydown). Same convention as dispatchKeyEvent (see 0x41ade0).
@@ -23,15 +25,29 @@ extern DWORD g_nLastFrameTime;
  *     or 1 (stateOptionsExit "return to options", which also starts music
  *     track 7). The rebuild always starts with the intro, so the arg is
  *     accepted and ignored.
- *   menuFramePost @gameFrameUpdate @0x41a8c0 — after each frame update the
- *     menu states flip + clear (introUpdate / stateQuitConfirm present their
- *     own frames, so they are excluded). */
+ *   introUpdate   @0x41ae50 / stateQuitConfirm @0x4200b0 — the two states
+ *     that present their own frames. Non-static so menuFramePost
+ *     (custom_helpers.c) can compare g_pStateFunc against them. */
 void menuInit(int nRestartMode);
-void menuFramePost(void);
+int  introUpdate(int nType, int nKey, int nKeyType);   /* @0x41ae50 */
+int  stateQuitConfirm(int nType, int nKey, int nKeyType); /* @0x4200b0 */
 
 /* menuUpdate @0x41b0b0 — main-menu state function (state-func convention
  * int (nType, nKey, nKeyType)). Non-static so the row-target stubs in
  * stubs.c can return to the main menu. */
 int  menuUpdate(int nType, int nKey, int nKeyType);
+
+/* Menu-state globals (maniac addresses). Non-static: the custom menu/intro
+ * helpers in custom_helpers.c use them (menuRowWidth/menuRowDraw read the
+ * fonts, introPresent reads g_introFade_2). */
+extern float  g_introFade_2;    /* @0x45d444 intro timeline ms */
+extern gxFont *g_hMenuFontTiny;   /* @0x45a654 tinyfont.txt + TINY00.TPG */
+extern gxFont *g_hMenuFontSmall;  /* @0x45a644 menysmallfont.txt + MSFONT00.TPG */
+extern gxFont *g_hMenuFont;       /* @0x45a648 menyfont.txt + MFONT00.TPG */
+extern gxFont *g_hMenuMsfnt;      /* @0x45a64c menysmallfont.txt + MSFNT200.TPG */
+extern gxFont *g_hMenuMfnt;       /* @0x45a650 menyfont.txt + MFNT200.TPG */
+extern void   *g_hMenuQuitTex;    /* @0x45a640 menu\quit.tga */
+extern int     g_nMenuRow;        /* @0x45d448 selected row (0..4) */
+extern int     g_nMenuFadeTarget; /* @0x45a6f0 (fade anim out of scope) */
 
 #endif /* MENU_H */

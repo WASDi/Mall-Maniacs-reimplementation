@@ -66,6 +66,10 @@ typedef struct GxDriver {
     int         nDriverActive;   /* +0x84 */
 } GxDriver;
 
+/* Active driver state (defined in custom_helpers.c; mirrors the maniac-side
+ * extension of GxDriverApi @0x45eb40). */
+extern GxDriver g_driver;
+
 /* Reimplementation of maniac gxInit @0x4332f0 (loads driver + pSetMode). */
 int  gxInit(GxMode *mode);
 /* Reimplementation of maniac gxUnloadDriver @0x432880 (narrowed: no registry). */

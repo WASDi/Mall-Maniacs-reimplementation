@@ -67,8 +67,8 @@ original binary, and the rebuild is the ground truth for the replacement. If a
 discrepancy is found, fix both sides immediately.
 
 PARTICULARILY IMPORTANT:
-* All reimplemented functions should have a comment saying their original address.
-* Keep the same call hierarchy.
+* All reimplemented functions and globals should have a comment saying their original address.
+* The original code architecture and call hierarchy should be replicated. Only necessary exceptions go into `custom_helpers.c`.
 * All stubs go into stubs.c.
 
 Prefer working on fewer functions at a time from a single subsystem, and implementing them before moving on to the next chunk of functions.

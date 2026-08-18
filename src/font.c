@@ -6,6 +6,7 @@
 #include "gx.h"
 #include "pool.h"
 #include "util.h"
+#include "custom_helpers.h"
 
 /* =====================================================================
  * Font / text rendering module — reimplementation of maniac font/text
@@ -241,75 +242,6 @@ int textWidth(gxFont *font, char *text)
     return w;
 }
 
-/* Per-glyph quad: 16-byte vertex {x<<8, y<<8, 0, r,g,b}. Top two vertices
- * (v0,v1) use g_textColor2, bottom two (v2,v3) use g_textColor. */
-typedef struct {
-    int  x;                    /* +0x00 fixed-point coord */
-    int  y;                    /* +0x04 */
-    int  pad;                  /* +0x08 zero */
-    unsigned char r, g, b, a;  /* +0x0c color */
-} GxVert;                      /* 0x10 bytes */
-
-/* colorUv passed to gxDrawPolygon (0x1c bytes). Layout verified against the
- * driver texture contract and the gxDrawPolygon wrapper repack @0x433440. */
-typedef struct {
-    void          *pTexture;  /* +0x00 */
-    void          *pParam5;   /* +0x04 */
-    int            pad;       /* +0x08 */
-    unsigned short U;         /* +0x0c */
-    unsigned short V;         /* +0x0e */
-    unsigned short gwU;       /* +0x10 gw<<8|U */
-    unsigned short V2;        /* +0x12 */
-    unsigned short gwU2;      /* +0x14 */
-    unsigned short hV;        /* +0x16 h<<8|V */
-    unsigned short U2;        /* +0x18 */
-    unsigned short hV2;       /* +0x1a h<<8|V */
-} GxColorUv;                  /* 0x1c bytes */
-
-/* Draw one glyph and advance the cursor (LAB_0040968e in textDraw). */
-static void textDrawGlyph(gxFont *font, unsigned int color, unsigned char ch,
-                          int *xPos, int yPos)
-{
-    int          gw = font->pGlyphWidth[ch];
-    int          h  = (short)font->wPad2;
-    unsigned int U  = font->pUvx[ch];
-    unsigned int V  = font->pUvy[ch];
-    int          x  = *xPos;
-    GxVert       v0, v1, v2, v3;
-    GxColorUv    cuv;
-
-    v0.x = x << 8;               v0.y = yPos << 8;
-    v1.x = (x + gw) << 8;        v1.y = yPos << 8;
-    v2.x = (x + gw) << 8;        v2.y = (yPos + h) << 8;
-    v3.x = x << 8;               v3.y = (yPos + h) << 8;
-    v0.pad = v1.pad = v2.pad = v3.pad = 0;
-    v0.r = (unsigned char)(g_textColor2 >> 0x10);
-    v0.g = (unsigned char)(g_textColor2 >> 8);
-    v0.b = (unsigned char)g_textColor2;
-    v1.r = v0.r; v1.g = v0.g; v1.b = v0.b;
-    v2.r = (unsigned char)(g_textColor >> 0x10);
-    v2.g = (unsigned char)(g_textColor >> 8);
-    v2.b = (unsigned char)g_textColor;
-    v3.r = v2.r; v3.g = v2.g; v3.b = v2.b;
-    v0.a = v1.a = v2.a = v3.a = 0;
-
-    cuv.pTexture = font->pTexture;
-    cuv.pParam5  = font->pParam5;
-    cuv.pad      = 0;
-    cuv.U  = (unsigned short)U;
-    cuv.V  = (unsigned short)V;
-    cuv.gwU = (unsigned short)((gw << 8) | U);
-    cuv.V2  = (unsigned short)V;
-    cuv.gwU2 = (unsigned short)((gw << 8) | U);
-    cuv.hV  = (unsigned short)((h << 8) | V);
-    cuv.U2  = (unsigned short)U;
-    cuv.hV2 = (unsigned short)((h << 8) | V);
-
-    gxDrawPolygon(&v0, &v1, &v2, &v3, color, &cuv);
-
-    *xPos = x + (int)(short)font->wGlobalSpace + gw;
-}
-
 /* textDraw @0x409420 — render text with inline {Name:Value;} tags.
  *   {X:n}/{Y:n} decimal -> move cursor; {RGB:h}/{RGB2:h} hex -> colors.
  *   "{{" renders a literal '{'. Returns the final x cursor. */
@@ -396,28 +328,6 @@ int textDrawCentered(gxFont *font, unsigned int color, int x, int y, char *text)
 
     w = textWidth(font, text);
     return textDraw(font, color, (x - w / 2) + 0x140, y, text);
-}
-
-/* textIntToStr — the itoa used by textDrawInt/textIntWidth: shift the
- * 32-byte buffer right by one each digit, prefix '-' for negatives. */
-static char *textIntToStr(int value, char buf[32])
-{
-    int i;
-    int neg = value < 0;
-
-    buf[0] = '\0';
-    do {
-        for (i = 0x1c; i >= 0; i--) buf[i + 1] = buf[i];
-        i = value % 10;
-        buf[0] = (char)(abs(i) + '0');
-        value = (value - i) / 10;
-    } while (value != 0);
-
-    if (neg) {
-        for (i = 0x1c; i >= 0; i--) buf[i + 1] = buf[i];
-        buf[0] = '-';
-    }
-    return buf;
 }
 
 /* textDrawInt @0x4098a0 — draw a decimal integer, returns 1. */

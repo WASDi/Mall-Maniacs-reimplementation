@@ -1,7 +1,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include "gx.h"
-#include "util.h"
+#include "custom_helpers.h"
 #include "menu.h"
 
 /* =====================================================================
@@ -18,9 +18,6 @@
 
 static HWND      g_hWnd;          /* maniac g_hMainWindow @0x459ce0 */
 static HINSTANCE g_hInstance;     /* maniac g_hAppInstance @0x459cdc */
-static int       g_bRunning = 1;
-
-static int vkToKeyId(int vk);
 
 /* WindowProc @0x4161b0 — narrowed to close/escape for the slice. The
  * original also routes keyboard to gameKeyHandler / DirectInput polling;
@@ -43,23 +40,6 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         return 0;
     }
     return DefWindowProcA(hWnd, uMsg, wParam, lParam);
-}
-
-/* Map Win32 virtual key -> game key id (Key id map, docs/12-input.md:
- * 0=Right, 1=Left, 2=Up, 3=Down, 4=Space, 6=Enter, 7=Esc). Unknown keys
- * report as 4 so any keypress advances the intro. */
-static int vkToKeyId(int vk)
-{
-    switch (vk) {
-    case VK_RIGHT:  return 0;
-    case VK_LEFT:   return 1;
-    case VK_UP:     return 2;
-    case VK_DOWN:   return 3;
-    case VK_SPACE:  return 4;
-    case VK_RETURN: return 6;
-    case VK_ESCAPE: return 7;
-    default:        return 4;   /* treat any other key as "fire" (advance) */
-    }
 }
 
 /* initWindowAndInput @0x4165f0 — window class + creation only (DirectInput

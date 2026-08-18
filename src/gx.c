@@ -11,8 +11,6 @@
  * original gxLoadDriver @0x432ea0 reads the driver path + options from the
  * registry; that configuration path is deferred per Rebuild.md). */
 
-static GxDriver g_driver;
-
 /* gxDLLInit / gxDLLExit are cdecl exports of gxSoft.dll. */
 typedef int  (__cdecl *pfn_gxDLLInit)(GxDriverApi *api);
 typedef void (__cdecl *pfn_gxDLLExit)(void);
@@ -103,11 +101,12 @@ int gxLoadTexture(int mode, int reserved, const char *name, void *data,
     return g_driver.api.pLoadTexture(mode, reserved, name, data, palette);
 }
 
+/* presentFrame @0x410310:
+ *   gxBlitSurface(1,0,0,tex,0,0,0x280,0x280,0x1e0); gxFlip(); gxClearScreen(1,g_nClearColor);
+ * g_nClearColor @0x45892c is 0. */
 void presentFrame(void *texture)
 {
-    /* presentFrame @0x410310:
-     *   gxBlitSurface(1,0,0,tex,0,0,0x280,0x280,0x1e0); gxFlip(); gxClearScreen(1,g_nClearColor);
-     * g_nClearColor @0x45892c is 0. */
+    
     if (texture != NULL) {
         gxBlitSurface(1, 0, 0, texture, 0, 0, 0x280, 0x280, 0x1e0);
         gxFlip();

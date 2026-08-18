@@ -1,8 +1,7 @@
 #include <stdio.h>
 #include "stubs.h"
-#include "gx.h"
-#include "util.h"
 #include "menu.h"
+#include "custom_helpers.h"
 
 /* =====================================================================
  * TODO stubs — see stubs.h for contracts. Safe, log-and-return-failure
@@ -30,13 +29,6 @@ int pollKeyboard(void)
 {
     appLog("[stub TODO] pollKeyboard @0x416a10 not implemented (returns 0)");
     return 0;
-}
-
-/* shutdownRenderer — original gxUnloadDriver @0x432880 path (see gx.c). */
-void shutdownRenderer(void)
-{
-    /* Implemented via gx.c (gxUnloadDriver @0x432880). */
-    gxShutdown();
 }
 
 /* Main-menu row targets (menu.c dispatch table). TODO stubs: log once and

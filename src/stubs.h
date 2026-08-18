@@ -26,11 +26,6 @@ int  gameFrameUpdate(void);
  * (WM_KEYDOWN) instead; DirectInput deferred. */
 int  pollKeyboard(void);
 
-/* shutdownRenderer — original gxUnloadDriver @0x432880 path (see gx.c).
- * Contract: release driver, restore display. Implemented for the slice;
- * kept here as the named shutdown entry point used by the full WinMain. */
-void shutdownRenderer(void);
-
 /* Main-menu row targets (menu.c dispatch table g_kMenuRowTarget, entered
  * from menuUpdate @0x41b0b0 on Enter). Contract: state-func convention
  * (nType 0 = frame update, nType 1 + nKeyType 2 = keydown); each sets
