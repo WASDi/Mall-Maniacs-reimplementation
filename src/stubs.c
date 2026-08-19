@@ -21,17 +21,6 @@ void gameInit(void)
     }
 }
 
-/* gameFrameUpdate @0x41a8c0 — advance one game frame. TODO replacement:
- * log + no-op. Original signature is void(void). */
-void gameFrameUpdate(void)
-{
-    static int bLogged;
-    if (!bLogged) {
-        bLogged = 1;
-        appLog("[stub TODO] gameFrameUpdate @0x41a8c0 not implemented (no-op)");
-    }
-}
-
 /* pollKeyboard @0x416a10 — DirectInput keyboard poll. TODO stub; the slice
  * uses window messages instead. Original signature is void(void);
  * this replacement has no DirectInput or quit-request side effects. */

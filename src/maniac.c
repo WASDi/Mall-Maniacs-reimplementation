@@ -115,7 +115,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 {
     GxMode mode;
     MSG    msg;
-    DWORD  now;
 
     (void)hPrevInstance;
     (void)lpCmdLine;
@@ -152,10 +151,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
     appLog("[winmain] running intro timeline (6 logos)");
 
-    /* Message loop + frame update — mirrors the original WinMain idle path
-     * (gameFrameUpdate timing, see 0x41a8c0): the state advances at most
-     * every 25ms with g_flFrameDelta = elapsed ms * 0.04, then flips/clears
-     * for the menu states. */
+    /* Message loop + frame update — the idle path mirrors the original
+     * WinMain: after the message batch and the queued key event, each
+     * iteration advances one game frame via gameFrameUpdate @0x41a8c0
+     * (menu background + state update + flip/clear, with its own 25ms
+     * timing gate). */
     while (g_bRunning) {
         while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
@@ -173,19 +173,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         }
         if (!g_bRunning) break;
 
-        now = timeGetTime();
-        if ((int)(now - g_nLastFrameTime) >= 0x19) {
-            g_flFrameDelta = (float)(now - g_nLastFrameTime) * 0.04f;
-            g_nLastFrameTime = now;
-            if (g_pStateFunc != NULL) {
-                g_pStateFunc(0, 0, 0);
-                if (g_pStateFunc != introUpdate &&
-                    g_pStateFunc != stateQuitConfirm) {
-                    gxFlip();
-                    gxClearScreen(1, 0);
-                }
-            }
-        }
+        gameFrameUpdate();
     }
 
     appLog("[winmain] exiting cleanly");

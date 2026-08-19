@@ -31,6 +31,11 @@ void menuInit(int nRestartMode);
 int  introUpdate(int nType, int nKey, int nKeyType);   /* @0x41ae50 */
 int  stateQuitConfirm(int nType, int nKey, int nKeyType); /* @0x4200b0 */
 
+/* gameFrameUpdate @0x41a8c0 — advance one game frame: menu background
+ * (decor wave + fling grid + sign fades), then the active state function,
+ * then flip/clear for the menu states. Called by WinMain's idle loop. */
+void gameFrameUpdate(void);
+
 /* menuUpdate @0x41b0b0 — main-menu state function (state-func convention
  * int (nType, nKey, nKeyType)). Non-static so the row-target stubs in
  * stubs.c can return to the main menu. */
@@ -48,6 +53,14 @@ extern gxFont *g_hMenuMsfnt;      /* @0x45a64c menysmallfont.txt + MSFNT200.TPG 
 extern gxFont *g_hMenuMfnt;       /* @0x45a650 menyfont.txt + MFNT200.TPG */
 extern void   *g_hMenuQuitTex;    /* @0x45a640 menu\quit.tga */
 extern int     g_nMenuRow;        /* @0x45d448 selected row (0..4) */
-extern int     g_nMenuFadeTarget; /* @0x45a6f0 (fade anim out of scope) */
+extern int     g_nMenuFadeTarget; /* @0x45a6f0 sign fade target (0 hidden, 0x1ff shown) */
+extern int     g_nMenuFadeCur;    /* @0x45a6ec sign fade position */
+extern float   g_flMenuBgTime;    /* @0x45d440 decor wave time accumulator */
+
+/* Fling/sign background textures (menuInit @0x419c20). */
+extern void   *g_hMenuTexFling;   /* @0x45a6b4 menu\fling00.tpg */
+extern void   *g_hMenuTexSign100; /* @0x45a6e0 menu\sign100.tpg */
+extern void   *g_hMenuTexSign200; /* @0x45a6e4 menu\sign200.tpg */
+extern void   *g_hMenuTexSign300; /* @0x45a6e8 menu\sign300.tpg */
 
 #endif /* MENU_H */

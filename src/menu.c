@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include <math.h>
 
 #include "gx.h"
 #include "pool.h"
@@ -49,7 +50,62 @@ gxFont *g_hMenuMsfnt;      /* @0x45a64c menysmallfont.txt + MSFNT200.TPG */
 gxFont *g_hMenuMfnt;       /* @0x45a650 menyfont.txt + MFNT200.TPG */
 void   *g_hMenuQuitTex;    /* @0x45a640 menu\quit.tga */
 int     g_nMenuRow;        /* @0x45d448 selected row (0..4) */
-int     g_nMenuFadeTarget; /* @0x45a6f0 (fade anim out of scope) */
+int     g_nMenuFadeTarget; /* @0x45a6f0 sign fade target (0 = hidden, 0x1ff = shown) */
+int     g_nMenuFadeCur;    /* @0x45a6ec sign fade position, eases to target */
+float   g_flMenuBgTime;    /* @0x45d440 decor wave time accumulator (seconds-ish) */
+
+/* Fling/sign background textures (loaded by menuInit @0x419c20). Handles are
+ * the texture nodes returned by gxLoadTpgFile, stored as void* like the
+ * menu fonts. */
+void   *g_hMenuTexFling;   /* @0x45a6b4 menu\fling00.tpg */
+void   *g_hMenuTexSign100; /* @0x45a6e0 menu\sign100.tpg */
+void   *g_hMenuTexSign200; /* @0x45a6e4 menu\sign200.tpg */
+void   *g_hMenuTexSign300; /* @0x45a6e8 menu\sign300.tpg */
+
+/* Decor + fling vertex region. The original layout places the 16x16 decor
+ * grid at g_nMenuDecorY @0x45c3a4 and the 15x15 fling vertex grid at
+ * g_anMenuDecorQuadVerts @0x45c4b0; the two regions overlap so the fling
+ * quads' edge vertices read animated decor cells. The buffer below anchors
+ * at 0x45c3a0 so both grids share memory exactly as in the original:
+ *   decor cell (col,row) GxVert at offset        col*0x10 + row*0x100
+ *   fling  cell (col,row) GxVert at offset 0x110 + col*0x10 + row*0x100
+ * (0x110 = 0x45c4b0 - 0x45c3a0). */
+unsigned char g_nMenuDecorY[0x1010];             /* @0x45c3a0-0x45d3af */
+
+/* Fling UV grid (g_anMenuFlingQuads @0x45a778): 15x15 GxColorUv records,
+ * cell (col,row) at byte offset col*0x1c + row*0x1a4. Stored as a byte
+ * buffer because the row stride is not a clean C 2-D array. */
+unsigned char g_anMenuFlingQuads[15 * 0x1a4];    /* @0x45a778-0x45bffb */
+
+/* Decor cell accessor (g_nMenuDecorY @0x45c3a4 layout). */
+static GxVert *menuDecorCell(int col, int row)
+{
+    return (GxVert *)(g_nMenuDecorY + col * 0x10 + row * 0x100);
+}
+
+/* Fling UV record accessor (g_anMenuFlingQuads @0x45a778 layout). */
+static GxColorUv *menuFlingUv(int col, int row)
+{
+    return (GxColorUv *)(g_anMenuFlingQuads + col * 0x1c + row * 0x1a4);
+}
+
+/* Fling vertex accessor (g_anMenuDecorQuadVerts @0x45c4b0 layout, inside the
+ * shared decor region). */
+static GxVert *menuFlingVert(int col, int row)
+{
+    return (GxVert *)(g_nMenuDecorY + 0x110 + col * 0x10 + row * 0x100);
+}
+
+/* Sign-quad vertex common fields (gameFrameUpdate @0x41aba5 color loop):
+ * z = 0 and r = g = b = 0xff on all four vertices. */
+static void setSignVerts(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3)
+{
+    v0->z = v1->z = v2->z = v3->z = 0;
+    v0->r = v0->g = v0->b = 0xff;
+    v1->r = v1->g = v1->b = 0xff;
+    v2->r = v2->g = v2->b = 0xff;
+    v3->r = v3->g = v3->b = 0xff;
+}
 
 /* Rebuild storage for menuInit/menuUpdate's original string and handle
  * tables. The original data lives in .rdata/.data at the noted addresses. */
@@ -341,6 +397,8 @@ int introUpdate(int nType, int nKey, int nKeyType)
 void menuInit(int nRestartMode)
 {
     int    i;
+    int    col;
+    int    row;
 
     /* menuInit @0x419c20 is guarded by g_nMenuInit @0x45a658. The original
      * re-enters this function only after the teardown path resets that flag. */
@@ -415,10 +473,26 @@ void menuInit(int nRestartMode)
         appLog("[assets] menu\\quit.tga load failed");
     }
 
+    /* Fling + sign background textures (menuInit @0x419c20 load block:
+     * fling00.tpg @0x450630, sign100 @0x450530, sign200 @0x45051c,
+     * sign300 @0x450508). The first .tpg load already installed the palette,
+     * so the handle values are directly usable as GxColorUv.pTexture. */
+    g_hMenuTexFling   = (void *)(unsigned int)gxLoadTpgFile("menu\\fling00.tpg");
+    g_hMenuTexSign100 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign100.tpg");
+    g_hMenuTexSign200 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign200.tpg");
+    g_hMenuTexSign300 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign300.tpg");
+    if (g_hMenuTexFling && g_hMenuTexSign100 && g_hMenuTexSign200 &&
+        g_hMenuTexSign300) {
+        appLog("[assets] fling + sign textures loaded");
+    } else {
+        appLog("[assets] WARNING: some sign/fling textures failed to load");
+    }
+
     /* Mirror menuInit's final timing/input reset. pollKeyboard is still the
      * documented DirectInput stub; window messages drive this slice instead. */
     g_nMenuRow        = 0;
     g_nMenuFadeTarget = 0;
+    g_nMenuFadeCur    = 0;   /* menuInit @0x41a085/0x41a08b */
     g_nLastFrameTime  = timeGetTime();
     g_flFrameDelta    = 0.0f;
     pollKeyboard();
@@ -435,7 +509,234 @@ void menuInit(int nRestartMode)
             g_pStateFunc = g_pResumeStateFunc;
         }
     }
+
+    /* Fling UV grid (menuInit @0x41a0ae-0x41a183): 15x15 GxColorUv records
+     * mapping 16x16 texel blocks of fling00.tpg. U/V step by (idx*0x100/15)
+     * << 8 so the 15x15 quads tile the 256x256 texture with a 1-texel
+     * overlap; gwU/hV add the +16 width/height. */
+    for (col = 0; col < 15; col++) {
+        int u = (col * 0x100 / 15) << 8;
+        int gu = ((col * 0x100 / 15) + 0x10) << 8;
+        for (row = 0; row < 15; row++) {
+            GxColorUv *rec = menuFlingUv(col, row);
+            int v = (row * 0x100 / 15) << 8;
+            int hv = ((row * 0x100 / 15) + 0x10) << 8;
+            rec->pTexture = g_hMenuTexFling;
+            rec->pParam5 = NULL;
+            rec->pad = 0;
+            rec->U = (unsigned short)u;
+            rec->V = (unsigned short)v;
+            rec->gwU = (unsigned short)gu;
+            rec->V2 = (unsigned short)v;
+            rec->gwU2 = (unsigned short)gu;
+            rec->hV = (unsigned short)hv;
+            rec->U2 = (unsigned short)u;
+            rec->hV2 = (unsigned short)hv;
+        }
+    }
+
+    /* Decor grid init (menuInit @0x41a189-0x41a218): 16x16 cells at the
+     * (col*660/15)<<8 / (row*500/15)<<8 grid positions, z = 500000, white.
+     * gameFrameUpdate later animates the grid; the fling vertex grid shares
+     * this memory (see the g_nMenuDecorY comment above). */
+    for (col = 0; col < 16; col++) {
+        int x = (col * 0x294 / 15) << 8;   /* col*44 */
+        for (row = 0; row < 16; row++) {
+            GxVert *cell = menuDecorCell(col, row);
+            int y = (row * 0x1f4 / 15) << 8;  /* floor(row*500/15) */
+            cell->x = x;
+            cell->y = y;
+            cell->z = 500000;
+            cell->r = 0xff;
+            cell->g = 0xff;
+            cell->b = 0xff;
+        }
+    }
+
     /* menuInit clears only the low mode byte. introUpdate consumes the high
      * byte on its first invocation, matching the original two-byte flags. */
     g_menuMode &= ~0xff;
+}
+
+/* gameFrameUpdate @0x41a8c0 — advance one game frame. Runs the menu
+ * background (decor wave + fling grid + sign fades), then the active state
+ * function, then flips/clears for the menu states. The original polls
+ * DirectInput here (pollKeyboard @0x416a10, which receives dispatchKeyEvent
+ * @0x41ade0 and g_nLastFrameTime) and ticks the DSOUND mixer (sndMixTick
+ * @0x437c50); both are out of scope in this rebuild (input arrives through
+ * window messages; the mixer is deferred). Timing uses timeGetTime() in
+ * place of the original getGameTime @0x40dfe0. */
+void gameFrameUpdate(void)
+{
+    GxColorUv uv;
+    GxVert    v0;
+    GxVert    v1;
+    GxVert    v2;
+    GxVert    v3;
+    int       iVar2;
+    int       uVar1;
+    int       col;
+    int       row;
+    int       colBase;
+    int       rowBase;
+    GxVert   *cell;
+    GxVert   *p;
+    GxColorUv *cu;
+    DWORD     now;
+    float     fVar7;
+    float     fVar8;
+    float     fVar9;
+    float     s;
+
+    if (g_nMenuInit == 0) {
+        menuInit(0);
+    }
+    pollKeyboard();
+
+    if (g_nMenuInit != 0) {
+        now = timeGetTime();
+        if (g_nLastFrameTime + 0x19 <= now) {
+            now = timeGetTime();
+            g_flFrameDelta = (float)(now - g_nLastFrameTime) * 0.04f;
+            g_nLastFrameTime = timeGetTime();
+            /* sndMixTick(0) @0x437c50 — DSOUND mixer, deferred. */
+
+            if (g_pStateFunc != introUpdate &&
+                g_pStateFunc != stateQuitConfirm) {
+
+                /* Decor wave (gameFrameUpdate @0x41a958-0x41aa98): the
+                 * g_flMenuBgTime @0x45d440 accumulator advances by the frame
+                 * delta * 0.003; each 16x16 grid vertex is displaced by
+                 * sin/cos waves and shaded by the same wave. Constants:
+                 * 0.04/0.1/1.3/16.0/1.2/10.0/-31.0 floats @0x44b4b8,
+                 * 0x44b268, 0x44b478, 0x44b500, 0x44b650, 0x44b44c,
+                 * 0x44b64c. */
+                g_flMenuBgTime += g_flFrameDelta * 0.003f;
+                fVar8 = sinf(g_flMenuBgTime) * 0.04f + 0.1f;
+                fVar7 = sinf(g_flMenuBgTime * 1.3f) * 16.0f;
+                fVar9 = cosf(g_flMenuBgTime * 1.2f) * 16.0f;
+
+                for (col = 0; col < 16; col++) {
+                    colBase = col * 0x294 / 15;  /* col*660/15 = col*44 */
+                    cell = menuDecorCell(col, 0);
+                    for (row = 0; row < 16; row++) {
+                        rowBase = row * 0x1f4 / 15;  /* floor(row*500/15) */
+                        s = sinf(((float)row - fVar9) *
+                                 ((float)col - fVar7) * fVar8);
+                        cell->x = (int)(s * 10.0f + (float)colBase - 10.0f) << 8;
+                        cell->y = (int)((float)rowBase + s * 10.0f - 10.0f) << 8;
+                        {
+                            char c = (char)(-0x30 - (char)(int)(s * -31.0f));
+                            cell->r = (unsigned char)c;
+                            cell->g = (unsigned char)c;
+                            cell->b = (unsigned char)c;
+                        }
+                        cell = (GxVert *)((char *)cell + 0x100);
+                    }
+                }
+
+                /* Fling background quads (gameFrameUpdate @0x41aaa4-0x41ab0c):
+                 * 15 cols x 15 rows; each quad spans the four grid vertices
+                 * (col-1,row-1)..(col,row), i.e. gxDrawPolygon(p-0x11,
+                 * p-0x10, p, p-1, 0x204, uv) in GxVert pointer units. */
+                for (col = 0; col < 15; col++) {
+                    cu = menuFlingUv(col, 0);
+                    p = menuFlingVert(col, 0);
+                    for (row = 0; row < 15; row++) {
+                        gxDrawPolygon(p - 0x11, p - 0x10, p, p - 1, 0x204, cu);
+                        cu = (GxColorUv *)((char *)cu + 0x1a4);
+                        p = (GxVert *)((char *)p + 0x100);
+                    }
+                }
+
+                /* Sign fade (gameFrameUpdate @0x41ab0e): ease g_nMenuFadeCur
+                 * toward g_nMenuFadeTarget by (target + cur*2)/3, then draw
+                 * the three sign quads at the fade positions. */
+                iVar2 = (g_nMenuFadeTarget + g_nMenuFadeCur * 2) / 3;
+                uVar1 = iVar2 - 0x100;
+                g_nMenuFadeCur = iVar2;
+                if (uVar1 >= 0) {
+                    /* Sign100: top-left panel while the fade is >= 0x100. */
+                    uv.pTexture = g_hMenuTexSign100;
+                    uv.pParam5 = NULL;
+                    uv.pad = 0;
+                    uv.U = (unsigned short)((0xff - uVar1) << 8);
+                    uv.V = 0;
+                    uv.gwU = 0xff00;
+                    uv.V2 = 0;
+                    uv.gwU2 = 0xff00;
+                    uv.hV = 0xff00;
+                    uv.U2 = uv.U;
+                    uv.hV2 = 0xff00;
+                    v0.x = 0;      v0.y = 0;
+                    v1.x = uVar1 << 8; v1.y = 0;
+                    v2.x = uVar1 << 8; v2.y = 0xff00;
+                    v3.x = 0;      v3.y = 0xff00;
+                    setSignVerts(&v0, &v1, &v2, &v3);
+                    gxDrawPolygon(&v0, &v1, &v2, &v3, 0x2004, &uv);
+                }
+
+                iVar2 = iVar2 - 0x48;   /* fade - 0x48 */
+                if (iVar2 >= 0) {
+                    /* Sign200: center panel while 0x48 <= fade < 0x100. */
+                    int u = (iVar2 < 0xb9) ? 0xb8 - iVar2 : 0;
+                    int minx = (uVar1 < 0) ? 0 : uVar1;  /* max(uVar1, 0), the original
+                                                            ((uVar1<0)-1)&uVar1 @0x41abc5 */
+                    uv.pTexture = g_hMenuTexSign200;
+                    uv.pParam5 = NULL;
+                    uv.pad = 0;
+                    uv.U = (unsigned short)(u << 8);
+                    uv.V = 0;
+                    uv.gwU = 0xb800;
+                    uv.V2 = 0;
+                    uv.gwU2 = 0xb800;
+                    uv.hV = 0xff00;
+                    uv.U2 = uv.U;
+                    uv.hV2 = 0xff00;
+                    v0.x = minx << 8; v0.y = 0;
+                    v1.x = iVar2 << 8; v1.y = 0;
+                    v2.x = iVar2 << 8; v2.y = 0xff00;
+                    v3.x = minx << 8; v3.y = 0xff00;
+                    setSignVerts(&v0, &v1, &v2, &v3);
+                    gxDrawPolygon(&v0, &v1, &v2, &v3, 0x2004, &uv);
+                }
+
+                /* Sign300: bottom banner, always drawn; x spans
+                 * max(fade-0x13e,0) .. (fade-0xef). */
+                {
+                    int xr = g_nMenuFadeCur - 0xef;
+                    int u = (xr < 0x50) ? 0x4f - xr : 0;
+                    int xl = g_nMenuFadeCur - 0x13e;
+                    if (xl < 0) xl = 0;   /* max(xl, 0), the original
+                                             ((fade-0x13e)<0)-1 & (fade-0x13e) @0x41ac21 */
+                    uv.pTexture = g_hMenuTexSign300;
+                    uv.pParam5 = NULL;
+                    uv.pad = 0;
+                    uv.U = (unsigned short)(u << 8);
+                    uv.V = 0;
+                    uv.gwU = 0x4f00;
+                    uv.V2 = 0;
+                    uv.gwU2 = 0x4f00;
+                    uv.hV = 0xdf00;
+                    uv.U2 = uv.U;
+                    uv.hV2 = 0xdf00;
+                    v0.x = xl << 8; v0.y = 0xff00;
+                    v1.x = xr << 8; v1.y = 0xff00;
+                    v2.x = xr << 8; v2.y = 0x1de00;
+                    v3.x = xl << 8; v3.y = 0x1de00;
+                    setSignVerts(&v0, &v1, &v2, &v3);
+                    gxDrawPolygon(&v0, &v1, &v2, &v3, 0x2004, &uv);
+                }
+            }
+
+            if (g_pStateFunc != NULL) {
+                g_pStateFunc(0, 0, 0);
+            }
+            if (g_pStateFunc != introUpdate &&
+                g_pStateFunc != stateQuitConfirm) {
+                gxFlip();
+                gxClearScreen(1, 0);   /* g_nClearColor @0x45892c = 0 */
+            }
+        }
+    }
 }

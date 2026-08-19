@@ -6,6 +6,7 @@
 - Game data files in `/home/wasd/MallManiacsUnmodified/` are evidence for file formats
   (`.sen`, `.tpg`, `.tga`, `.ai`, `.eo`, XOR-obfuscated `maniac.cfg`/`config.mm`,
   plaintext temp `sommar.sol`).
+- `gxSoft.dll` is also loaded into Ghidra. Don't try to import it again.
 
 ## Tools
 - Ghidra MCP bridge: tools are `ghidra_*` (decompile_function, get_function_xrefs,

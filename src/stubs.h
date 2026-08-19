@@ -17,11 +17,6 @@
  * success. TODO: not implemented for the vertical slice. */
 void gameInit(void);
 
-/* gameFrameUpdate @0x41a8c0 — advance one game frame (update + render).
- * Ghidra signature: void(void). Contract: replacement is a logged
- * no-op and does not update or render state. TODO. */
-void gameFrameUpdate(void);
-
 /* pollKeyboard @0x416a10 — poll DirectInput keyboard state, debounce key
  * presses, and dispatch (key, 2) events through the active state callback.
  * Ghidra signature: void(void). Contract: replacement is a logged
