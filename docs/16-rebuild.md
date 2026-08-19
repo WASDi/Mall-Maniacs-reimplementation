@@ -45,7 +45,10 @@ documentation, not in this progress overview.
   rendering, centering, and integer formatting, including the two-font menu
   rows. The original static utility `fmtParseInt` (`0x43e860`) is represented
   by the CRT-compatible `strtol` substitution; `strFindSubstring` is likewise
-  represented by `strstr`.
+  represented by `strstr`. A standalone visualizer `tests/render_font.c`
+  reuses `fontLoad`/`fontParse` and decodes the paired `.tpg` directly,
+  rendering all 256 glyphs to a BMP; it generated the `tests/font_*.bmp`
+  set for the menu and per-scene hud fonts.
 - **Stubs and helpers:** `src/stubs.c` contains deferred original functions;
   rebuild-only support code is isolated in `src/custom_helpers.c`. The three
   void stubs (`gameInit @0x409d90`, `gameFrameUpdate @0x41a8c0`, and
