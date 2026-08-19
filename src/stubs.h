@@ -17,13 +17,6 @@
  * success. TODO: not implemented for the vertical slice. */
 void gameInit(void);
 
-/* pollKeyboard @0x416a10 — poll DirectInput keyboard state, debounce key
- * presses, and dispatch (key, 2) events through the active state callback.
- * Ghidra signature: void(void). Contract: replacement is a logged
- * no-op; window messages provide the vertical-slice input path instead, and
- * DirectInput plus its quit-request side effects remain deferred. TODO. */
-void pollKeyboard(void);
-
 /* Main-menu row targets (menu.c dispatch table g_kMenuRowTarget, entered
  * from menuUpdate @0x41b0b0 on Enter). Contract: state-func convention
  * (nType 0 = frame update, nType 1 + nKeyType 2 = keydown); each sets

@@ -10,6 +10,7 @@
 #include "util.h"
 #include "font.h"
 #include "menu.h"
+#include "input.h"
 #include "custom_helpers.h"
 #include "stubs.h"
 
@@ -488,14 +489,15 @@ void menuInit(int nRestartMode)
         appLog("[assets] WARNING: some sign/fling textures failed to load");
     }
 
-    /* Mirror menuInit's final timing/input reset. pollKeyboard is still the
-     * documented DirectInput stub; window messages drive this slice instead. */
+    /* Mirror menuInit's final timing/input reset. */
     g_nMenuRow        = 0;
     g_nMenuFadeTarget = 0;
     g_nMenuFadeCur    = 0;   /* menuInit @0x41a085/0x41a08b */
     g_nLastFrameTime  = timeGetTime();
     g_flFrameDelta    = 0.0f;
-    pollKeyboard();
+    /* The original menuInit passes a no-op callback here (moveStateNoopDtor
+     * @0x401030); nothing is held at init, so dispatchKeyEvent never fires. */
+    pollKeyboard(dispatchKeyEvent, (int)g_nLastFrameTime);
     g_introFade_2     = 0.0f;
 
     /* Original state selection: initial mode byte selects the intro; after
@@ -563,9 +565,10 @@ void menuInit(int nRestartMode)
  * function, then flips/clears for the menu states. The original polls
  * DirectInput here (pollKeyboard @0x416a10, which receives dispatchKeyEvent
  * @0x41ade0 and g_nLastFrameTime) and ticks the DSOUND mixer (sndMixTick
- * @0x437c50); both are out of scope in this rebuild (input arrives through
- * window messages; the mixer is deferred). Timing uses timeGetTime() in
- * place of the original getGameTime @0x40dfe0. */
+ * @0x437c50). The rebuild keeps the pollKeyboard -> dispatchKeyEvent path
+ * (reading the window-message key state from input.c); the mixer is
+ * deferred. Timing uses timeGetTime() in place of the original getGameTime
+ * @0x40dfe0. */
 void gameFrameUpdate(void)
 {
     GxColorUv uv;
@@ -591,7 +594,10 @@ void gameFrameUpdate(void)
     if (g_nMenuInit == 0) {
         menuInit(0);
     }
-    pollKeyboard();
+    /* pollKeyboard @0x416a10 with dispatchKeyEvent + g_nLastFrameTime, as the
+     * original gameFrameUpdate does. It debounces the message-recorded key
+     * state and dispatches (key, 2) through dispatchKeyEvent. */
+    pollKeyboard(dispatchKeyEvent, (int)g_nLastFrameTime);
 
     if (g_nMenuInit != 0) {
         now = timeGetTime();

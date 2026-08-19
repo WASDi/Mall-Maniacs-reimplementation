@@ -21,18 +21,6 @@ void gameInit(void)
     }
 }
 
-/* pollKeyboard @0x416a10 — DirectInput keyboard poll. TODO stub; the slice
- * uses window messages instead. Original signature is void(void);
- * this replacement has no DirectInput or quit-request side effects. */
-void pollKeyboard(void)
-{
-    static int bLogged;
-    if (!bLogged) {
-        bLogged = 1;
-        appLog("[stub TODO] pollKeyboard @0x416a10 not implemented (no-op)");
-    }
-}
-
 /* Main-menu row targets (menu.c dispatch table). TODO stubs: log once and
  * return to the menu. Replace the bodies later without changing the
  * interfaces or the dispatch table. */

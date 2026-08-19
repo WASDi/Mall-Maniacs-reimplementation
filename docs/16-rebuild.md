@@ -79,19 +79,6 @@ documentation, not in this progress overview.
 The first four row targets currently log a TODO message and return to the main
 menu. This is intentional until those states are reconstructed.
 
-## Font UV fix (2026-08-19)
-
-Menu text showed corrupted glyphs (`abcdefghijk` rendered correctly only for
-`a,b,e,f`; row-1 glyphs collapsed to a horizontal strip). Root cause: the
-rebuild's `textDraw @0x409420` built the packed UV record with bitwise OR —
-`cuv.gwU = (gw << 8) | U`, `cuv.hV = (h << 8) | V` — while the original uses
-integer addition (`local_7c.gwU = (ushort)bVar1 * 0x100 + font->pUvx[bVar3]`).
-For glyphs whose atlas column shares bits with the advance width (`c`:
-U=0x50, gw=0x13 -> OR 0x53 vs ADD 0x63) the texture span collapsed; for row-1
-glyphs (`V=0x1c00`) `(h<<8)|V` equals `V` instead of `V+h`, so the quad sampled
-a single scanline. Fixed by switching the four ORs to `+` in `src/font.c`;
-`./build.sh` rebuilds cleanly.
-
 ## Next milestone
 
 Implement one real row-target state, preferably the game-type select

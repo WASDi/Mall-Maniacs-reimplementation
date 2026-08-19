@@ -11,7 +11,7 @@
 ## Tools
 - Ghidra MCP bridge: tools are `ghidra_*` (decompile_function, get_function_xrefs,
   rename_function_by_address, set_function_prototype, set_plate_comment,
-  create_struct, list_strings, search_strings, archive_ingest_*, etc.).
+  create_struct, list_strings, search_strings, etc.).
 - Instance is auto-selected; always pass `program=maniac.exe` when multiple open.
 
 ## Conventions
@@ -71,8 +71,8 @@ discrepancy is found, fix both sides immediately.
 
 PARTICULARILY IMPORTANT:
 * All reimplemented functions and globals should have a comment saying their original address.
-* The original code architecture and call hierarchy should be replicated. Only necessary exceptions go into `custom_helpers.c`.
-* When you implement a function, implement it fully including all function calls and symbol references so it matches the original function. Add stubs in `src/ stubs.c` for called functions that are not yet implemented. Don't use custom calling conventions.
+* The original code architecture and call hierarchy should be replicated. Don't invent new functions. Only necessary exceptions go into `custom_helpers.c`.
+* When you implement a function, implement it fully including all function calls and symbol references so it matches the original function. Add stubs in `src/stubs.c` for called functions that are not yet implemented. Don't use calling conventions like __stdcall or __cdecl even if the original did.
 * All logic inside functions should be preserved. Do not inline or put logic where it wasn't in the original executable.
 * Ghidra is considered the source of truth. Before reimplementing a function, update its signature in ghidra to give correct names and types to parameters.
 

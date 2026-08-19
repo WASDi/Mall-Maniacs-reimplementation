@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include "gx.h"
+#include "input.h"
 #include "custom_helpers.h"
 #include "menu.h"
 
@@ -11,23 +12,23 @@
  * Reimplements a narrow slice of the original:
  *   - WinMain @0x4160a0           (simplified: no DirectInput, no net loop)
  *   - initWindowAndInput @0x4165f0 (window class + creation only)
- *   - WindowProc @0x4161b0         (close/escape + key events to state fn)
+ *   - WindowProc @0x4161b0         (close/escape + records key state)
  *   - gxLoadDriver/gxInit/gxLoadTexture/presentFrame (see gx.c)
  *   - menuInit/introUpdate/menuUpdate/stateQuitConfirm (see menu.c)
  * ===================================================================== */
 
 static HWND      g_hWnd;          /* maniac g_hMainWindow @0x459ce0 */
 static HINSTANCE g_hInstance;     /* maniac g_hAppInstance @0x459cdc */
-static int       g_pendingKeyId;  /* rebuild input bridge: DirectInput-like event */
-static int       g_pendingKey;    /* one key event is polled after messages */
 static int       g_bRunning = 1;  /* rebuild loop state; no original global */
 
 /* WindowProc @0x4161b0 — narrowed to close/escape for the slice. The
  * original routes inactive-menu keydowns through DirectInput polling and
- * dispatches WM_CHAR immediately. The rebuild queues its mapped keydown and
- * polls that queue after the message batch, preserving the original ordering;
- * this prevents the translated character for Enter from being consumed by
- * the newly selected quit-confirm state. */
+ * dispatches WM_CHAR immediately. The rebuild records the mapped key state
+ * here and lets pollKeyboard @0x416a10 (called from gameFrameUpdate after
+ * the message batch) apply the original debounce and dispatch the events;
+ * this preserves the original ordering where DirectInput polling follows the
+ * message batch, preventing the translated character for Enter from being
+ * consumed by the newly selected quit-confirm state. */
 static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg) {
@@ -36,7 +37,25 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
          * posts WM_QUIT after the window teardown. */
         break;
     case WM_KEYDOWN:                      /* 0x100 */
-        if (g_pStateFunc != NULL) {
+        {
+            int key = -1;
+
+            /* Record the held key (0x80 state byte, as the original DirectInput
+             * poll reads). pollKeyboard @0x416a10 debounces and dispatches it. */
+            switch (wParam) {
+            case VK_RIGHT:  key = 0; break;
+            case VK_LEFT:   key = 1; break;
+            case VK_UP:     key = 2; break;
+            case VK_DOWN:   key = 3; break;
+            case VK_SPACE:  key = 4; break;
+            case VK_RETURN: key = 6; break;
+            case VK_ESCAPE: key = 7; break;
+            }
+            if (key >= 0) g_abInputKeyHeld[key] = 0x80;
+        }
+        break;
+    case WM_KEYUP:                        /* 0x101 */
+        {
             int key = -1;
 
             switch (wParam) {
@@ -48,15 +67,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             case VK_RETURN: key = 6; break;
             case VK_ESCAPE: key = 7; break;
             }
-
-            /* The original inactive-menu WindowProc does not dispatch this
-             * message; pollKeyboard later emits (key, 2). Keep only the
-             * latest mapped key, which is the one-event-per-poll behavior
-             * needed by this replacement input boundary. */
-            if (key >= 0) {
-                g_pendingKeyId = key;
-                g_pendingKey = 1;
-            }
+            if (key >= 0) g_abInputKeyHeld[key] = 0;
         }
         break;
     case WM_CHAR:                         /* 0x102 */
@@ -152,10 +163,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     appLog("[winmain] running intro timeline (6 logos)");
 
     /* Message loop + frame update — the idle path mirrors the original
-     * WinMain: after the message batch and the queued key event, each
-     * iteration advances one game frame via gameFrameUpdate @0x41a8c0
-     * (menu background + state update + flip/clear, with its own 25ms
-     * timing gate). */
+     * WinMain: after the message batch, each iteration advances one game
+     * frame via gameFrameUpdate @0x41a8c0, which polls the keyboard
+     * (pollKeyboard @0x416a10 -> dispatchKeyEvent @0x41ade0) and then runs
+     * the menu background + state update + flip/clear, with its own 25ms
+     * timing gate. */
     while (g_bRunning) {
         while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
@@ -164,12 +176,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             }
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
-        }
-        if (!g_bRunning) break;
-        if (g_pendingKey) {
-            int key = g_pendingKeyId;
-            g_pendingKey = 0;
-            if (g_pStateFunc != NULL) g_pStateFunc(1, key, 2);
         }
         if (!g_bRunning) break;
 

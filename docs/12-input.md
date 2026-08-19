@@ -37,17 +37,23 @@ path when gameplay input or controller/mouse support becomes a milestone.
 
 ## Rebuild status and next direction
 
-`src/maniac.c` currently implements only the window portion of
-`initWindowAndInput`; its `WindowProc` forwards `WM_CHAR` messages as
-character events and queues mapped menu `WM_KEYDOWN` messages. The queued
-key-down event is delivered after the message batch, matching the original
-ordering where DirectInput polling follows `TranslateMessage`; this keeps an
-Enter used to select `Avsluta` from immediately cancelling the quit screen.
-The Win32 boundary maps known menu virtual keys inline before queuing the
-corresponding original game key IDs; unmapped keys are ignored. `pollKeyboard`
-@0x00416a10 remains a logged stub, and the rebuild does not
-link DirectInput or implement the original keyboard repeat, gameplay, or
-editor mouse paths. This is consistent with the scope and current milestone in
-[16-rebuild.md](16-rebuild.md); implement the real poll/dispatch path after a
-GUI row-target state, when it is needed for gameplay or additional input
-devices.
+`src/maniac.c` implements the window portion of `initWindowAndInput`; its
+`WindowProc` records the mapped menu key state (`WM_KEYDOWN`/`WM_KEYUP`) and
+forwards `WM_CHAR` character events immediately. The key state is consumed by
+the reimplemented `pollKeyboard` @0x00416a10 in `src/input.c`, which is called
+from `gameFrameUpdate` after the message batch (matching the original ordering
+where DirectInput polling follows `TranslateMessage`). `pollKeyboard` applies
+the original 200 ms per-key debounce over the `g_nBtnDebounceTick*` globals
+`@0x459d4c-0x459d64` and dispatches `(key, 2)` through `dispatchKeyEvent`
+@0x0041ade0, which forwards to `g_pStateFunc`; this keeps an Enter used to
+select `Avsluta` from immediately cancelling the newly shown quit screen.
+`pollKeyboard`'s signature is `void __stdcall
+pollKeyboard(DispatchKeyEventFn pfnDispatchKeyEvent, int nFrameTime)`
+(corrected in Ghidra from the previous `void(void)` — the `gameFrameUpdate`
+call site passes `dispatchKeyEvent` and `g_nLastFrameTime`). The only
+replacement for DirectInput is the message-recorded `g_abInputKeyHeld` byte
+array (input.h), which stands in for the 256-byte DI state buffer. The rebuild
+does not link DirectInput or implement the gameplay or editor mouse paths.
+This is consistent with the scope and current milestone in
+[16-rebuild.md](16-rebuild.md); add controller/mouse support via the real poll
+path when it is needed for gameplay.
