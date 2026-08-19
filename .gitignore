@@ -1,3 +1,4 @@
 .junie
 rebuild-progress.txt
+rebuild.log
 tests/*.bmp

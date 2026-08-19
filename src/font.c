@@ -42,7 +42,15 @@ const char g_szTextTagRGB2[]= "RGB2"; /* @0x44f0cc */
 /* Glyph quads use the shared GxVert (16 bytes: x, y, z, r, g, b, a) from
  * gx.h. The explicit z=0 / alpha byte normalizes the GXSOFT driver reads at
  * vertex +0x8 and +0xc..+0xf, which the original textDraw left as unwritten
- * stack bytes. */
+ * stack bytes.
+ *
+ * The packed UV record must use INTEGER ADDITION, matching the original
+ * textDraw @0x409420 (`(ushort)bVar1 * 0x100 + font->pUvx[bVar3]`): using
+ * bitwise OR here collapses the texture span whenever the atlas column high
+ * byte shares bits with the advance width (e.g. c: U=0x50, gw=0x13 -> OR
+ * 0x53 vs ADD 0x63) and reduces row-1 glyphs (V=0x1c00) to a single
+ * scanline ((h<<8)|V == V instead of V+h). The driver reads the high byte
+ * of each packed u16 (gxDrawPolygon @0x433440 repack, gxDrawTriUV reads). */
 
 /* fontPoolCreate @0x408f90 — create the "FONT" pool, reset text colors. */
 int fontPoolCreate(void)
@@ -353,12 +361,12 @@ int textDraw(gxFont *font, unsigned int color, int x, int y, char *text)
         cuv.pad = 0;
         cuv.U = (unsigned short)U;
         cuv.V = (unsigned short)V;
-        cuv.gwU = (unsigned short)((gw << 8) | U);
+        cuv.gwU = (unsigned short)((gw << 8) + U);
         cuv.V2 = (unsigned short)V;
-        cuv.gwU2 = (unsigned short)((gw << 8) | U);
-        cuv.hV = (unsigned short)((h << 8) | V);
+        cuv.gwU2 = (unsigned short)((gw << 8) + U);
+        cuv.hV = (unsigned short)((h << 8) + V);
         cuv.U2 = (unsigned short)U;
-        cuv.hV2 = (unsigned short)((h << 8) | V);
+        cuv.hV2 = (unsigned short)((h << 8) + V);
         gxDrawPolygon(&v0, &v1, &v2, &v3, color, &cuv);
         xPos = xPos + (int)(short)font->wGlobalSpace + gw;
         c = text[i + 1];

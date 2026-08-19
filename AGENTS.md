@@ -20,8 +20,6 @@
 - Addresses are 32-bit absolute (base 0x400000).
 
 ## Instructions
-- When completing a chunk of work, always update documentation before moving on to the next task.
-- When researching, focus on the core game code and not statically linked libraries.
 - Prefer the highest-level MCP tool for each operation; avoid destructive ops
   (delete/clear/overwrite) without evidence.
 - Run `ghidra_save_program` periodically; do not commit to git unless asked.
@@ -76,6 +74,5 @@ PARTICULARILY IMPORTANT:
 * When you implement a function, implement it fully including all function calls and symbol references so it matches the original function. Add stubs in `src/ stubs.c` for called functions that are not yet implemented. Don't use custom calling conventions.
 * All logic inside functions should be preserved. Do not inline or put logic where it wasn't in the original executable.
 * Ghidra is considered the source of truth. Before reimplementing a function, update its signature in ghidra to give correct names and types to parameters.
-* The new code should look mostly similar to the Ghidra decompiled psuedo-C.
 
 Prefer working on fewer functions at a time from a single subsystem, and implementing them before moving on to the next chunk of functions.
