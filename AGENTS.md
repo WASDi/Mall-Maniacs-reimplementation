@@ -62,10 +62,9 @@ Keep each reimplemented function's return type, parameter types and parameter na
 synchronized with Ghidra. Whenever you implement a function or
 change its signature, update both sides in the same session:
 
-1. Apply the same signature in Ghidra with `set_function_prototype` (or validate it
-   first), including meaningful parameter names.
-2. Change the rebuild source to match, rebuild with `./build.sh`, save the Ghidra
-   program, and record the synchronization in `docs/16-rebuild.md`.
+* After reimplementing a new function, apply the same signature in Ghidra with 
+  `set_function_prototype` (if not already the same), including meaningful parameter names.
+* Don't forget to declare structs also in ghidra.
 
 Use precise types rather than Ghidra placeholders such as `undefined4` or `undefined *`;
 keep the rebuild and Ghidra definitions identical. Ghidra is the reference for the
@@ -81,7 +80,7 @@ original binary, so fix any discrepancy on both sides immediately.
   meaningful types and parameter names.
 - Work on a small number of functions from one subsystem at a time.
 
-When investigating problem reports from the user, thoroughly verify that the assembly logic matches the reimplemented code.
+When investigating problems, thoroughly verify that the assembly logic matches the reimplemented code.
 All source of bugs are mismatches. The original assembly is the source of truth.
 
 The script `TrackRebuildDetailed` reports overall progress.

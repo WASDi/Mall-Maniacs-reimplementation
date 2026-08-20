@@ -43,6 +43,40 @@ documentation, not in this progress overview.
   mode initializers set `g_nGameMode` (`0x458120`) and `g_nPlayerCount`
   (`0x458108`; 0 = auto-derive except Frågesporten, which forces 1) before
   handing off to `stateCharacterSelect` (`0x41efa0`), still a TODO stub.
+- **Sound:** `src/sound.c`/`src/sound.h` reproduce the maniac sound
+  subsystem (`sndInitSystem @0x437a30`, `sndLoadBankFromDir @0x437170`,
+  `sndLoadWav @0x437420`, `sndPlaySfx @0x437cf0`, `sndMixTick @0x437c50`,
+  positional `sndVolFromPos @0x4389a0`, priority `sndVoicePriorityUpdate
+  @0x4387a0`, `sndFixedMul @0x437ed0`) over the same DirectSound streaming
+  path as the original (DirectSoundCreate + SetCooperativeLevel + streaming
+  buffer, per-frame Lock/Write/Unlock of free write regions). `menuInit`
+  initializes it and loads the `sound\menu\` bank;
+  `menuUpdate`/`stateGameTypeSelect` play the original feedback cues
+  (Up/Down = 01_Buttons, Enter = 03_Miss2, game-type Escape = 04_kokko);
+  `gameFrameUpdate` calls `sndMixTick(0)` each frame, which reproduces the
+  original call graph exactly: `sndMixBuildVoiceChains` (@0x437fe0) →
+  per-region `sndMixRenderRegion` (@0x438090, latch the mixer master volume,
+  priority/volume update + culling, scratch reset, finish-check + `sndVoiceRender`,
+  chain advance, `sndVoiceReclaimFinished`, `sndMixScratchToBuffer` twice) →
+  `sndMixAdvanceUnlock`. Per-voice L/R volumes are derived per region through
+  the original position/gain chain (`sndVolFromPos` →
+  `((posVol*master>>16)*gain)>>0x18`); plain sfx render centered at vol8 ≈ 63
+  with the same ±8k per-sample magnitude as the original (the earlier
+  hard-coded 127 was 2× and clipped on overlap). `sndVoicePriorityUpdate`
+  culls the active chain to `g_nMixVoiceCap` (4 in the menu), matching the
+  original's loudness culling. Rendering uses the reproduced wave-table core
+  `sndVoiceRender` (`0x438b00`) → `sndMixVoiceCore` (`0x4395b0`) →
+  `sndMixStep` (`0x4396a6`) → `sndMixSamples` (`0x4396ea`) with the
+  `SndMixRec` record, synced and mirrored into Ghidra. MCI CD-audio is the
+  only intentionally unreproduced path (docs/09-sound.md). The 64-entry
+  `sndBuildEnvProfile` (`0x437900`) normalization is covered by
+  `tests/test_sound_profile.c`; this prevents unset envelope data from
+  bypassing loudness culling and clipping overlapping effects.
+  `sndMixScratchToBuffer` (`0x4382f0`) is covered by
+  `tests/test_sound_output.c`; it now keeps the negotiated 16-bit stereo
+  stream signed instead of applying an incorrect unsigned `0x8000` bias, and
+  emits zero for signed-format silence so voice start/stop boundaries do not
+  generate a full-scale impulse.
 - **Rendering:** `src/gx.c` adapts the maniac-side GX wrappers to
   `GXSOFT.DLL`; indexed TGA assets and the `MERGED00.TPG` palette render at
   the original 640x480 resolution.
@@ -94,6 +128,11 @@ documentation, not in this progress overview.
 5. Escape opens quit confirmation. Enter selects `Avsluta` without immediately
    cancelling the newly displayed screen; Escape returns to the menu, while
    the original J/Y character confirmations exit cleanly.
+6. Sound initializes through DirectSound: the driver negotiates
+   44100/16-bit/stereo, and all five `sound\menu\` WAVs load into bank 1.
+   Menu navigation/selection queues effects through `sndPlaySfx`, and
+   `sndMixTick` locks DirectSound write regions, renders the voices, and
+   unlocks them each frame.
 
 The remaining row targets currently log a TODO message and return to the main
 menu. This is intentional until those states are reconstructed.
@@ -118,17 +157,20 @@ Ghidra, and relevant subsystem documentation after each completed chunk.
 
 ## Fidelity and limitations
 
-- Source audits for the application loop, menu, GX, pool, utility, font, and
-  stub code are complete. Reimplemented symbols retain original-address
+- Source audits for the application loop, menu, GX, pool, utility, font, sound,
+  and stub code are complete. Reimplemented symbols retain original-address
   comments and match the verified Ghidra parameter and return types; only the
   required Win32 entry/callback declarations use explicit ABI markers.
 - The GXSOFT path preserves the original wrapper hierarchy, polygon conversion
   branch, packed UV data, font rendering flow, file-helper behavior, and
   64-subpool × 64-chunk × 16-slot pool capacity. The CRT-compatible
-  `strtol`/`strstr` substitutions and explicit vertex initialization are the
-  only known low-level deviations in the implemented slice.
-- Deferred behavior includes DirectInput polling, audio, scene/gameplay,
-  networking, registry-based driver selection, and real menu row targets.
-  `stateNetworkMenu`, `gotoOptions`, `stateHighScoreTable`, and
-  `stateCharacterSelect` intentionally return to the menu instead of claiming
-  those states are implemented.
+  `strtol`/`strstr` substitutions, explicit vertex initialization, and the
+  DirectSound mixer's direct per-sample multiply (in place of the original
+  register-based wave-table `sndMixVoiceCore` inner loop) are the only known
+  low-level deviations in the implemented slice.
+- Deferred behavior includes DirectInput polling, MCI CD-audio
+  (the original music path), scene/gameplay, networking, registry-based
+  driver selection, and real menu row targets. `stateNetworkMenu`,
+  `gotoOptions`, `stateHighScoreTable`, and `stateCharacterSelect`
+  intentionally return to the menu instead of claiming those states are
+  implemented.

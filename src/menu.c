@@ -13,6 +13,7 @@
 #include "input.h"
 #include "custom_helpers.h"
 #include "stubs.h"
+#include "sound.h"
 
 /* =====================================================================
  * Menu subsystem — reimplementation of the intro + main-menu state
@@ -30,8 +31,9 @@
  * logic remains in these original functions. Row targets stateNetworkMenu
  * @0x420190, gotoOptions @0x41d300, stateHighScoreTable @0x41dfd0, and the
  * character-select target stateCharacterSelect @0x41efa0 are TODO stubs in
- * stubs.c per Rebuild.md §19 (log + return); the original sndPlaySfx sound
- * cues are skipped while the DSOUND mixer is out of scope.
+ * stubs.c per Rebuild.md §19 (log + return). Menu sound cues (sndPlaySfx
+ * @0x437cf0) play through src/sound.c, which uses the same DirectSound
+ * streaming path as the original (docs/09-sound.md).
  * ===================================================================== */
 
 PStateFunc g_pStateFunc;          /* @0x45a6f8 */
@@ -327,16 +329,19 @@ int menuUpdate(int nType, int nKey, int nKeyType)
         case 1:   /* Left */
             break;
         case 2:   /* Up: wraps 0 -> 4 */
+            sndPlaySfx(0, 1, 1, 0xffff, 0, 0x400);
             g_nMenuRow = g_nMenuRow - 1;
             if (g_nMenuRow == -1) g_nMenuRow = 4;
             appLog("[menu] row %d (Up)", g_nMenuRow);
             break;
         case 3:   /* Down: wraps 4 -> 0 (original: row = -(row!=4) & (row+1)) */
+            sndPlaySfx(0, 1, 1, 0xffff, 0, 0x400);
             g_nMenuRow = (g_nMenuRow != 4) ? g_nMenuRow + 1 : 0;
             appLog("[menu] row %d (Down)", g_nMenuRow);
             break;
         case 6:   /* Enter: select row target */
             if (g_kMenuRowTarget[g_nMenuRow] != NULL) {
+                sndPlaySfx(0, 1, 3, 0xffff, 0, 0x400);
                 appLog("[menu] row %d '%s' selected", g_nMenuRow,
                        g_kMenuRowLabel[g_nMenuRow]);
                 g_pStateFunc = g_kMenuRowTarget[g_nMenuRow];
@@ -358,10 +363,10 @@ int menuUpdate(int nType, int nKey, int nKeyType)
  * fonts, like the main menu. Keydown: Up/Down wrap through the modes
  * (0<->3), Enter selects the mode initializer (modeInit*), Escape returns to
  * the main menu. Right/Left are no-ops because all per-mode value pointers
- * are NULL (local_4d0 @stateGameTypeSelect); the original sndPlaySfx cues
- * are skipped while the DSOUND mixer is out of scope. Ends by raising
- * g_nMenuFadeTarget = 0x1ff like menuUpdate (the Escape path sets it too,
- * unlike menuUpdate). */
+ * are NULL (local_4d0 @stateGameTypeSelect). The menu sfx cues (sndPlaySfx
+ * @0x437cf0) mirror the original: Up/Down play 01_Buttons, Enter 03_Miss2,
+ * Escape 04_kokko. Ends by raising g_nMenuFadeTarget = 0x1ff like menuUpdate
+ * (the Escape path sets it too, unlike menuUpdate). */
 int stateGameTypeSelect(int nType, int nKey, int nKeyType)
 {
     static int bLogged;
@@ -461,22 +466,26 @@ int stateGameTypeSelect(int nType, int nKey, int nKeyType)
         case 1:   /* Left */
             break;
         case 2:   /* Up: wraps 0 -> 3 */
+            sndPlaySfx(0, 1, 1, 0xffff, 0, 0x400);
             g_nGameTypeSel = g_nGameTypeSel - 1;
             if (g_nGameTypeSel == -1) g_nGameTypeSel = 3;
             appLog("[menu] game type %d (Up)", g_nGameTypeSel);
             break;
         case 3:   /* Down: wraps 3 -> 0 */
+            sndPlaySfx(0, 1, 1, 0xffff, 0, 0x400);
             g_nGameTypeSel = (g_nGameTypeSel != 3) ? g_nGameTypeSel + 1 : 0;
             appLog("[menu] game type %d (Down)", g_nGameTypeSel);
             break;
         case 6:   /* Enter: select the mode initializer */
             if (g_kGameModeInit[g_nGameTypeSel] != NULL) {
+                sndPlaySfx(0, 1, 3, 0xffff, 0, 0x400);
                 appLog("[menu] game type %d '%s' selected", g_nGameTypeSel,
                        g_kGameTypeName[g_nGameTypeSel]);
                 g_pStateFunc = g_kGameModeInit[g_nGameTypeSel];
             }
             break;
         case 7:   /* Escape: return to the main menu (fade target still set) */
+            sndPlaySfx(0, 1, 4, 0xffff, 0, 0x400);
             appLog("[menu] game-type select Escape -> menuUpdate");
             g_pStateFunc = menuUpdate;
             break;
@@ -648,6 +657,16 @@ void menuInit(int nRestartMode)
      * then five fontLoad pairs; each descriptor .txt is parsed by fontParse
      * and textured from a .tpg via gxLoadTpgFile). */
     fontPoolCreate();
+
+    /* Audio init (menuInit @0x419c20 load block order: winmmInitTimerRes(),
+     * then sndInitSystem(2,4,10) @0x437a30, then the menu sfx bank
+     * sndLoadBankFromDir(1,"sound\\menu\\") @0x437170). The rebuild keeps the
+     * same calls; playback uses the original DirectSound streaming path in
+     * src/sound.c. */
+    sndInitSystem(2, 4, 10);
+    sndLoadBankFromDir(1, "sound\\menu\\");
+    appLog("[assets] sound bank loaded (sound\\menu\\)");
+
     g_hMenuFontTiny   = fontLoad("menu\\tinyfont.txt",
                                  (void *)(unsigned int)gxLoadTpgFile("menu\\tiny00.tpg"),
                                  0, 0, NULL);
@@ -807,7 +826,10 @@ void gameFrameUpdate(void)
             now = timeGetTime();
             g_flFrameDelta = (float)(now - g_nLastFrameTime) * 0.04f;
             g_nLastFrameTime = timeGetTime();
-            /* sndMixTick(0) @0x437c50 — DSOUND mixer, deferred. */
+            /* sndMixTick(0) @0x437c50 — lock DirectSound write regions,
+             * render the active voices, and recycle finished ones
+             * (src/sound.c). */
+            sndMixTick(0);
 
             if (g_pStateFunc != introUpdate &&
                 g_pStateFunc != stateQuitConfirm) {
