@@ -1,4 +1,4 @@
-# auto-ghidra — Mall Maniacs (maniac.exe) RE workspace
+# auto-ghidra — Mall Maniacs reverse-engineering workspace
 
 ## Project
 - Binary: `/home/wasd/MallManiacsUnmodified/maniac.exe` (Mall Maniacs, 1999,
@@ -8,72 +8,81 @@
   plaintext temp `sommar.sol`).
 - `gxSoft.dll` is also loaded into Ghidra. Don't try to import it again.
 
+## Goal
+Reimplement the Ghidra view of `maniac.exe` as source in `src/maniac.c` and
+per-subsystem files. The result must build as
+`/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` and provide an offline
+GUI and single-player functionality. Work in small chunks, following the next
+milestone in `docs/16-rebuild.md`.
+
+## Implementation
+- Do not reimplement system libraries, runtime code, import stubs, or compiler glue.
+  Network features and the in-game console are out of scope.
+- Build 32-bit Windows with `i686-w64-mingw32-gcc` and the needed original system
+  libraries (`KERNEL32`, `USER32`, `GDI32`, `WINMM`). Skip DirectInput, DirectSound,
+  and Winsock. Use `DRIVERS\GXSOFT.DLL` through its GX interface, not a GDI backend.
+- Use Ghidra's decompilation, disassembly, and `docs/` as behavioral and layout
+  evidence, not as source to compile. Feed verified names, types, structs, and
+  `gxSoft.dll` findings back into Ghidra, and update `docs/16-rebuild.md` after each
+  chunk.
+- Give every unresolved dependency a documented contract and a safe temporary `TODO`
+  stub in `src/stubs.c`/`src/stubs.h` or the relevant subsystem. Include the original
+  address when known; never comment out unresolved calls or change their interfaces.
+- Reproduce initialization and state-machine behavior subsystem by subsystem, while
+  prioritizing dependencies of the next visible single-player feature.
+- Build with `build.sh`, which writes to `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe`.
+  Use `run.sh` for the Wine crash smoke test; confirm initialization and asset loading
+  in the logs. Do not modify the original executable or take screenshots.
+
 ## Tools
-- Ghidra MCP bridge: tools are `ghidra_*` (decompile_function, get_function_xrefs,
-  rename_function_by_address, set_function_prototype, set_plate_comment,
-  create_struct, list_strings, search_strings, etc.).
-- Instance is auto-selected; always pass `program=maniac.exe` when multiple open.
+- Use the Ghidra MCP bridge (`ghidra_*`) for decompilation, cross-references, naming,
+  prototypes, comments, structs, and string searches. Pass `program=maniac.exe` when
+  multiple programs are open.
 
 ## Conventions
-- Evidence-driven naming only; mark hypotheses in comments/docs.
-- Consistent subsystem prefixes (e.g. `gx*` renderer, `net*`, `config*`,
-  `scene*`, `eventObject*`, `player*`).
-- Addresses are 32-bit absolute (base 0x400000).
+- Name symbols from evidence and mark hypotheses in comments or documentation.
+- Use subsystem prefixes such as `gx*`, `net*`, `config*`, `scene*`, `eventObject*`,
+  and `player*`. Addresses are 32-bit absolute, based at `0x400000`.
 
-## Instructions
-- Prefer the highest-level MCP tool for each operation; avoid destructive ops
-  (delete/clear/overwrite) without evidence.
-- Run `ghidra_save_program` periodically; do not commit to git unless asked.
-- Do not use `run_script_inline`. Instead use `run_ghidra_script` as documented in `Ghidra_scripts.md`.
+## Working practices
+- Prefer the highest-level MCP operation and avoid destructive changes without evidence.
+- Save the Ghidra program periodically; do not commit unless asked.
+- Use `run_ghidra_script` as documented in `Ghidra_scripts.md`, not `run_script_inline`.
+- Inspect assembly closely enough for the reconstructed source to match the original.
 
-Keep each document focused on a concise current-state overview: preserve verified findings, evidence, limitations, and next direction, while removing exhaustive histories, step-by-step work logs, duplicate notes, and complete symbol inventories.
+Keep each document focused on a concise current-state overview: preserve verified
+findings, evidence, limitations, and next direction; drop exhaustive histories,
+step-by-step work logs, duplicate notes, and complete symbol inventories.
 
-For further documentation per subsystem, see `docs/README.md`.
+See `docs/README.md` for subsystem documentation.
 
-## Phase 1 — Static Analysis & Documentation (COMPLETE)
-- 1178/1178 functions documented = 100% — the FUN_* naming drive-down is COMPLETE.
-- Major subsystems renamed (game flow, networking, config, renderer, sound, file
-  formats, input); the statically-linked MSVC CRT region 0x43c850-0x44966c fully
-  mapped/renamed.
-- Progress docs in `docs/`.
+## Function signatures
 
-## Phase 2 — Source Reconstruction & Rebuild (ACTIVE)
-**Read `Rebuild.md` — it is the authoritative guide for this phase. ALWAYS read this before starting new work after a compaction of the session.**
+Keep each reimplemented function's return type, parameter types and parameter names
+synchronized with Ghidra. Whenever you implement a function or
+change its signature, update both sides in the same session:
 
-Goal: Produce a compilable `src/maniac.c` (with additional .c-files per subsystem) that builds to
-`/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` with offline GUI and
-single-player functionality. When continuing work, follow "Next milestone" in `docs/16-rebuild.md`.
-Pick a small chunk of work at a time.
+1. Apply the same signature in Ghidra with `set_function_prototype` (or validate it
+   first), including meaningful parameter names.
+2. Change the rebuild source to match, rebuild with `./build.sh`, save the Ghidra
+   program, and record the synchronization in `docs/16-rebuild.md`.
 
-## VERY IMPORTANT — function signatures must match and stay in sync
+Use precise types rather than Ghidra placeholders such as `undefined4` or `undefined *`;
+keep the rebuild and Ghidra definitions identical. Ghidra is the reference for the
+original binary, so fix any discrepancy on both sides immediately.
 
-The reimplemented function signature (return type, parameter types, parameter
-names, calling convention) MUST match the Ghidra definition exactly, and the
-two MUST be kept up to date together. Every time you reimplement a function —
-or make any change to a signature on either side — update BOTH sides in the
-same session:
+- Comment every reimplemented function and global with its original address.
+- Preserve the original architecture, call hierarchy, and function logic. Add only
+  necessary helpers to `custom_helpers.c`. Do not invent new functions in other files that don't exist in the original binary.
+- Implement called functions fully or provide documented stubs in `src/stubs.c` without
+  changing callers or interfaces. Keep the original calling conventions in Ghidra, but
+  omit convention keywords from rebuild declarations as required by the project style.
+- Before reimplementing a function, refine its Ghidra signature with matching and
+  meaningful types and parameter names.
+- Work on a small number of functions from one subsystem at a time.
 
-1. Apply the exact same signature in Ghidra via `set_function_prototype` (or
-   `validate_function_prototype` first), including the calling convention
-   (`__cdecl`/`__stdcall` as Ghidra analyzed) and meaningful parameter names.
-2. Change the rebuild source to the identical signature, then rebuild
-   (`./build.sh`) to confirm it compiles.
-3. Save the Ghidra program (`ghidra_save_program`) and note the sync in
-   `docs/16-rebuild.md`.
+When investigating problem reports from the user, thoroughly verify that the assembly logic matches the reimplemented code.
+All source of bugs are mismatches. The original assembly is the source of truth.
 
-Do not rely on Ghidra's auto-analysis defaults (`undefined4`, `int *`, bare
-`char`, `undefined *`) — these are placeholders, not signatures. Refine them to
-the precise types (`int`, `FILE *`, `size_t`, `LPCSTR`, ...) the
-reimplementation uses, then keep the two in lockstep. A drift between Ghidra
-and the rebuild is a bug: the Ghidra definition is the reference for the
-original binary, and the rebuild is the ground truth for the replacement. If a
-discrepancy is found, fix both sides immediately.
+The script `TrackRebuildDetailed` reports overall progress.
 
-PARTICULARILY IMPORTANT:
-* All reimplemented functions and globals should have a comment saying their original address.
-* The original code architecture and call hierarchy should be replicated. Don't invent new functions. Only necessary exceptions go into `custom_helpers.c`.
-* When you implement a function, implement it fully including all function calls and symbol references so it matches the original function. Add stubs in `src/stubs.c` for called functions that are not yet implemented. Don't use calling conventions like __stdcall or __cdecl even if the original did.
-* All logic inside functions should be preserved. Do not inline or put logic where it wasn't in the original executable.
-* Ghidra is considered the source of truth. Before reimplementing a function, update its signature in ghidra to give correct names and types to parameters.
-
-Prefer working on fewer functions at a time from a single subsystem, and implementing them before moving on to the next chunk of functions.
