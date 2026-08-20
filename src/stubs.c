@@ -25,21 +25,6 @@ void gameInit(void)
  * return to the menu. Replace the bodies later without changing the
  * interfaces or the dispatch table. */
 
-/* stateGameTypeSelect @0x41c010 — game-type select screen (menu "Spela").
- * Original: 4 modes (Varujakten/Matkrig/Frögesporten/Vagnrace) -> modeInit*;
- * ESC -> menuUpdate. TODO stub: log + return to menu. */
-int stateGameTypeSelect(int nType, int nKey, int nKeyType)
-{
-    static int bLogged;
-    (void)nType; (void)nKey; (void)nKeyType;
-    if (!bLogged) {
-        bLogged = 1;
-        appLog("[stub TODO] stateGameTypeSelect @0x41c010 not implemented (back to menu)");
-    }
-    g_pStateFunc = menuUpdate;
-    return 0;
-}
-
 /* stateNetworkMenu @0x420190 — network/lobby menu. Original: host/join lobby
  * states; ESC tail -> menuUpdate. TODO stub: log + return to menu. */
 int stateNetworkMenu(int nType, int nKey, int nKeyType)
@@ -81,5 +66,21 @@ int stateHighScoreTable(int nType, int nKey, int nKeyType)
         appLog("[stub TODO] stateHighScoreTable @0x41dfd0 not implemented (back to menu)");
     }
     g_pStateFunc = menuUpdate;
+    return 0;
+}
+
+/* stateCharacterSelect @0x41efa0 — character-select screen, entered by the
+ * modeInit* game-type initializers (@0x41bf60-0x41bfe0). Original: character
+ * picker + start; keys 6/7 advance/cancel. TODO stub: log + return to the
+ * game-type select so the flow stays within the implemented menu slice. */
+int stateCharacterSelect(int nType, int nKey, int nKeyType)
+{
+    static int bLogged;
+    (void)nType; (void)nKey; (void)nKeyType;
+    if (!bLogged) {
+        bLogged = 1;
+        appLog("[stub TODO] stateCharacterSelect @0x41efa0 not implemented (back to game-type select)");
+    }
+    g_pStateFunc = stateGameTypeSelect;
     return 0;
 }

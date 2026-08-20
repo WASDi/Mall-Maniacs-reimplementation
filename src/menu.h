@@ -30,6 +30,15 @@ extern DWORD g_nLastFrameTime;
 void menuInit(int nRestartMode);
 int  introUpdate(int nType, int nKey, int nKeyType);   /* @0x41ae50 */
 int  stateQuitConfirm(int nType, int nKey, int nKeyType); /* @0x4200b0 */
+int  stateGameTypeSelect(int nType, int nKey, int nKeyType); /* @0x41c010 */
+
+/* Game-type mode initializers (stateGameTypeSelect @0x41c010 targets). Each
+ * sets g_nPlayerCount / g_nGameMode, then g_pStateFunc = stateCharacterSelect
+ * @0x41efa0 (TODO stub in stubs.c). */
+int  modeInitVarujakten(int nType, int nKey, int nKeyType); /* @0x41bf60 */
+int  modeInitMatkrig(int nType, int nKey, int nKeyType);    /* @0x41bf90 */
+int  modeInitFrogesport(int nType, int nKey, int nKeyType); /* @0x41bfc0 */
+int  modeInitVagnrace(int nType, int nKey, int nKeyType);   /* @0x41bfe0 */
 
 /* gameFrameUpdate @0x41a8c0 — advance one game frame: menu background
  * (decor wave + fling grid + sign fades), then the active state function,
@@ -56,6 +65,12 @@ extern int     g_nMenuRow;        /* @0x45d448 selected row (0..4) */
 extern int     g_nMenuFadeTarget; /* @0x45a6f0 sign fade target (0 hidden, 0x1ff shown) */
 extern int     g_nMenuFadeCur;    /* @0x45a6ec sign fade position */
 extern float   g_flMenuBgTime;    /* @0x45d440 decor wave time accumulator */
+
+/* Game-type select state (stateGameTypeSelect @0x41c010) globals. */
+extern int     g_nGameTypeSel;    /* @0x45d454 selected game type (0..3) */
+extern int     g_nGameMode;       /* @0x458120 game mode id (1 quiz, 2 varujakten,
+                                     3 matkrig, 4 vagnrace) */
+extern int     g_nPlayerCount;    /* @0x458108 player count (0 = auto-derive) */
 
 /* Fling/sign background textures (menuInit @0x419c20). */
 extern void   *g_hMenuTexFling;   /* @0x45a6b4 menu\fling00.tpg */

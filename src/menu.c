@@ -21,14 +21,17 @@
  *   menuInit        @0x419c20  palette + intro logos + menu fonts + state
  *   introUpdate     @0x41ae50  6-logo intro timeline (fade-to-black gaps)
  *   menuUpdate      @0x41b0b0  main menu: 5 rows, two-font render, nav
+ *   stateGameTypeSelect @0x41c010 "Spela" game-type select (4 modes)
+ *   modeInitVarujakten @0x41bf60 / modeInitMatkrig @0x41bf90 /
+ *   modeInitFrogesport @0x41bfc0 / modeInitVagnrace @0x41bfe0
  *   stateQuitConfirm @0x4200b0 "Avsluta" / Escape quit-confirm screen
  *
- * Rebuild-only menu tables and deferred row-target stubs are kept outside
- * this translation unit; the state logic remains in these original functions.
- * Row targets stateGameTypeSelect @0x41c010, stateNetworkMenu @0x420190,
- * gotoOptions @0x41d300, stateHighScoreTable @0x41dfd0 are TODO stubs in
- * stubs.c per Rebuild.md §19 (log + return to menu); the original
- * sndPlaySfx sound cues are skipped while the DSOUND mixer is out of scope.
+ * Rebuild-only menu tables are kept in this translation unit; the state
+ * logic remains in these original functions. Row targets stateNetworkMenu
+ * @0x420190, gotoOptions @0x41d300, stateHighScoreTable @0x41dfd0, and the
+ * character-select target stateCharacterSelect @0x41efa0 are TODO stubs in
+ * stubs.c per Rebuild.md §19 (log + return); the original sndPlaySfx sound
+ * cues are skipped while the DSOUND mixer is out of scope.
  * ===================================================================== */
 
 PStateFunc g_pStateFunc;          /* @0x45a6f8 */
@@ -54,6 +57,12 @@ int     g_nMenuRow;        /* @0x45d448 selected row (0..4) */
 int     g_nMenuFadeTarget; /* @0x45a6f0 sign fade target (0 = hidden, 0x1ff = shown) */
 int     g_nMenuFadeCur;    /* @0x45a6ec sign fade position, eases to target */
 float   g_flMenuBgTime;    /* @0x45d440 decor wave time accumulator (seconds-ish) */
+
+/* Game-type select state (stateGameTypeSelect @0x41c010) globals. */
+int     g_nGameTypeSel;    /* @0x45d454 selected game type (0..3) */
+int     g_nGameMode;       /* @0x458120 game mode id (1 quiz, 2 varujakten,
+                              3 matkrig, 4 vagnrace) */
+int     g_nPlayerCount;    /* @0x458108 player count (0 = auto-derive) */
 
 /* Fling/sign background textures (loaded by menuInit @0x419c20). Handles are
  * the texture nodes returned by gxLoadTpgFile, stored as void* like the
@@ -125,6 +134,18 @@ const char * const g_kMenuRowLabel[5] = {
 PStateFunc g_kMenuRowTarget[5] = {
     stateGameTypeSelect, stateNetworkMenu, gotoOptions, stateHighScoreTable,
     stateQuitConfirm
+};
+
+/* Game-type names (stateGameTypeSelect @0x41c010 label table): the original
+ * globals g_szNetGameVarujakten @0x4504ac, g_szNetGameMatkrig @0x4504a4,
+ * g_szNetGameFragesporten @0x4504b8, g_szNetGameVagnrace @0x450498. */
+const char * const g_kGameTypeName[4] = {
+    "Varujakten", "Matkrig", "Fr\xe5gesporten", "Vagnrace"
+};
+
+/* Game-type mode initializers (stateGameTypeSelect @0x41c010 target table). */
+PStateFunc g_kGameModeInit[4] = {
+    modeInitVarujakten, modeInitMatkrig, modeInitFrogesport, modeInitVagnrace
 };
 
 /* tgaLoad16 @0x415df0 — load the original 16-bit TGA surface buffer. */
@@ -328,6 +349,187 @@ int menuUpdate(int nType, int nKey, int nKeyType)
         }
     }
     g_nMenuFadeTarget = 0x1ff;
+    return 0;
+}
+
+/* stateGameTypeSelect @0x41c010 — game-type select (menu "Spela"). Renders
+ * the four game modes (Varujakten/Matkrig/Frågesporten/Vagnrace) centered on
+ * x = 0x226 at y = row*0x29 + 0xbe, selected mode in the "200" highlight
+ * fonts, like the main menu. Keydown: Up/Down wrap through the modes
+ * (0<->3), Enter selects the mode initializer (modeInit*), Escape returns to
+ * the main menu. Right/Left are no-ops because all per-mode value pointers
+ * are NULL (local_4d0 @stateGameTypeSelect); the original sndPlaySfx cues
+ * are skipped while the DSOUND mixer is out of scope. Ends by raising
+ * g_nMenuFadeTarget = 0x1ff like menuUpdate (the Escape path sets it too,
+ * unlike menuUpdate). */
+int stateGameTypeSelect(int nType, int nKey, int nKeyType)
+{
+    static int bLogged;
+    int        row;
+
+    if (nType == 0) {
+        if (!bLogged) {
+            bLogged = 1;
+            appLog("[menu] game-type select active (4 modes, two-font render)");
+        }
+        for (row = 0; row < 4; row++) {
+            const char *label = g_kGameTypeName[row];
+            gxFont *small = (row == g_nGameTypeSel) ? g_hMenuMsfnt : g_hMenuFontSmall;
+            gxFont *big = (row == g_nGameTypeSel) ? g_hMenuMfnt : g_hMenuFont;
+            char token[128];
+            const char *p;
+            const char *q;
+            int width = 0;
+            int x;
+            int n;
+
+            if (small == NULL || big == NULL) continue;
+            p = label;
+            while (*p != '\0') {
+                unsigned int u;
+                q = p;
+                while (*q != '\0') {
+                    u = (unsigned char)*q;
+                    if (!((u > 0x60 && u < 0x7b) || u == 0xe5 ||
+                          u == 0xe4 || u == 0xf6)) break;
+                    q++;
+                }
+                n = (int)(q - p);
+                if (n > 0) {
+                    memcpy(token, p, (size_t)n);
+                    token[n] = '\0';
+                    width += textWidth(g_hMenuFontSmall, token);
+                    p = q;
+                    continue;
+                }
+                q = p;
+                while (*q != '\0') {
+                    u = (unsigned char)*q;
+                    if ((u > 0x60 && u < 0x7b) || u == 0xe5 ||
+                        u == 0xe4 || u == 0xf6) break;
+                    q++;
+                }
+                n = (int)(q - p);
+                if (n > 0) {
+                    memcpy(token, p, (size_t)n);
+                    token[n] = '\0';
+                    width += textWidth(g_hMenuFont, token);
+                    p = q;
+                }
+            }
+
+            x = 0x226 - width;
+            p = label;
+            while (*p != '\0') {
+                unsigned int u;
+                q = p;
+                while (*q != '\0') {
+                    u = (unsigned char)*q;
+                    if (!((u > 0x60 && u < 0x7b) || u == 0xe5 ||
+                          u == 0xe4 || u == 0xf6)) break;
+                    q++;
+                }
+                n = (int)(q - p);
+                if (n > 0) {
+                    memcpy(token, p, (size_t)n);
+                    token[n] = '\0';
+                    textDraw(small, 0x2004, x, row * 0x29 + 0xbe, token);
+                    x += textWidth(small, token);
+                    p = q;
+                    continue;
+                }
+                q = p;
+                while (*q != '\0') {
+                    u = (unsigned char)*q;
+                    if ((u > 0x60 && u < 0x7b) || u == 0xe5 ||
+                        u == 0xe4 || u == 0xf6) break;
+                    q++;
+                }
+                n = (int)(q - p);
+                if (n > 0) {
+                    memcpy(token, p, (size_t)n);
+                    token[n] = '\0';
+                    textDraw(big, 0x2004, x, row * 0x29 + 0xbe, token);
+                    x += textWidth(big, token);
+                    p = q;
+                }
+            }
+        }
+    } else if (nType == 1 && nKeyType == 2) {
+        switch (nKey) {
+        case 0:   /* Right: no per-mode value pointers (local_4d0 all NULL) */
+        case 1:   /* Left */
+            break;
+        case 2:   /* Up: wraps 0 -> 3 */
+            g_nGameTypeSel = g_nGameTypeSel - 1;
+            if (g_nGameTypeSel == -1) g_nGameTypeSel = 3;
+            appLog("[menu] game type %d (Up)", g_nGameTypeSel);
+            break;
+        case 3:   /* Down: wraps 3 -> 0 */
+            g_nGameTypeSel = (g_nGameTypeSel != 3) ? g_nGameTypeSel + 1 : 0;
+            appLog("[menu] game type %d (Down)", g_nGameTypeSel);
+            break;
+        case 6:   /* Enter: select the mode initializer */
+            if (g_kGameModeInit[g_nGameTypeSel] != NULL) {
+                appLog("[menu] game type %d '%s' selected", g_nGameTypeSel,
+                       g_kGameTypeName[g_nGameTypeSel]);
+                g_pStateFunc = g_kGameModeInit[g_nGameTypeSel];
+            }
+            break;
+        case 7:   /* Escape: return to the main menu (fade target still set) */
+            appLog("[menu] game-type select Escape -> menuUpdate");
+            g_pStateFunc = menuUpdate;
+            break;
+        }
+    }
+    g_nMenuFadeTarget = 0x1ff;
+    return 0;
+}
+
+/* Game-type mode initializers (modeInit* @0x41bf60-0x41bfe0): set the player
+ * count policy and g_nGameMode, then enter stateCharacterSelect @0x41efa0.
+ * Varujakten/Matkrig/Vagnrace auto-derive the player count (0); Frågesporten
+ * (quiz) forces single-player (1). stateCharacterSelect is a TODO stub in
+ * stubs.c. These match the state-func convention but only run on the frame
+ * event that gameFrameUpdate delivers after the transition. */
+
+/* modeInitVarujakten @0x41bf60. */
+int modeInitVarujakten(int nType, int nKey, int nKeyType)
+{
+    (void)nType; (void)nKey; (void)nKeyType;
+    g_nPlayerCount = 0;
+    g_nGameMode = 2;
+    g_pStateFunc = stateCharacterSelect;
+    return 0;
+}
+
+/* modeInitMatkrig @0x41bf90. */
+int modeInitMatkrig(int nType, int nKey, int nKeyType)
+{
+    (void)nType; (void)nKey; (void)nKeyType;
+    g_nPlayerCount = 0;
+    g_nGameMode = 3;
+    g_pStateFunc = stateCharacterSelect;
+    return 0;
+}
+
+/* modeInitFrogesport @0x41bfc0. */
+int modeInitFrogesport(int nType, int nKey, int nKeyType)
+{
+    (void)nType; (void)nKey; (void)nKeyType;
+    g_nPlayerCount = 1;
+    g_nGameMode = 1;
+    g_pStateFunc = stateCharacterSelect;
+    return 0;
+}
+
+/* modeInitVagnrace @0x41bfe0. */
+int modeInitVagnrace(int nType, int nKey, int nKeyType)
+{
+    (void)nType; (void)nKey; (void)nKeyType;
+    g_nPlayerCount = 0;
+    g_nGameMode = 4;
+    g_pStateFunc = stateCharacterSelect;
     return 0;
 }
 

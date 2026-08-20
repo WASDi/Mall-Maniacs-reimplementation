@@ -8,8 +8,9 @@ The original game-flow state machine is fully mapped and documented at the
 behavioral level. The verified offline path is intro → main menu → game-type
 selection → character selection → level selection → `run <level>`; gameplay
 returns through results, deferred menu actions, high scores, and end scenes.
-The rebuild currently implements only the intro, main menu, and quit-confirm
-states; the first real row-target state is the next useful slice.
+The rebuild currently implements the intro, main menu, game-type select, and
+quit-confirm states; the character-select state (reachable through the
+`modeInit*` initializers) is the next useful slice.
 
 ## Purpose and evidence
 
@@ -77,8 +78,9 @@ level directors, and gameplay rendering remain reconstructed evidence rather
 than rebuild functionality. The confirmed dead-option use of the zeroed buffer
 at `0x004550d8` is not a real state function.
 
-Implement one real offline row target next—preferably
-`stateGameTypeSelect` (`0x0041c010`) or `stateOptions` (`0x0041c6a0`)—using the
+Implement one more real offline row target next—preferably the character
+select (`stateCharacterSelect`, `0x0041efa0`) or the options screen reached
+through `gotoOptions` (`stateOptions`, `0x0041c6a0`)—using the
 existing menu assets and text renderer. Then add character/level selection and
 the gameplay boundary incrementally; keep detailed subsystem notes in their
 dedicated documents and update `docs/16-rebuild.md` with each completed slice.

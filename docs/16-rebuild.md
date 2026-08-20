@@ -7,7 +7,10 @@ Status:
 The rebuild now runs the original offline GUI path through
 `DRIVERS\GXSOFT.DLL`: the six-logo introduction transitions to the five-row
 main menu, which supports keyboard navigation, row dispatch, quit confirmation,
-and clean shutdown. The next work is a real row-target screen.
+and clean shutdown. The first real row-target state is implemented: "Spela"
+enters the four-mode game-type select (`stateGameTypeSelect`), whose Enter
+targets (the `modeInit*` initializers) set the game mode and player-count
+policy before handing off to the still-deferred character select.
 
 ## Goal and scope
 
@@ -31,7 +34,15 @@ documentation, not in this progress overview.
   GX, dispatches frame and keyboard events, and performs the 25 ms frame gate.
 - **Menu flow:** `src/menu.c` implements `menuInit` (`0x419c20`), the intro
   timeline (`introUpdate`, `0x41ae50`), the main menu (`menuUpdate`,
-  `0x41b0b0`), and quit confirmation (`stateQuitConfirm`, `0x4200b0`).
+  `0x41b0b0`), the game-type select (`stateGameTypeSelect`, `0x41c010`) with
+  its four `modeInit*` initializers (`0x41bf60`–`0x41bfe0`), and quit
+  confirmation (`stateQuitConfirm`, `0x4200b0`). The game-type select renders
+  the four modes (`Varujakten`/`Matkrig`/`Frågesporten`/`Vagnrace`) in the
+  same two-font row style as the main menu; Up/Down wrap the selection, Enter
+  selects the mode initializer, and Escape returns to the main menu. The
+  mode initializers set `g_nGameMode` (`0x458120`) and `g_nPlayerCount`
+  (`0x458108`; 0 = auto-derive except Frågesporten, which forces 1) before
+  handing off to `stateCharacterSelect` (`0x41efa0`), still a TODO stub.
 - **Rendering:** `src/gx.c` adapts the maniac-side GX wrappers to
   `GXSOFT.DLL`; indexed TGA assets and the `MERGED00.TPG` palette render at
   the original 640x480 resolution.
@@ -57,9 +68,12 @@ documentation, not in this progress overview.
   `pollKeyboard` body actually polls DirectInput, debounces key IDs, dispatches
   `(key, 2)`, clears the quit flag, and may post `WM_CLOSE`; those effects are
   intentionally absent because the slice uses queued window messages. The
-  four menu row entries remain deliberate `int(int, int, int)`
-  replacement stubs: they log once, return `0`, and route back to `menuUpdate`;
-  their original rendering/gameplay/network logic remains deferred.
+  remaining menu row entries (`stateNetworkMenu @0x420190`, `gotoOptions
+  @0x41d300`, `stateHighScoreTable @0x41dfd0`) and the character-select target
+  (`stateCharacterSelect @0x41efa0`) remain deliberate `int(int, int, int)`
+  replacement stubs: they log once, return `0`, and route back to the menu (or
+  game-type select); their original rendering/gameplay/network logic remains
+  deferred.
 
 ## Verified behavior
 
@@ -72,20 +86,26 @@ documentation, not in this progress overview.
    keys are ignored.
 3. Up/Down navigation wraps across `Spela`, `Nätverk`, `Alternativ`, `Rekord`,
    and `Avsluta`; Enter dispatches the selected row.
-4. Escape opens quit confirmation. Enter selects `Avsluta` without immediately
+4. Enter on `Spela` enters the game-type select. Up/Down wrap across the four
+   modes (`Varujakten`, `Matkrig`, `Frågesporten`, `Vagnrace`); Escape returns
+   to the main menu; Enter on a mode logs the selected mode, sets
+   `g_nGameMode`/`g_nPlayerCount`, and reaches the (TODO) character select,
+   which logs once and returns to the game-type select.
+5. Escape opens quit confirmation. Enter selects `Avsluta` without immediately
    cancelling the newly displayed screen; Escape returns to the menu, while
    the original J/Y character confirmations exit cleanly.
 
-The first four row targets currently log a TODO message and return to the main
+The remaining row targets currently log a TODO message and return to the main
 menu. This is intentional until those states are reconstructed.
 
 ## Next milestone
 
-Implement one real row-target state, preferably the game-type select
-(`stateGameTypeSelect`, `0x41c010`) or the options screen reached through
-`gotoOptions` (`stateOptions`, `0x41c6a0`). Reuse the existing menu assets and
-text renderer, then add the real input path (`pollKeyboard`, `0x416a10`) when
-mouse/controller support is required. Gameplay remains after the GUI states.
+Implement the next real row-target state, preferably the character select
+(`stateCharacterSelect`, `0x41efa0`, now reachable from every `modeInit*`) or
+the options screen reached through `gotoOptions` (`stateOptions`, `0x41c6a0`).
+Reuse the existing menu assets and text renderer, then add the real input path
+(`pollKeyboard`, `0x416a10`) when mouse/controller support is required.
+Gameplay remains after the GUI states.
 
 ## Progress tracking
 
@@ -109,5 +129,6 @@ Ghidra, and relevant subsystem documentation after each completed chunk.
   only known low-level deviations in the implemented slice.
 - Deferred behavior includes DirectInput polling, audio, scene/gameplay,
   networking, registry-based driver selection, and real menu row targets.
-  `gotoOptions` and the first four row handlers intentionally return to the
-  menu instead of claiming those states are implemented.
+  `stateNetworkMenu`, `gotoOptions`, `stateHighScoreTable`, and
+  `stateCharacterSelect` intentionally return to the menu instead of claiming
+  those states are implemented.
