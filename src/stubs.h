@@ -21,9 +21,10 @@ void gameInit(void);
  * from menuUpdate @0x41b0b0 on Enter). Contract: state-func convention
  * (nType 0 = frame update, nType 1 + nKeyType 2 = keydown); each sets
  * g_pStateFunc to the next state. TODO stubs: log once + return to the
- * menu. Interfaces stay fixed when the real bodies replace them. */
+ * menu. Interfaces stay fixed when the real bodies replace them.
+ * gotoOptions @0x41d300 is now implemented in options.c (Alternativ ->
+ * Svårighetsgrad, Grafik ignored). */
 int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
-int gotoOptions(int nType, int nKey, int nKeyType);          /* @0x41d300 */
 int stateHighScoreTable(int nType, int nKey, int nKeyType);  /* @0x41dfd0 */
 
 /* stateCharacterSelect @0x41efa0 — character-select screen, entered by the

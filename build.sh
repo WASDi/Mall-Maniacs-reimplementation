@@ -8,7 +8,7 @@ OUT=/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe
 
 i686-w64-mingw32-gcc -m32 -O2 -g -Wall -Wextra \
     -mwindows \
-    src/maniac.c src/gx.c src/font.c src/menu.c src/util.c src/pool.c \
+    src/maniac.c src/gx.c src/font.c src/menu.c src/options.c src/util.c src/pool.c \
     src/input.c src/stubs.c src/custom_helpers.c src/sound.c \
     -lkernel32 -luser32 -lgdi32 -lwinmm -ldsound \
     -o "$OUT"

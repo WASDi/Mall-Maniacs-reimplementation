@@ -10,6 +10,7 @@
 #include "util.h"
 #include "font.h"
 #include "menu.h"
+#include "options.h"
 #include "input.h"
 #include "custom_helpers.h"
 #include "stubs.h"
@@ -26,14 +27,18 @@
  *   modeInitVarujakten @0x41bf60 / modeInitMatkrig @0x41bf90 /
  *   modeInitFrogesport @0x41bfc0 / modeInitVagnrace @0x41bfe0
  *   stateQuitConfirm @0x4200b0 "Avsluta" / Escape quit-confirm screen
+ *   gotoOptions/stateOptions/stateOptionsExit are in options.c
+ *     gotoOptions     @0x41d300  "Alternativ" gate
+ *     stateOptions    @0x41c6a0  options screen (Svårighetsgrad only, Grafik ignored)
+ *     stateOptionsExit@0x41c630  options exit tail
  *
  * Rebuild-only menu tables are kept in this translation unit; the state
  * logic remains in these original functions. Row targets stateNetworkMenu
- * @0x420190, gotoOptions @0x41d300, stateHighScoreTable @0x41dfd0, and the
- * character-select target stateCharacterSelect @0x41efa0 are TODO stubs in
- * stubs.c per Rebuild.md §19 (log + return). Menu sound cues (sndPlaySfx
- * @0x437cf0) play through src/sound.c, which uses the same DirectSound
- * streaming path as the original (docs/09-sound.md).
+ * @0x420190 and stateHighScoreTable @0x41dfd0, and the character-select
+ * target stateCharacterSelect @0x41efa0, are TODO stubs in stubs.c per
+ * Rebuild.md §19 (log + return). Menu sound cues (sndPlaySfx @0x437cf0)
+ * play through src/sound.c, which uses the same DirectSound streaming
+ * path as the original (docs/09-sound.md).
  * ===================================================================== */
 
 PStateFunc g_pStateFunc;          /* @0x45a6f8 */
@@ -109,8 +114,8 @@ static GxVert *menuFlingVert(int col, int row)
 }
 
 /* Sign-quad vertex common fields (gameFrameUpdate @0x41aba5 color loop):
- * z = 0 and r = g = b = 0xff on all four vertices. */
-static void setSignVerts(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3)
+ * z = 0 and r = g = b = 0xff on all four vertices. Shared with options.c. */
+void setSignVerts(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3)
 {
     v0->z = v1->z = v2->z = v3->z = 0;
     v0->r = v0->g = v0->b = 0xff;

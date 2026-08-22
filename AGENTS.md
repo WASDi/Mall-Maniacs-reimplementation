@@ -82,6 +82,7 @@ original binary, so fix any discrepancy on both sides immediately.
 
 When investigating problems, thoroughly verify that the assembly logic matches the reimplemented code.
 All source of bugs are mismatches. The original assembly is the source of truth.
+Always look at the assembly. The ghidra decompiler is lossy.
 
 The script `TrackRebuildDetailed` reports overall progress.
 

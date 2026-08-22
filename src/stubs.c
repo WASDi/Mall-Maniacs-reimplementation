@@ -39,21 +39,6 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType)
     return 0;
 }
 
-/* gotoOptions @0x41d300 — menu "Alternativ". Original: copies g_nGfxMode into
- * g_nRendererMode @0x45a390 then g_pStateFunc = stateOptions @0x41c6a0.
- * TODO stub: log + return to menu. */
-int gotoOptions(int nType, int nKey, int nKeyType)
-{
-    static int bLogged;
-    (void)nType; (void)nKey; (void)nKeyType;
-    if (!bLogged) {
-        bLogged = 1;
-        appLog("[stub TODO] gotoOptions @0x41d300 not implemented (back to menu)");
-    }
-    g_pStateFunc = menuUpdate;
-    return 0;
-}
-
 /* stateHighScoreTable @0x41dfd0 — records / high-score table (menu "Rekord").
  * Original: draws 2 rows of the fshi table via commandDispatch; keys 6/7 ->
  * menuUpdate. TODO stub: log + return to menu. */

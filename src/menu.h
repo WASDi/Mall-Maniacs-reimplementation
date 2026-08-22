@@ -3,6 +3,7 @@
 
 #include <windows.h>
 
+#include "gx.h"
 #include "font.h"
 
 /* Game state-function pointer (maniac g_pStateFunc @0x45a6f8). Called with
@@ -65,6 +66,8 @@ extern int     g_nMenuRow;        /* @0x45d448 selected row (0..4) */
 extern int     g_nMenuFadeTarget; /* @0x45a6f0 sign fade target (0 hidden, 0x1ff shown) */
 extern int     g_nMenuFadeCur;    /* @0x45a6ec sign fade position */
 extern float   g_flMenuBgTime;    /* @0x45d440 decor wave time accumulator */
+
+void setSignVerts(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3);
 
 /* Game-type select state (stateGameTypeSelect @0x41c010) globals. */
 extern int     g_nGameTypeSel;    /* @0x45d454 selected game type (0..3) */
