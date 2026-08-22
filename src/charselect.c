@@ -1,0 +1,451 @@
+#include <windows.h>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+
+#include "gx.h"
+#include "font.h"
+#include "menu.h"
+#include "charselect.h"
+#include "record.h"
+#include "options.h"
+#include "input.h"
+#include "custom_helpers.h"
+#include "sound.h"
+
+/* =====================================================================
+ * Character-select subsystem — reimplementation of stateCharacterSelect
+ * @0x41efa0 and stateCharSelectOk @0x41ef40. New file per milestone:
+ * Spela -> 4-mode select (stateGameTypeSelect @0x41c010) -> character
+ * pick -> level select.
+ *
+ * Original draws: char name centered at y=10 with mixed fonts, two
+ * sinus-wobble quads (sin(g_flCharAnimTime)*5 +100 / -496), portrait
+ * quad (char tex @0x45a660 or QUESTION fallback @0x45a688), stat rows
+ * Snabbhet @0x450a94 / Styrka @0x450a8c / Smidighet @0x450a80 with bars
+ * sized from g_roundInitb4/b8/bc @0x4501b4/0x4501b8/0x4501bc
+ * (bar width = stat*0x2e+0x17, inner = stat*0x2e+1). 3D preview model
+ * (sceneNodeAllocChild @0x4319e0 etc) is deferred — stubbed with log
+ * and 2D portrait instead. Keys: 0 Right / 1 Left cycle g_nCharSelIdx
+ * 0..9 wrap; 2 Up / 3 Down no-op (single row); 6 Enter validates
+ * (idx < g_nLevelCount+5 -> g_playerRecords[0]._336_4_ etc -> level
+ * select, else sfx 5 + stay); 7 Esc -> game-type select.
+ *
+ * Global addresses mirror the original (see charselect.h). Rendering uses
+ * gxDrawPolygon @0x433440 and gxDrawQuadColor @0x414470. Fade resets to
+ * 0 at end of frame (g_nMenuFadeTarget/Cur @0x45a6f0/0x45a6ec).
+ * ===================================================================== */
+
+int   g_nCharSelIdx = 0;        /* @0x45d480 */
+int   g_nCharSelSaved = 0;      /* @0x45d450 */
+int   g_nCharSelIdxPrev = -1;   /* @0x45d484 */
+int   g_nCharSelRow = 0;        /* @0x45d490 */
+float g_flCharModelRot = 1.5339824f; /* @0x45d488 */
+float g_flCharModelZoom = 2000.0f;   /* @0x45d48c */
+float g_flCharAnimTime = 0;     /* @0x45d410 */
+int   g_nCharAnimFrame = 0;     /* @0x45d498 */
+float g_flCharAnimAccum = 0;    /* @0x45d49c */
+void *g_pCharModelNode = NULL;  /* @0x45a6c4 */
+void *g_pCharModelNodePrev = NULL; /* @0x45a6c8 */
+void *g_pCharAnim = NULL;       /* @0x45a6d8 */
+void *g_pCharAnimPrev = NULL;   /* @0x45a6dc */
+int   g_nCharModelSwapFlag = 0; /* @0x45d494 */
+void *g_pSceneRoot = NULL;      /* @0x4588f8 (scene root, null until game) */
+void *g_anMenuCharTex[10] = {0};/* @0x45a660 per-char tex */
+void *g_hMenuTexTom = NULL;     /* @0x45a688 */
+
+/* Rebuilt tables (original @0x45013c / 0x450164 / 0x4501b4). Order matches
+ * original indexing: EAX*4+0x45013c where EAX=g_nCharSelIdx. Display names
+ * decoded from .rdata (see ghidra reads 0x450340 etc); scene names are
+ * uppercase model identifiers at 0x4502ec etc. Stats from 0x4501b4/b8/bc. */
+const char *g_apCharNames[10] = { /* @0x45013c */
+    "Roland Bl\xe5vind",     /* 0 @0x4503c4 */
+    "Susanne Spira",         /* 1 @0x4503b4 */
+    "\xc5ke L\xf6nn",         /* 2 @0x4503a8 Åke Lönn */
+    "Agata von G\xf6rdel",   /* 3 @0x450394 */
+    "Hektor Kvot",           /* 4 @0x450388 */
+    "Hugo Spandex",          /* 5 @0x450378 */
+    "Bosse B\xe4nkpress",    /* 6 @0x450368 */
+    "Klara Blixt",           /* 7 @0x45035c */
+    "Kalle Kallsup",         /* 8 @0x45034c */
+    "Kajsa Komet"            /* 9 @0x450340 */
+};
+const char *g_apCharSceneNames[10] = { /* @0x450164 */
+    "ROLAND",  /* 0 @0x450338 */
+    "SUSANNE", /* 1 */
+    "AKE",     /* 2 */
+    "AGATA",   /* 3 */
+    "HEKTOR",  /* 4 */
+    "HUGO",    /* 5 */
+    "BOSSE",   /* 6 */
+    "KLARA",   /* 7 */
+    "KALLE",   /* 8 */
+    "KAJSA"    /* 9 @0x450340-? actually 0x4502fc is NIKOLINA but map to Kajsa for stub */
+};
+const int g_kCharStatSpeed[10] = { /* @0x4501b4 */
+    3,3,3,4,2,3,3,2,4,2
+};
+const int g_kCharStatStrength[10] = { /* @0x4501b8 */
+    3,3,4,2,3,3,2,4,2,3
+};
+const int g_kCharStatAgility[10] = { /* @0x4501bc */
+    3,4,2,3,3,2,4,2,3,4
+};
+
+/* stateLevelSelect is defined in gameflow (not yet rebuilt); declare
+ * extern to allow the advance transition. Original @0x41b900. */
+int stateLevelSelect(int nType,int nKey,int nKeyType); /* @0x41b900 stub when not linked */
+__attribute__((weak)) int stateLevelSelect(int nType,int nKey,int nKeyType)
+{
+    (void)nType; (void)nKey; (void)nKeyType;
+    appLog("[charselect] stateLevelSelect @0x41b900 not yet implemented (stub)");
+    g_pStateFunc = menuUpdate;
+    return 0;
+}
+
+/* Minimal player-record shape for the OK transition (original
+ * g_playerRecords[0]._336_4_ @0x456210+0x336 is char idx, and
+ * g_nLocalPlayerIdx @0x458104). Reuse the real globals if defined
+ * elsewhere; otherwise define weak stubs. */
+struct PlayerSlot {
+    unsigned char _pad[0x336];
+    int nCharIdx; /* @0x336 */
+};
+extern struct PlayerSlot g_playerRecords[]; /* @0x456360 via g_apPlayers */
+extern int g_nLocalPlayerIdx;               /* @0x458104 */
+#ifndef PLAYER_RECORDS_DEFINED
+/* Provide weak definitions when gameflow not linked yet. */
+struct PlayerSlot g_playerRecords[4] = {0};
+int g_nLocalPlayerIdx = 0;
+#endif
+
+/* textDrawMixedCase @0x41ffc0 — lower-case a-z and å/ä/ö (0xe5/0xe4/0xf6)
+ * in the small 200-font, others in the large 200-font. Advances x per token. */
+void textDrawMixedCase(int x, int y, const char *text) /* @0x41ffc0 */
+{
+    if (text == NULL) return;
+    gxFont *small = g_hMenuMsfnt; /* @0x45a64c */
+    gxFont *big = g_hMenuMfnt;    /* @0x45a650 */
+    if (small == NULL || big == NULL) {
+        if (g_hMenuFont) { textDraw(g_hMenuFont, 0x2004, x, y, (char*)text); }
+        return;
+    }
+    const char *p = text;
+    char token[256];
+    int cx = x;
+    while (*p != '\0') {
+        unsigned int u = (unsigned char)*p;
+        const char *q = p;
+        if ((u > 0x60 && u < 0x7b) || u == 0xe5 || u == 0xe4 || u == 0xf6) {
+            while (*q != '\0') {
+                u = (unsigned char)*q;
+                if (!((u > 0x60 && u < 0x7b) || u == 0xe5 || u == 0xe4 || u == 0xf6)) break;
+                q++;
+            }
+            int n = (int)(q - p);
+            if (n > 0) {
+                if (n > 255) n = 255;
+                memcpy(token, p, (size_t)n); token[n]='\0';
+                textDraw(small, 0x2004, cx, y, token);
+                cx += textWidth(small, token);
+            }
+        } else {
+            while (*q != '\0') {
+                u = (unsigned char)*q;
+                if ((u > 0x60 && u < 0x7b) || u == 0xe5 || u == 0xe4 || u == 0xf6) break;
+                q++;
+            }
+            int n = (int)(q - p);
+            if (n > 0) {
+                if (n > 255) n = 255;
+                memcpy(token, p, (size_t)n); token[n]='\0';
+                textDraw(big, 0x2004, cx, y, token);
+                cx += textWidth(big, token);
+            }
+        }
+        p = q;
+        if (*p == '\0') break;
+    }
+}
+
+/* stateCharSelectOk @0x41ef40 — validate char idx. If g_nCharSelIdx >=
+ * g_nLevelCount+5 then stay (sfx 5), else assign to player 0 and enter
+ * level select. */
+int stateCharSelectOk(int nType, int nKey, int nKeyType) /* @0x41ef40 */
+{
+    (void)nType; (void)nKey; (void)nKeyType;
+    if (g_nCharSelIdx >= g_nLevelCount + 5) {
+        sndPlaySfx(0,1,5,0xffff,0,0x400);
+        g_pStateFunc = stateCharacterSelect;
+        appLog("[charselect] invalid char %d >= %d+5 — stay", g_nCharSelIdx, g_nLevelCount);
+        return 0;
+    }
+    g_playerRecords[0].nCharIdx = g_nCharSelIdx;
+    g_nLocalPlayerIdx = 0;
+    g_pStateFunc = stateLevelSelect;
+    g_nMenuFadeTarget = 0;
+    appLog("[charselect] char %d '%s' selected -> level select", g_nCharSelIdx, g_apCharNames[g_nCharSelIdx]);
+    return 0;
+}
+
+/* stateCharacterSelect @0x41efa0 — character picker. Input handling
+ * mirrors 0x41efa0: Right/Left adjust char idx (0..9 wrap), Up/Down
+ * keep single row 0, Enter -> stateCharSelectOk, Esc -> game-type
+ * select. Frame (nType==0) renders name, wobble bars, portrait and
+ * three stat rows. 3D scene is stubbed (log + 2D portrait). */
+int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
+{
+    /* Sync saved idx on entry (original MOV [0x45d480],ECX where ECX=[0x45d450]). */
+    g_nCharSelIdx = g_nCharSelSaved;
+
+    if (nType == 1 && nKeyType == 2) {
+        switch (nKey) {
+        case 0: /* Right — inc char idx if <10 (original @0x41f0ee checks <10, allows 9->10 then wraps to 0) */
+            if (g_nCharSelIdx < 10) {
+                sndPlaySfx(0,1,2,0xffff,0,0x400);
+                g_nCharSelIdx++;
+                appLog("[charselect] Right -> char %d", g_nCharSelIdx);
+            }
+            break;
+        case 1: /* Left — dec if >-1 (original @0x41f0a5 checks >-1, allows 0->-1 then wraps to 9) */
+            if (g_nCharSelIdx > -1) {
+                sndPlaySfx(0,1,2,0xffff,0,0x400);
+                g_nCharSelIdx--;
+                appLog("[charselect] Left -> char %d", g_nCharSelIdx);
+            }
+            break;
+        case 2: /* Up — single row, clamp 0 */
+            sndPlaySfx(0,1,1,0xffff,0,0x400);
+            g_nCharSelRow = 0;
+            break;
+        case 3: /* Down — single row, clamp 0 */
+            sndPlaySfx(0,1,1,0xffff,0,0x400);
+            g_nCharSelRow = 0;
+            break;
+        case 6: /* Enter — validate (original sets g_pStateFunc = stateCharSelectOk) */
+            sndPlaySfx(0,1,3,0xffff,0,0x400);
+            g_pStateFunc = stateCharSelectOk;
+            appLog("[charselect] Enter -> stateCharSelectOk");
+            return 0;
+        case 7: /* Esc */
+            sndPlaySfx(0,1,4,0xffff,0,0x400);
+            g_pStateFunc = stateGameTypeSelect;
+            appLog("[charselect] Esc -> game-type select");
+            return 0;
+        default: break;
+        }
+    }
+
+    /* Wrap 0..9 (original at 0x41f50e). */
+    if (g_nCharSelIdx == -1) g_nCharSelIdx = 9;
+    else if (g_nCharSelIdx == 10) g_nCharSelIdx = 0;
+    g_nCharSelSaved = g_nCharSelIdx;
+
+    if (nType != 0) return 0;
+
+    /* Ensure UI textures loaded (original loads gfx/tom elsewhere; rebuild lazy-loads). */
+    if (g_hMenuTexGfx == NULL) {
+        g_hMenuTexGfx = (void*)(uintptr_t)gxLoadTpgFile("menu\\gfx00.tpg");
+        if (g_hMenuTexGfx == NULL) {
+            g_hMenuTexGfx = (void*)(uintptr_t)gxLoadTpgFile("menu\\GFX00.TPG");
+            if (g_hMenuTexGfx == NULL) appLog("[charselect] WARNING gfx00.tpg load failed");
+            else appLog("[charselect] GFX00.TPG loaded");
+        } else appLog("[charselect] gfx00.tpg loaded for stats/bars");
+    }
+    if (g_hMenuTexTom == NULL) {
+        g_hMenuTexTom = (void*)(uintptr_t)gxLoadTpgFile("menu\\tom00.tpg");
+        if (g_hMenuTexTom == NULL) g_hMenuTexTom = (void*)(uintptr_t)gxLoadTpgFile("menu\\TOM00.TPG");
+        if (g_hMenuTexTom == NULL) g_hMenuTexTom = (void*)(uintptr_t)gxLoadTpgFile("menu\\tom.tpg");
+    }
+    {
+        static const char *kCharTpg[10] = {
+            "menu\\ROLAND00.TPG",   /* 0 Roland */
+            "menu\\SUSANNE00.TPG",  /* 1 Susanne */
+            "menu\\OKE00.TPG",      /* 2 Åke */
+            "menu\\AGATA00.TPG",    /* 3 Agata */
+            "menu\\HEKTOR00.TPG",   /* 4 Hektor */
+            "menu\\HUGO00.TPG",     /* 5 Hugo */
+            "menu\\BOSSE00.TPG",    /* 6 Bosse */
+            "menu\\KLARA00.TPG",    /* 7 Klara */
+            "menu\\KALLE00.TPG",    /* 8 Kalle */
+            "menu\\KAJSA00.TPG"     /* 9 Kajsa */
+        };
+        if (g_nCharSelIdx >=0 && g_nCharSelIdx <10 && g_anMenuCharTex[g_nCharSelIdx]==NULL && g_nCharSelIdx < g_nLevelCount +5) {
+            void *t = (void*)(uintptr_t)gxLoadTpgFile(kCharTpg[g_nCharSelIdx]);
+            if (t) {
+                g_anMenuCharTex[g_nCharSelIdx]=t;
+                appLog("[charselect] %s loaded", kCharTpg[g_nCharSelIdx]);
+            } else {
+                char fallback[64];
+                snprintf(fallback,sizeof(fallback),"menu\\char%02d.tpg", g_nCharSelIdx);
+                t = (void*)(uintptr_t)gxLoadTpgFile(fallback);
+                if (t) {
+                    g_anMenuCharTex[g_nCharSelIdx]=t;
+                    appLog("[charselect] %s loaded (fallback)", fallback);
+                } else if (g_anMenuCharTex[g_nCharSelIdx]==NULL) {
+                    /* keep TOM fallback */
+                    appLog("[charselect] char tex %s missing, using TOM", kCharTpg[g_nCharSelIdx]);
+                }
+            }
+        }
+    }
+
+    /* Frame — mimic original time and model handling, stubbed. */
+    {
+        static int bLogged3D = 0;
+        if (g_nCharSelIdx != g_nCharSelIdxPrev || g_pCharModelNode == NULL) {
+            g_nCharSelIdxPrev = g_nCharSelIdx;
+            if (!bLogged3D) {
+                bLogged3D = 1;
+                appLog("[charselect] 3D preview stubbed (idx %d '%s'), using 2D portrait", g_nCharSelIdx, g_apCharNames[g_nCharSelIdx]);
+            }
+            /* Original would allocate scene node @0x4319e0, set pos/rot,
+             * load char scene @0x450164, anmLoad etc. Deferred. */
+            g_pCharModelNodePrev = g_pCharModelNode;
+            g_pCharAnimPrev = g_pCharAnim;
+            g_nCharModelSwapFlag = 0;
+            g_pCharModelNode = (void*)0x1; /* non-null sentinel */
+            g_flCharModelRot = 1.5339824f; /* @0x3fc45989 */
+            g_flCharModelZoom = 2000.0f;   /* @0x44fa0000 */
+            /* scene preview would be set up here */
+        }
+        /* Anim stepping (original: fild frame, ftol, eventAnimStep). Stubbed. */
+        if ((float)g_nCharAnimFrame - g_flCharAnimAccum > 10.0f) g_flCharAnimAccum = (float)g_nCharAnimFrame;
+        g_flCharAnimAccum += g_flFrameDelta;
+        /* Model rotation + zoom (original 0x41f711-0x41f773). Keep stub vis. */
+        g_flCharModelRot -= g_flFrameDelta * 0.0628f;
+        if (g_flCharModelZoom > 700.0f) g_flCharModelZoom -= g_flFrameDelta * 20.0f;
+        /* Scene positioning stubs would go here; we keep 2D UI. */
+    }
+
+    /* Render 2D UI — matches original coordinates. */
+    {
+        if (g_nCharSelIdx <0 || g_nCharSelIdx >=10) {
+            appLog("[charselect] idx %d out of range, clamping to 0", g_nCharSelIdx);
+            g_nCharSelIdx = 0;
+            g_nCharSelSaved = 0;
+        }
+        const char *name = g_apCharNames[g_nCharSelIdx];
+        if (name == NULL) name = "Unknown";
+        /* Name width + center at 0x140 (320). Original computestotal width
+         * via two-font textWidth then x=0x140 - w/2, y=10. */
+        int w = 0;
+        {
+            const char *p = name;
+            char tok[256];
+            gxFont *smallF = g_hMenuFontSmall;
+            gxFont *bigF = g_hMenuFont;
+            if (smallF == NULL || bigF == NULL) {
+                appLog("[charselect] fonts null small=%p big=%p msfnt=%p mfnt=%p", smallF, bigF, g_hMenuMsfnt, g_hMenuMfnt);
+                /* fallback width estimate */
+                w = (int)strlen(name) * 8;
+            } else {
+                while (*p != '\0') {
+                    unsigned int u = (unsigned char)*p;
+                    const char *q = p;
+                    if ((u > 0x60 && u < 0x7b) || u == 0xe5 || u == 0xe4 || u == 0xf6) {
+                        while (*q) { u=(unsigned char)*q; if(!((u>0x60&&u<0x7b)||u==0xe5||u==0xe4||u==0xf6)) break; q++; }
+                        int n=(int)(q-p); if(n>0){ if(n>255)n=255; memcpy(tok,p,n); tok[n]=0; w+=textWidth(smallF,tok); }
+                    } else {
+                        while (*q) { u=(unsigned char)*q; if((u>0x60&&u<0x7b)||u==0xe5||u==0xe4||u==0xf6) break; q++; }
+                        int n=(int)(q-p); if(n>0){ if(n>255)n=255; memcpy(tok,p,n); tok[n]=0; w+=textWidth(bigF,tok); }
+                    }
+                    p = q;
+                }
+            }
+        }
+        g_flCharAnimTime += g_flFrameDelta * 0.3f; /* @0x44b530 0.3f */
+        {
+            int cx = 0x140 - w/2;
+            const char *p = name;
+            char tok[256];
+            while (*p != '\0') {
+                unsigned int u = (unsigned char)*p;
+                const char *q = p;
+                if ((u > 0x60 && u < 0x7b) || u == 0xe5 || u == 0xe4 || u == 0xf6) {
+                    while (*q) { u=(unsigned char)*q; if(!((u>0x60&&u<0x7b)||u==0xe5||u==0xe4||u==0xf6)) break; q++; }
+                    int n=(int)(q-p); if(n>0){ if(n>255)n=255; memcpy(tok,p,n); tok[n]=0; textDraw(g_hMenuMsfnt,0x2004,cx,10,tok); cx+=textWidth(g_hMenuMsfnt,tok); p=q; continue; }
+                }
+                q = p;
+                while (*q) { unsigned int u2=(unsigned char)*q; if((u2>0x60&&u2<0x7b)||u2==0xe5||u2==0xe4||u2==0xf6) break; q++; }
+                int n=(int)(q-p); if(n>0){ if(n>255)n=255; memcpy(tok,p,n); tok[n]=0; textDraw(g_hMenuMfnt,0x2004,cx,10,tok); cx+=textWidth(g_hMenuMfnt,tok); p=q; }
+            }
+        }
+        /* Wobble arrows (original 0x41f9bf-0x41fb7d): left = 0x104 - w/2 + sin*5,
+           right = w/2 + 0x150 - sin*5, both width 0x2b, y 0x500-0x3000,
+           UV left 0x5800/0x8300, right 0x8400/0xaf00. The double at 0x44b698 is 5.0. */
+        {
+            if (g_hMenuTexGfx && g_hMenuMsfnt && g_hMenuMfnt) {
+                float s = sinf(g_flCharAnimTime);
+                double s5 = (double)s * 5.0; /* @0x44b698 */
+                int leftBase = (int)((double)(0x104 - w/2) + s5);   /* FILD 0x104-w/2, FADDP */
+                int rightBase = (int)((double)(w/2 + 0x150) - s5);  /* FILD w/2+0x150, FSUBP (PTRADD w/2+0x54*4) */
+                GxVert v0,v1,v2,v3; GxColorUv uv;
+                uv.pTexture = g_hMenuTexGfx; uv.pParam5=NULL; uv.pad=0;
+                uv.U=0x5800; uv.V=0x3300; uv.gwU=0x8300; uv.V2=0x3300; uv.gwU2=0x8300; uv.hV=0x5e00; uv.U2=0x5800; uv.hV2=0x5e00;
+                v0.x = leftBase <<8; v1.x = (leftBase + 0x2b) <<8; v2.x=v1.x; v3.x=v0.x;
+                v0.y=0x500; v1.y=0x500; v2.y=0x3000; v3.y=0x3000;
+                setSignVerts(&v0,&v1,&v2,&v3);
+                gxDrawPolygon(&v0,&v1,&v2,&v3,0x2004,&uv);
+                uv.U=0x8400; uv.gwU=0xaf00; uv.gwU2=0xaf00; uv.U2=0x8400;
+                v0.x = rightBase <<8; v1.x = (rightBase + 0x2b) <<8; v2.x=v1.x; v3.x=v0.x;
+                setSignVerts(&v0,&v1,&v2,&v3);
+                gxDrawPolygon(&v0,&v1,&v2,&v3,0x2004,&uv);
+            }
+        }
+        /* Portrait quad (original 0xa00,0x3c00 - 0x10900,0x13b00, UV 0..0xff00 or char tex). */
+        if (g_hMenuTexGfx) {
+            GxVert v0,v1,v2,v3; GxColorUv uv;
+            void *tex = NULL;
+            if (g_nCharSelIdx < g_nLevelCount + 5 && g_nCharSelIdx >=0 && g_nCharSelIdx <10 && g_anMenuCharTex[g_nCharSelIdx])
+                tex = g_anMenuCharTex[g_nCharSelIdx];
+            else
+                tex = g_hMenuTexTom ? g_hMenuTexTom : g_hMenuTexGfx;
+            if (tex == NULL) tex = g_hMenuTexGfx;
+            uv.pTexture = tex; uv.pParam5=NULL; uv.pad=0;
+            uv.U=0; uv.V=0; uv.gwU=0xff00; uv.V2=0; uv.gwU2=0xff00; uv.hV=0xff00; uv.U2=0; uv.hV2=0xff00;
+            v0.x=0xa00; v1.x=0x10900; v2.x=0x10900; v3.x=0xa00;
+            v0.y=0x3c00; v1.y=0x3c00; v2.y=0x13b00; v3.y=0x13b00;
+            setSignVerts(&v0,&v1,&v2,&v3);
+            gxDrawPolygon(&v0,&v1,&v2,&v3,0x2004,&uv);
+        }
+        /* Stat rows: Snabbhet @0x11d,0x146 ; Styrka @0x11d,0x178 ; Smidighet @0x11d,0x1aa
+         * Each has label (mixed fonts), background bar (10, y, 0x109, y+0x17, 0,0x5f...),
+         * foreground bar width stat*0x2e+0x17 / +1. */
+        {
+            const char *labels[3] = {"Snabbhet", "Styrka", "Smidighet"}; /* @0x450a94/0x450a8c/0x450a80 */
+            const int *stats[3] = {g_kCharStatSpeed, g_kCharStatStrength, g_kCharStatAgility};
+            int ys[3] = {0x146, 0x178, 0x1aa};
+            int y2s[3]= {0x150, 0x182, 0x1b4};
+            int y3s[3]= {0x155, 0x187, 0x1b9};
+            for(int i=0;i<3;i++){
+                int x=0x11d; int y=ys[i];
+                /* label via mixed fonts */
+                if (i==0) { /* Snabbhet drawn via two-font loop like original 0x41fd0e */
+                    const char *s=labels[i]; char tok[128]; const char *p=s;
+                    int cx=x;
+                    while(*p){ unsigned int u=(unsigned char)*p; const char *q=p; int n;
+                        if((u>0x60&&u<0x7b)||u==0xe5||u==0xe4||u==0xf6){ while(*q){u=(unsigned char)*q; if(!((u>0x60&&u<0x7b)||u==0xe5||u==0xe4||u==0xf6))break; q++;} n=(int)(q-p); if(n>0){memcpy(tok,p,n);tok[n]=0;textDraw(g_hMenuMsfnt,0x2004,cx,y,tok);cx+=textWidth(g_hMenuMsfnt,tok);} }
+                        else { while(*q){u=(unsigned char)*q; if((u>0x60&&u<0x7b)||u==0xe5||u==0xe4||u==0xf6)break; q++;} n=(int)(q-p); if(n>0){memcpy(tok,p,n);tok[n]=0;textDraw(g_hMenuMfnt,0x2004,cx,y,tok);cx+=textWidth(g_hMenuMfnt,tok);} }
+                        p=q;
+                    }
+                } else {
+                    textDrawMixedCase(x, y, labels[i]);
+                }
+                /* background bar — guarded, original always draws */
+                if (g_hMenuTexGfx) gxDrawQuadColor(g_hMenuTexGfx,10,y,0x109,y+0x17,0,0x5f,0xff,0x76);
+                if (g_hMenuTexGfx && g_nCharSelIdx >=0 && g_nCharSelIdx <10 && g_nCharSelIdx < g_nLevelCount + 5) {
+                    int st = stats[i][g_nCharSelIdx];
+                    if(st<0) st=0;
+                    if(st>5) st=5;
+                    int w = st * 0x2e + 0x17;
+                    int wi = st * 0x2e + 1;
+                    gxDrawQuadColor(g_hMenuTexGfx,0x16,y2s[i], w, y3s[i],0,0x77, wi,0x7c);
+                }
+            }
+        }
+    }
+    g_nMenuFadeTarget = 0;
+    g_nMenuFadeCur = 0;
+    return 0;
+}

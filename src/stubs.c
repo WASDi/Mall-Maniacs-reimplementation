@@ -41,18 +41,4 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType)
 
 /* stateHighScoreTable @0x41dfd0 — now implemented in record.c */
 
-/* stateCharacterSelect @0x41efa0 — character-select screen, entered by the
- * modeInit* game-type initializers (@0x41bf60-0x41bfe0). Original: character
- * picker + start; keys 6/7 advance/cancel. TODO stub: log + return to the
- * game-type select so the flow stays within the implemented menu slice. */
-int stateCharacterSelect(int nType, int nKey, int nKeyType)
-{
-    static int bLogged;
-    (void)nType; (void)nKey; (void)nKeyType;
-    if (!bLogged) {
-        bLogged = 1;
-        appLog("[stub TODO] stateCharacterSelect @0x41efa0 not implemented (back to game-type select)");
-    }
-    g_pStateFunc = stateGameTypeSelect;
-    return 0;
-}
+/* stateCharacterSelect @0x41efa0 — now implemented in charselect.c */

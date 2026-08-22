@@ -27,10 +27,6 @@ void gameInit(void);
 int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
 /* stateHighScoreTable @0x41dfd0 — now implemented in record.c */
 
-/* stateCharacterSelect @0x41efa0 — character-select screen, entered by the
- * modeInit* game-type initializers (menu.c). Contract: state-func
- * convention. TODO stub: log once + return to the game-type select.
- * Interfaces stay fixed when the real body replaces it. */
-int stateCharacterSelect(int nType, int nKey, int nKeyType); /* @0x41efa0 */
+/* stateCharacterSelect @0x41efa0 — now implemented in charselect.c */
 
 #endif /* STUBS_H */

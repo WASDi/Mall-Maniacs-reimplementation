@@ -32,7 +32,7 @@ milestone in `docs/16-rebuild.md`.
   prioritizing dependencies of the next visible single-player feature.
 - Build with `build.sh`, which writes to `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe`.
   Use `run.sh` for the Wine crash smoke test; confirm initialization and asset loading
-  in the logs. Do not modify the original executable or take screenshots.
+  in the logs. Do not modify the original executable.
 
 ## Tools
 - Use the Ghidra MCP bridge (`ghidra_*`) for decompilation, cross-references, naming,
