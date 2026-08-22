@@ -12,6 +12,8 @@
 #include "input.h"
 #include "custom_helpers.h"
 #include "sound.h"
+#include "sen.h"
+#include "scene.h"
 
 /* =====================================================================
  * Character-select subsystem — reimplementation of stateCharacterSelect
@@ -25,11 +27,13 @@
  * Snabbhet @0x450a94 / Styrka @0x450a8c / Smidighet @0x450a80 with bars
  * sized from g_roundInitb4/b8/bc @0x4501b4/0x4501b8/0x4501bc
  * (bar width = stat*0x2e+0x17, inner = stat*0x2e+1). 3D preview model
- * (sceneNodeAllocChild @0x4319e0 etc) is deferred — stubbed with log
- * and 2D portrait instead. Keys: 0 Right / 1 Left cycle g_nCharSelIdx
- * 0..9 wrap; 2 Up / 3 Down no-op (single row); 6 Enter validates
- * (idx < g_nLevelCount+5 -> g_playerRecords[0]._336_4_ etc -> level
- * select, else sfx 5 + stay); 7 Esc -> game-type select.
+ * (sceneNodeAllocChild @0x4319e0, sceneryObjAlloc @0x430200, anmLoad @0x433a90)
+ * and 2D portrait. Keys: 0 Right / 1 Left cycle g_nCharSelIdx
+ * 0..9 wrap; 2 Down decrements the row cursor (clamp -1->0); 3 Up toggles
+ * the row cursor 0<->1 (the disasm computes row=(row==0)?1:0). Left/Right
+ * only act on row 0 (the active character row; row 1's value pointer is
+ * null in the original). 6 Enter validates the row-0 action
+ * (stateCharSelectOk); 7 Esc -> game-type select.
  *
  * Global addresses mirror the original (see charselect.h). Rendering uses
  * gxDrawPolygon @0x433440 and gxDrawQuadColor @0x414470. Fade resets to
@@ -50,9 +54,10 @@ void *g_pCharModelNodePrev = NULL; /* @0x45a6c8 */
 void *g_pCharAnim = NULL;       /* @0x45a6d8 */
 void *g_pCharAnimPrev = NULL;   /* @0x45a6dc */
 int   g_nCharModelSwapFlag = 0; /* @0x45d494 */
-void *g_pSceneRoot = NULL;      /* @0x4588f8 (scene root, null until game) */
+void *g_pSceneRoot = NULL;      /* @0x4588f8 scene root (set by sceneSystemInit) */
 void *g_anMenuCharTex[10] = {0};/* @0x45a660 per-char tex */
 void *g_hMenuTexTom = NULL;     /* @0x45a688 */
+void *g_pCharSelAnimData = NULL;/* @0x45a6d0 anim-data pointer passed to anmLoad */
 
 /* Rebuilt tables (original @0x45013c / 0x450164 / 0x4501b4). Order matches
  * original indexing: EAX*4+0x45013c where EAX=g_nCharSelIdx. Display names
@@ -70,17 +75,17 @@ const char *g_apCharNames[10] = { /* @0x45013c */
     "Kalle Kallsup",         /* 8 @0x45034c */
     "Kajsa Komet"            /* 9 @0x450340 */
 };
-const char *g_apCharSceneNames[10] = { /* @0x450164 */
-    "ROLAND",  /* 0 @0x450338 */
-    "SUSANNE", /* 1 */
-    "AKE",     /* 2 */
-    "AGATA",   /* 3 */
-    "HEKTOR",  /* 4 */
-    "HUGO",    /* 5 */
-    "BOSSE",   /* 6 */
-    "KLARA",   /* 7 */
-    "KALLE",   /* 8 */
-    "KAJSA"    /* 9 @0x450340-? actually 0x4502fc is NIKOLINA but map to Kajsa for stub */
+const char *g_apCharSceneNames[10] = { /* @0x450164 (model ids, must match MESH/NAME names in characters.sen) */
+    "ROLAND",   /* 0 @0x450338 */
+    "KAJSA",    /* 1 @0x450330 */
+    "BERRY",    /* 2 @0x450328 */
+    "BRITTA",   /* 3 @0x450320 */
+    "FLOTTY",   /* 4 @0x450318 */
+    "MILOS",    /* 5 @0x450310 */
+    "AXEL",     /* 6 @0x450308 */
+    "NIKOLINA", /* 7 @0x4502fc */
+    "VONKEL",   /* 8 @0x4502f4 */
+    "PILOTTA"   /* 9 @0x4502ec */
 };
 const int g_kCharStatSpeed[10] = { /* @0x4501b4 */
     3,3,3,4,2,3,3,2,4,2
@@ -103,15 +108,15 @@ __attribute__((weak)) int stateLevelSelect(int nType,int nKey,int nKeyType)
     return 0;
 }
 
-/* Minimal player-record shape for the OK transition (original
- * g_playerRecords[0]._336_4_ @0x456210+0x336 is char idx, and
+/* Minimal player-record shape for the OK transition (original writes the
+ * selected char idx to g_playerRecords[0] @0x456360 (offset 0), and
  * g_nLocalPlayerIdx @0x458104). Reuse the real globals if defined
  * elsewhere; otherwise define weak stubs. */
 struct PlayerSlot {
-    unsigned char _pad[0x336];
-    int nCharIdx; /* @0x336 */
+    int nCharIdx; /* @0x456360 — first dword of player 0 holds selected char idx */
+    unsigned char _pad[0x336 - sizeof(int)];
 };
-extern struct PlayerSlot g_playerRecords[]; /* @0x456360 via g_apPlayers */
+extern struct PlayerSlot g_playerRecords[]; /* @0x456360 */
 extern int g_nLocalPlayerIdx;               /* @0x458104 */
 #ifndef PLAYER_RECORDS_DEFINED
 /* Provide weak definitions when gameflow not linked yet. */
@@ -191,8 +196,8 @@ int stateCharSelectOk(int nType, int nKey, int nKeyType) /* @0x41ef40 */
 /* stateCharacterSelect @0x41efa0 — character picker. Input handling
  * mirrors 0x41efa0: Right/Left adjust char idx (0..9 wrap), Up/Down
  * keep single row 0, Enter -> stateCharSelectOk, Esc -> game-type
- * select. Frame (nType==0) renders name, wobble bars, portrait and
- * three stat rows. 3D scene is stubbed (log + 2D portrait). */
+ * select. Frame (nType==0) renders the 3D model via the scene graph plus
+ * the name, wobble bars, portrait and three stat rows. */
 int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
 {
     /* Sync saved idx on entry (original MOV [0x45d480],ECX where ECX=[0x45d450]). */
@@ -200,32 +205,41 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
 
     if (nType == 1 && nKeyType == 2) {
         switch (nKey) {
-        case 0: /* Right — inc char idx if <10 (original @0x41f0ee checks <10, allows 9->10 then wraps to 0) */
-            if (g_nCharSelIdx < 10) {
+        case 0: /* Right — only on row 0 (original @0x41f0ee): inc char idx if <10 */
+            if (g_nCharSelRow == 0 && g_nCharSelIdx < 10) {
                 sndPlaySfx(0,1,2,0xffff,0,0x400);
                 g_nCharSelIdx++;
                 appLog("[charselect] Right -> char %d", g_nCharSelIdx);
             }
             break;
-        case 1: /* Left — dec if >-1 (original @0x41f0a5 checks >-1, allows 0->-1 then wraps to 9) */
-            if (g_nCharSelIdx > -1) {
+        case 1: /* Left — only on row 0 (original @0x41f0a5): dec char idx if >-1 */
+            if (g_nCharSelRow == 0 && g_nCharSelIdx > -1) {
                 sndPlaySfx(0,1,2,0xffff,0,0x400);
                 g_nCharSelIdx--;
                 appLog("[charselect] Left -> char %d", g_nCharSelIdx);
             }
             break;
-        case 2: /* Up — single row, clamp 0 */
+        case 2: /* Down — row dec (original @0x41f06e): row-1, wrap -1 -> 0 */
             sndPlaySfx(0,1,1,0xffff,0,0x400);
-            g_nCharSelRow = 0;
+            g_nCharSelRow = g_nCharSelRow - 1;
+            if (g_nCharSelRow == -1) g_nCharSelRow = 0;
             break;
-        case 3: /* Down — single row, clamp 0 */
+        case 3: /* Up — toggle row 0<->1 (original @0x41f03c): row = (row==0)?1:0 */
             sndPlaySfx(0,1,1,0xffff,0,0x400);
-            g_nCharSelRow = 0;
+            g_nCharSelRow = (g_nCharSelRow == 0) ? 1 : 0;
             break;
-        case 6: /* Enter — validate (original sets g_pStateFunc = stateCharSelectOk) */
+        case 6: /* Enter — original @0x41f136 stores g_pStateFunc from a per-row
+                   action table (row 0 -> stateCharSelectOk; row 1 -> runtime
+                   buffer @0x4550d8, empty in static data). Row 0 is the active
+                   character row; row 1's action is not statically resolvable, so
+                   it is treated as a no-op that stays in this state. */
             sndPlaySfx(0,1,3,0xffff,0,0x400);
-            g_pStateFunc = stateCharSelectOk;
-            appLog("[charselect] Enter -> stateCharSelectOk");
+            if (g_nCharSelRow == 0) {
+                g_pStateFunc = stateCharSelectOk;
+                appLog("[charselect] Enter -> stateCharSelectOk");
+            } else {
+                appLog("[charselect] Enter on row 1 (no-op)");
+            }
             return 0;
         case 7: /* Esc */
             sndPlaySfx(0,1,4,0xffff,0,0x400);
@@ -290,32 +304,87 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
         }
     }
 
-    /* Frame — mimic original time and model handling, stubbed. */
+    /* Frame — original 3D character preview via scene graph.
+     * Model (re)allocation: original @0x41f553. Per-frame update:
+     * original @0x41f647. Camera/root: original @0x41f7b8. State match
+     * verified against the disassembly at each call site below. */
     {
-        static int bLogged3D = 0;
+        /* The scene system and the character .SEN (mesh table + anim-data
+         * block @0x45a6d0) are initialised by the game-flow path that enters
+         * this state — the original stateCharacterSelect does NOT call
+         * sceneSystemInit / sceneLoadSen. Keep the call hierarchy intact:
+         * g_pCharSelAnimData is populated by that external init, not here. */
         if (g_nCharSelIdx != g_nCharSelIdxPrev || g_pCharModelNode == NULL) {
             g_nCharSelIdxPrev = g_nCharSelIdx;
-            if (!bLogged3D) {
-                bLogged3D = 1;
-                appLog("[charselect] 3D preview stubbed (idx %d '%s'), using 2D portrait", g_nCharSelIdx, g_apCharNames[g_nCharSelIdx]);
+            /* Free the previously displayed model (original @0x41f558). */
+            if (g_pCharModelNodePrev != NULL) {
+                sceneNodeFree(g_pCharModelNodePrev, 1);   /* @0x430460 */
+                anmFree(g_pCharAnimPrev);                  /* @0x434050 */
             }
-            /* Original would allocate scene node @0x4319e0, set pos/rot,
-             * load char scene @0x450164, anmLoad etc. Deferred. */
-            g_pCharModelNodePrev = g_pCharModelNode;
-            g_pCharAnimPrev = g_pCharAnim;
-            g_nCharModelSwapFlag = 0;
-            g_pCharModelNode = (void*)0x1; /* non-null sentinel */
-            g_flCharModelRot = 1.5339824f; /* @0x3fc45989 */
-            g_flCharModelZoom = 2000.0f;   /* @0x44fa0000 */
-            /* scene preview would be set up here */
+            g_pCharModelNodePrev = g_pCharModelNode;       /* @0x45a6c8 */
+            g_pCharAnimPrev      = g_pCharAnim;             /* @0x45a6dc */
+            g_nCharModelSwapFlag = 0;                      /* @0x45d494 */
+            g_flCharModelRot = 1.5339824f;                 /* @0x3fc45989 */
+            g_flCharModelZoom = 2000.0f;                   /* @0x44fa0000 */
+            /* sceneNodeAllocChild — original pushes (0, 0, 0x352, 0, 0x591),
+             * i.e. pParent=0, channel=0x352, channel2=0, channel3=0, channel4=0x591. */
+            g_pCharModelNode = sceneNodeAllocChild(0, 0, (void *)0x352, 0, (void *)0x591);
+            sceneObjSetPosOrient((int)g_pCharModelNode, 0, 0, 0, 0x2);  /* @0x4307d0 */
+            int id;
+            if (g_nCharSelIdx >= g_nLevelCount + 5)
+                id = scenNameToId("QUESTION");             /* @0x450aa0 fallback */
+            else
+                id = scenNameToId(g_apCharSceneNames[g_nCharSelIdx]);
+            void *pScen = sceneryObjAlloc((int)g_pCharModelNode, 0, 0, 0, 0, 0, 0, 0,
+                                          (void *)(uintptr_t)id);   /* @0x430200 */
+            /* anmLoad — original passes *0x45a6d0 as pData (the anim block from
+             * the loaded .SEN), 0 as pMasterNode, and the sceneryObj as pObj. */
+            g_pCharAnim = anmLoad(g_pCharSelAnimData, 0, pScen);     /* @0x433a90 */
+            eventAnimReset(g_pCharAnim);                   /* @0x434270 */
+            eventAnimStep(g_pCharAnim, 1);                 /* @0x434090 */
+            appLog("[charselect] 3D model idx %d '%s' id=%x node=%p anim=%p",
+                   g_nCharSelIdx, g_apCharNames[g_nCharSelIdx], id, g_pCharModelNode, g_pCharAnim);
         }
-        /* Anim stepping (original: fild frame, ftol, eventAnimStep). Stubbed. */
-        if ((float)g_nCharAnimFrame - g_flCharAnimAccum > 10.0f) g_flCharAnimAccum = (float)g_nCharAnimFrame;
+        /* Per-frame animation stepping (original @0x41f647): advance anim
+         * frames until the int() of the accumulator catches up. */
+        if ((float)g_nCharAnimFrame == g_flCharAnimAccum)
+            g_flCharAnimAccum = (float)g_nCharAnimFrame;
         g_flCharAnimAccum += g_flFrameDelta;
-        /* Model rotation + zoom (original 0x41f711-0x41f773). Keep stub vis. */
-        g_flCharModelRot -= g_flFrameDelta * 0.0628f;
-        if (g_flCharModelZoom > 700.0f) g_flCharModelZoom -= g_flFrameDelta * 20.0f;
-        /* Scene positioning stubs would go here; we keep 2D UI. */
+        {
+            int nAnimTarget = (int)g_flCharAnimAccum;
+            while (nAnimTarget > g_nCharAnimFrame) {
+                g_nCharAnimFrame++;
+                eventAnimStep(g_pCharAnim, 1);             /* @0x434090 */
+            }
+        }
+        /* Place the model on a circle from the rotation (original @0x41f6be):
+         * x = (int)(sin(rot)*zoom) - 0x1f4,  y = 0,  z = (int)(cos(rot)*zoom) + 0x320. */
+        {
+            float vec[8];
+            sceneNodeGetPosWorld((int)g_pCharModelNode, vec, 0x2);  /* @0x430e80 (side effect) */
+            int x = (int)(sinf(g_flCharModelRot) * g_flCharModelZoom) - 0x1f4;
+            int z = (int)(cosf(g_flCharModelRot) * g_flCharModelZoom) + 0x320;
+            sceneObjSetPos((int)g_pCharModelNode, x, 0, z, 0x2);    /* @0x430660 */
+        }
+        /* Per-frame orientation pitch (original @0x41f725): pitch = frameDelta * -653.0. */
+        sceneObjSetPosOrient((int)g_pCharModelNode, 0,
+                             (short)((int)(g_flFrameDelta * -653.0f)), 0, 0x5);  /* @0x4307d0 */
+        /* Rotation + zoom easing (original @0x41f733 / @0x41f74e). */
+        g_flCharModelRot -= g_flFrameDelta * 0.0628f;                  /* 0x44b6b4 */
+        if (g_flCharModelZoom > 700.0f)
+            g_flCharModelZoom -= g_flFrameDelta * 20.0f;               /* 0x44b6b0 */
+        /* Fade the previous model out by sliding it (original @0x41f779). */
+        if (g_pCharModelNodePrev != NULL) {
+            float vec2[8];
+            sceneNodeGetPosWorld((int)g_pCharModelNodePrev, vec2, 0x2); /* @0x430e80 */
+            if (((int *)vec2)[4] < 0x4e20) {                            /* [ESP+0x88] = vec+0x10 */
+                sceneObjSetPos((int)g_pCharModelNodePrev, 0, 0x1f4, 0, 0x2);  /* @0x430660 */
+            }
+        }
+        /* Camera / root placement (original @0x41f7b8). */
+        sceneObjSetPos((int)g_pSceneRoot, 0, -1600, -2000, 0x2);        /* @0x430660 */
+        sceneNodeFacePos((int)g_pSceneRoot, 0, -2100.0f, 0.0f, 1000.0f, 0x2);  /* @0x431030 */
+        sceneRender(g_pSceneRoot);                                      /* @0x42f1c0 */
     }
 
     /* Render 2D UI — matches original coordinates. */
@@ -409,6 +478,10 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
             setSignVerts(&v0,&v1,&v2,&v3);
             gxDrawPolygon(&v0,&v1,&v2,&v3,0x2004,&uv);
         }
+        /* The 3D mesh model is rendered earlier in this frame (see the
+         * scene-graph block above, original sceneNodeAllocChild @0x4319e0 /
+         * sceneryObjAlloc @0x430200 / anmLoad @0x433a90 path). This portrait
+         * quad is drawn on top as the original does. */
         /* Stat rows: Snabbhet @0x11d,0x146 ; Styrka @0x11d,0x178 ; Smidighet @0x11d,0x1aa
          * Each has label (mixed fonts), background bar (10, y, 0x109, y+0x17, 0,0x5f...),
          * foreground bar width stat*0x2e+0x17 / +1. */

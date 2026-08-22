@@ -42,3 +42,12 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType)
 /* stateHighScoreTable @0x41dfd0 — now implemented in record.c */
 
 /* stateCharacterSelect @0x41efa0 — now implemented in charselect.c */
+
+/* sceneInstantiateObjects — documented stub for scene-graph population at the
+ * end of sceneLoadSen @0x432320 (out of scope for the offline menu preview).
+ * Safe no-op: takes the owning memPool handle (unused) and returns 1. */
+int sceneInstantiateObjects(int pool)
+{
+    (void)pool;
+    return 1;
+}

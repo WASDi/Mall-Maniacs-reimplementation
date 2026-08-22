@@ -111,9 +111,6 @@ documentation, not in this progress overview.
 
 ## Verified behavior
 
-`./build.sh` completes cleanly with `-Wall -Wextra` and produces
-`maniac_rebuild.exe`. Wine verification confirms:
-
 1. The GX driver initializes and installs the palette from `MERGED00.TPG`.
 2. All six intro logos play in the original order and timing, then enter the
    main menu; only the Space/fire key skips the intro, while unmapped window
@@ -169,8 +166,65 @@ Ghidra, and relevant subsystem documentation after each completed chunk.
   register-based wave-table `sndMixVoiceCore` inner loop) are the only known
   low-level deviations in the implemented slice.
 - Deferred behavior includes DirectInput polling, MCI CD-audio
-  (the original music path), scene/gameplay, networking, registry-based
-  driver selection, and real menu row targets. `stateNetworkMenu`,
-  `gotoOptions`, `stateHighScoreTable`, and `stateCharacterSelect`
-  intentionally return to the menu instead of claiming those states are
-  implemented.
+  (the original music path), networking, registry-based driver selection, and
+  real menu row targets. `stateNetworkMenu`, `gotoOptions`, and
+  `stateHighScoreTable` intentionally return to the menu instead of claiming
+  those states are implemented.
+
+## Character-select 3D preview (scene graph) — implemented 2026-08-23
+
+The character-select 3D preview now uses the original scene-graph call
+hierarchy instead of invented helpers. Wired in `src/charselect.c`
+(`stateCharacterSelect` frame path) and implemented in `src/scene.c` /
+`src/scene.h`:
+
+- On first entry: `sceneSystemInit(100000,40000,40000,2000,2)` then
+  `sceneLoadSen("menu\\CHARACTERS.SEN")` (populates the shared mesh table in
+  `sen.c`; 36 MESH/NAME pairs confirmed loaded).
+- Per character: `sceneNodeAllocChild` → `sceneObjSetPosOrient` →
+  `scenNameToId(g_apCharSceneNames[idx])` (resolves e.g. `ROLAND` to its MESH
+  bytes = a serialized `SceneObjTypeDef`) → `sceneryObjAlloc` → `anmLoad`
+  (returns NULL when no RUN anim loaded; harmless) → `eventAnimReset`.
+- Per frame: `sceneObjSetPosOrient` (model yaw), `eventAnimStep`, camera set
+  via `sceneObjSetPos(g_pSceneRoot,…)` + `sceneNodeFacePos(g_pSceneRoot,…)`,
+  then `sceneRender(g_pSceneRoot)`.
+
+Key correctness fix: `SceneNode` embeds its `SceneChannel` in the node tail
+(offset +0x38) so the 0x70-byte channel fits within 0xa8 and `pChannels`
+(field +0x28) points at it — previously the channel base overlapped the
+`pChannels` pointer field, so `sceneObjSetPosOrient` corrupted the pointer and
+crashed (`Unhandled page fault` in `sceneObjSetPosOrient`).
+
+Limitations / next steps: the world→screen projection in `sceneNodeRender`
+is best-effort (the decompiler loses precision on the clip/divide math — needs
+assembly verification); `sceneNodeRender` currently treats small values as
+chunk-relative offsets and bounds-checks `nVerts` to avoid crashes.
+
+## Struct sync (mesh/scene structs) — verified 2026-08-24
+
+- `sceneLoadSen` @0x432320 / `senChunkParse` @0x432c00 / `sceneMeshFixup`
+  @0x4320f0 are now verified against disassembly and are faithful: the REV2
+  chunk walk, MESH/EMAN/OBJI/MAPI/TANI/ONAM/TNAM/SUBO/KEEP/TEMP/COLS dispatch,
+  and the `sceneMeshFixup` relocation passes (`+0xc,+0x10,+0x14,+0x20,+0x28,
+  +0x30` on the mesh header; the per-subobj loop at `pRender+8` stride `0x30`
+  relocating `+0x8,+0x24,+0x10,+0x18` and the vertex array via
+  `[g_pMapGeom+0x10]` when present) all match. The 36 MESH/NAME pairs in
+  `menu\CHARACTERS.SEN` load and relocate with no page fault.
+- Fixed two `SceneNode` / `SceneChannel` layout bugs in `src/scene.h` that made
+  the C structs drift from both Ghidra and the original binary:
+  1. `SceneNode` was missing the `+0x1c` field, so `pTypeDef` landed at `+0x1c`
+     instead of `+0x20` (self-consistent but not faithful). Added `unk1c`.
+  2. `SceneChannel` was unpadded, so the float fields shifted the struct to
+     116 bytes and the `N*0x70` channel stride was wrong. Added
+     `__attribute__((packed))` to both `SceneChannel` (now 0x70) and
+     `SceneNode` (now 0xa8). Verified via `offsetof`: `ch` @+0x38, `wmat`
+     @+0x40, `wx` @+0x64 — matching Ghidra.
+- Ghidra `SceneObjTypeDef` (52B) / `SceneObjRenderInfo` (48B) / `SceneNode`
+  (0xa8) / `SceneChannel` (0x70) structs recreated/synced (offsets + sizes
+  confirmed; the type-def structs are all-int so no packing needed).
+- `sceneMorphInterp` @0x4300d0 verified instruction-by-instruction: `t<=0`
+  returns `base+idxA*nVerts*8`, `t>=1` returns `base+idxB*nVerts*8`, else lerps
+  with the truncating ftol `0x43dd10`.
+
+Remaining: make the `sceneNodeRender` projection pixel-correct (currently
+best-effort world→screen divide/clip).

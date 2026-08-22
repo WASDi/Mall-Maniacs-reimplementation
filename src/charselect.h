@@ -36,6 +36,7 @@ extern void *g_pCharAnim;        /* @0x45a6d8 current anim (stub) */
 extern void *g_pCharAnimPrev;    /* @0x45a6dc previous anim (stub) */
 extern int   g_nCharModelSwapFlag; /* @0x45d494 swap flag */
 extern void *g_pSceneRoot;       /* @0x4588f8 scene root (stub when null) */
+extern void *g_pCharSelAnimData;  /* @0x45a6d0 anim-data block (fileReadRaw of anim\s_run.anm) */
 extern void *g_anMenuCharTex[10];/* @0x45a660 per-char portrait textures */
 extern void *g_hMenuTexTom;      /* @0x45a688 QUESTION fallback tex */
 

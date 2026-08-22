@@ -13,6 +13,8 @@
 #include "options.h"
 #include "record.h"
 #include "charselect.h"
+#include "sen.h"
+#include "scene.h"
 #include "input.h"
 #include "custom_helpers.h"
 #include "stubs.h"
@@ -717,6 +719,32 @@ void menuInit(int nRestartMode)
     } else {
         appLog("[assets] WARNING: some sign/fling textures failed to load");
     }
+
+    /* Scene system init (menuInit @0x419ca9): allocates node/mesh/sort
+     * pools and sets g_pSceneRoot to the static root node. MUST run before
+     * stateCharacterSelect is entered; without it g_pSceneRoot is NULL and
+     * sceneRender(NULL) / sceneObjSetPos(NULL) fault (the original crashed
+     * identically). Args match the disassembly: (0x186a0, 0x9c40, 0x9c40,
+     * 0x7d0, 0x2). */
+    sceneSystemInit(100000, 40000, 40000, 2000, 0x2);
+    appLog("[menu] sceneSystemInit done (root=%p)", g_pSceneRoot);
+
+    /* Scene + character-anim data (menuInit @0x419c20, in this order):
+     * fileReadRaw of the two .ANM files first (the character preview anim
+     * block @0x45a6d0 = anim\s_run.anm, the throw anim @0x45a6d4 =
+     * anim\s_throw2.an), then the two .SEN scenes. These must be ready
+     * before stateCharacterSelect is ever entered; stateCharacterSelect
+     * only consumes them (it does not load anything itself). */
+    fileReadRaw(0, "anim\\s_throw2.an");                 /* @0x45a6d4 */
+    g_pCharSelAnimData = fileReadRaw(0, "anim\\s_run.anm"); /* @0x45a6d0 */
+    if (g_pCharSelAnimData == NULL) {
+        appLog("[menu] WARNING anim\\s_run.anm missing (char preview anim)");
+    } else {
+        appLog("[menu] anim\\s_run.anm loaded");
+    }
+    sceneLoadSen("menu\\end\\endscene.sen", NULL);       /* @0x4504e8 */
+    sceneLoadSen("menu\\characters.sen", NULL);          /* @0x4504d4 */
+    appLog("[menu] scene files loaded (endscene + characters)");
 
     /* Mirror menuInit's final timing/input reset. */
     g_nMenuRow        = 0;

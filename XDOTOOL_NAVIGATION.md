@@ -12,13 +12,13 @@ This document records the working recipe for driving `maniac_rebuild.exe` under 
 
 * Active state `g_pStateFunc` has signature `int (*)(int nType,int nKey,int nKeyType)` (`src/menu.h:9`): `nType 0 = frame, nType 1 + nKeyType 2 = keydown`. Each state decides `g_pStateFunc = nextState;` and sets `g_nMenuFadeTarget @0x45a6f0`. Do **not** send `nKeyType 0` — it is ignored except for quit confirm.
 
-* Logs: every state logs to `rebuild.log` in the game directory (`/home/wasd/MallManiacsUnmodified/rebuild.log`) via `appLog()` in `src/custom_helpers.c`. Always `cat rebuild.log` after a run. `run.sh` does `rm -f rebuild.log; timeout 5 wine ./maniac_rebuild.exe`.
+* Logs: every state logs to `rebuild.log` in the game directory (`/home/wasd/MallManiacsUnmodified/rebuild.log`) via `appLog()` in `src/custom_helpers.c`. Always `cat rebuild.log` after a run.
 
 ## 2. Environment assumptions (this workspace)
 
 * Xorg on `:0` (`ps aux | grep Xorg` → `Xorg :0`), `DISPLAY=:0` is valid. `xdotool` is installed (`/usr/bin/xdotool`).
 * Wine 9.0, window class `"Mall Maniacs"` title `CreateWindowExA` `src/maniac.c:109` `0xcf0000 640x480`. Search with `xdotool search --name "Mall Maniacs"`.
-* Working dir for the exe **must** be `/home/wasd/MallManiacsUnmodified` (data files, `DRIVERS\GXSOFT.DLL`, `menu\*.tpg`). `build.sh` writes to `…/maniac_rebuild.exe`, `run.sh` `cd`s there before `wine`.
+* Working dir for the exe **must** be `/home/wasd/MallManiacsUnmodified` (data files, `DRIVERS\GXSOFT.DLL`, `menu\*.tpg`). `make` writes to `…/maniac_rebuild.exe`.
 * The 25 ms frame gate in `gameFrameUpdate` means input is sampled once per frame; `pollKeyboard` needs wall time (`g_nLastFrameTime @0x45a65c`, `g_flFrameDelta @0x45a6cc`).
 
 ## 3. Minimal automation recipe
@@ -44,13 +44,12 @@ DISPLAY=:0 xdotool key --clearmodifiers --window $WIN Return  # Varujakten (mode
 sleep 1.0
 # now in character select — check rebuild.log
 cat rebuild.log
-# safe exit — do not send 'j' in automation (see §6)
-kill $WINEPID; wait $WINEPID; echo $?
-# if you see stuck 'j' on host after a run, clear it:
-# DISPLAY=:0 xdotool keyup j; DISPLAY=:0 xdotool keyup J; DISPLAY=:0 xdotool keyup Escape
+# safe exit — send Alt+F4 to close the window
+DISPLAY=:0 xdotool key --clearmodifiers --window $WIN alt+F4
+sleep 0.5; kill $WINEPID 2>/dev/null; wait $WINEPID; echo $?
 ```
 
-Key names for `xdotool key`: `space`, `Return` (Enter), `Escape`, `Right`, `Left`, `Up`, `Down`, `j`/`y` (quit confirm — see §6 warning). Always use `DISPLAY=:0`, `--window $WIN` **and** `--clearmodifiers`. Without `--window`/`--clearmodifiers` keys go to the focused window and modifiers can stick on the host, spamming `jjjj...` in your editor.
+Key names for `xdotool key`: `space`, `Return` (Enter), `Escape`, `Right`, `Left`, `Up`, `Down`, `alt+F4` (close window — preferred exit for automation). Always use `DISPLAY=:0`, `--window $WIN` **and** `--clearmodifiers`. Without `--window`/`--clearmodifiers` keys go to the focused window and modifiers can stick on the host.
 
 ## 4. Timing — the 200 ms debounce will bite you
 
@@ -73,16 +72,14 @@ Right, Right, Right, Left, Return   # cycle 0→1→2→3→2 then Enter → sta
 ```
 Check: `cat rebuild.log | grep charselect` should show `Right -> char 1/2/3`, `SUSANNE00/OKE00/AGATA00` loads, no `page fault`.
 
-**Back out (safe for automation — avoids host key-stuck):**
+**Back out (safe for automation — exit via Alt+F4):**
 ```
 Escape  # charselect → stateGameTypeSelect
 Escape  # game-type → menuUpdate
 Escape  # menu → stateQuitConfirm @0x4200b0
-# For automated runs DO NOT send 'j' — just kill the process:
-kill $WINEPID; wait $WINEPID
-# If you must test the WM_CHAR quit path manually, use:
-# DISPLAY=:0 xdotool key --clearmodifiers --window $WIN j; sleep 0.2; DISPLAY=:0 xdotool keyup j
-# and never send 'j' after the Wine window is already gone.
+# For automated runs, exit by sending Alt+F4:
+DISPLAY=:0 xdotool key --clearmodifiers --window $WIN alt+F4
+sleep 0.5; kill $WINEPID 2>/dev/null; wait $WINEPID
 ```
 
 **Rekord table (no gfx fault):**
@@ -95,29 +92,10 @@ Escape      # back to menu
 
 ## 6. Troubleshooting
 
-* **No window found:** `xdotool search` needs the exact title. Retry 20× with 0.25 s sleep; DirectDraw creation is ~400 ms. If still missing, `cat /tmp/wine_out.log` often shows `gxLoadDriver failed` or `MERGED00.TPG missing` — check `build.sh` succeeded and `DRIVERS\GXSOFT.DLL` exists.
+* **No window found:** `xdotool search` needs the exact title. Retry 20× with 0.25 s sleep; DirectDraw creation is ~400 ms. If still missing, `cat /tmp/wine_out.log` often shows `gxLoadDriver failed` or `MERGED00.TPG missing` — check `make` succeeded and `DRIVERS\GXSOFT.DLL` exists.
 * **Keys go to Ghidra, not the game:** You forgot `--window $WIN` or `DISPLAY=:0`. The game window is not focused after `wine` start.
-* **Log shows no state change:** You sent `Escape` as `nKeyType 2` but `stateQuitConfirm` expects `WM_CHAR` with `nKeyType 0`. Use `xdotool key --clearmodifiers --window $WIN j` (and then `xdotool keyup j` on the host) — but prefer `kill $WINEPID` in automation (see stuck-key warning below).
 * **Page fault / `wine: Unhandled page fault`:** Usually `g_hMenuTexGfx @0x45a6bc == NULL` path in new states (see `charselect.c:252` lazy-load fix). Check `rebuild.log` last line before crash, add `appLog()` guards, rebuild, rerun with lazy-load for `menu\gfx00.tpg` and `menu\char*.tpg`. Under Wine `fopen("menu\\gfx00.tpg")` is translated by msvcrt, but case matters on Linux — try both `gfx00.tpg` and `GFX00.TPG`; Wine is case-insensitive but `fileExists @0x408f60` via `fopen` may not be, so the code now tries both.
 * **Texture not found:** `find menu -iname "*.tpg" | sort` lists the real files (`ROLAND00.TPG`, `KAJSA00.TPG` …). The char-select mapping is at `charselect.c: kCharTpg[10]` indexed by `g_nCharSelIdx @0x45d480`. If you see `char tex ... missing, using TOM`, the mapping is wrong — fix the table, not the fallback.
-* **Exit code 143 vs 0:** `timeout` kills with SIGTERM → 143, or `PostQuitMessage(0)` → 0. Both are clean. `124` is `timeout 5` expiring with no input — expected for `run.sh`.
-* **Stuck `jjjjjjjj` on host after exit (critical):** Previous versions sent `xdotool key --window $WIN j` then killed Wine before the X key-up was delivered. The host then sees a held `j`. **Always** use `--clearmodifiers` and kill instead of `j` for scripts. If stuck, run: `DISPLAY=:0 xdotool keyup j; DISPLAY=:0 xdotool keyup J; DISPLAY=:0 xdotool keyup Escape; DISPLAY=:0 xdotool keyup Return` and avoid sending WM_CHAR keys after `WIN` is gone. Check `ps aux | grep wine` — no `maniac_rebuild.exe` should remain.
+* **Exit code 143 vs 0:** `timeout` kills with SIGTERM → 143, or `PostQuitMessage(0)` → 0. Both are clean. `124` is `timeout 5` expiring with no input.
+* **Window will not close:** If `Alt+F4` does not terminate the game, the message pump may be blocked. Fall back to `kill $WINEPID` and confirm `ps aux | grep wine` shows no remaining `maniac_rebuild.exe`.
 * **Stale log:** Always `rm -f rebuild.log` before launching; `gameFrameUpdate` appends, and multiple `wine` runs in the same dir share the log.
-
-## 7. One-liners for agents
-
-*Smoke (no input, just verify palette/fonts load):*
-```bash
-./build.sh && ./run.sh 2>&1 | tail -n 20
-```
-
-*Full Spela → char-select → select → level-select stub:*
-```bash
-/tmp/test_charselect_enter.sh  # or paste the 3-key recipe above
-cat rebuild.log | grep -E "menu|charselect|LevelSelect"
-```
-
-*Quick fault isolation (adds verbose logs):*
-Append `appLog("[where] x=%d", val);` in the suspect state, `build.sh`, rerun the recipe, `cat rebuild.log | tail -n 50` — last line before `Unhandled` is the fault site.
-
-Keep this file alongside `docs/12-input.md` and `docs/16-rebuild.md`. Update it when new states add new keys or when DirectInput is re-enabled.

@@ -29,4 +29,13 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
 
 /* stateCharacterSelect @0x41efa0 — now implemented in charselect.c */
 
+/* sceneInstantiateObjects — documented stub for the out-of-scope scene-graph
+ * population performed at the end of sceneLoadSen @0x432320 (OBJI objects,
+ * scenery nodes, music emitters). For menu\CHARACTERS.SEN the object-instance
+ * and map-geometry counts are zero, so this is never reached by the offline
+ * menu preview; it is a safe no-op stub. When gameplay lands, the real body
+ * rebuilds the scene graph from g_pObjInstances / g_pMapGeom / g_pTextAnimData.
+ * Contract: takes the owning memPool handle (unused), returns 1 for success. */
+int sceneInstantiateObjects(int pool);
+
 #endif /* STUBS_H */

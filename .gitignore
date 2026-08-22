@@ -3,3 +3,4 @@ rebuild-progress.txt
 rebuild.log
 cflow-callgraph.txt
 tests/*.bmp
+obj/
