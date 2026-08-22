@@ -130,6 +130,7 @@ void gxDrawTriangle(void *v0, int color);  /* @0x4335f0 */
 void gxDrawLine(void *v0, void *v1, int color); /* @0x433610 */
 void gxDrawTriUV(void *v0, void *v1, void *v2, int color, void *uv); /* @0x433640 */
 void gxDrawQuad(void *v0, void *v1, void *v2, void *v3, int color,
-                void *uv);                 /* @0x433670 */
+                 void *uv);                 /* @0x433670 */
+void gxDrawQuadColor(void *tex,int x0,int y0,int x1,int y1,int u0,int v0,int u1,int v1); /* @0x414470 */
 
 #endif /* GX_H */

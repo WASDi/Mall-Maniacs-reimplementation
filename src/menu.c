@@ -11,6 +11,7 @@
 #include "font.h"
 #include "menu.h"
 #include "options.h"
+#include "record.h"
 #include "input.h"
 #include "custom_helpers.h"
 #include "stubs.h"
@@ -33,10 +34,10 @@
  *     stateOptionsExit@0x41c630  options exit tail
  *
  * Rebuild-only menu tables are kept in this translation unit; the state
- * logic remains in these original functions. Row targets stateNetworkMenu
- * @0x420190 and stateHighScoreTable @0x41dfd0, and the character-select
- * target stateCharacterSelect @0x41efa0, are TODO stubs in stubs.c per
- * Rebuild.md §19 (log + return). Menu sound cues (sndPlaySfx @0x437cf0)
+ * logic remains in these original functions. Row target stateNetworkMenu
+ * @0x420190 and character-select stateCharacterSelect @0x41efa0 are TODO
+ * stubs in stubs.c per Rebuild.md §19 (log + return); stateHighScoreTable
+ * @0x41dfd0 lives in record.c. Menu sound cues (sndPlaySfx @0x437cf0)
  * play through src/sound.c, which uses the same DirectSound streaming
  * path as the original (docs/09-sound.md).
  * ===================================================================== */

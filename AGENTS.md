@@ -70,7 +70,7 @@ Use precise types rather than Ghidra placeholders such as `undefined4` or `undef
 keep the rebuild and Ghidra definitions identical. Ghidra is the reference for the
 original binary, so fix any discrepancy on both sides immediately.
 
-- Comment every reimplemented function and global with its original address.
+- Comment every reimplemented function and global with its original address. Write comment above function declaration.
 - Preserve the original architecture, call hierarchy, and function logic. Add only
   necessary helpers to `custom_helpers.c`. Do not invent new functions in other files that don't exist in the original binary.
 - Implement called functions fully or provide documented stubs in `src/stubs.c` without

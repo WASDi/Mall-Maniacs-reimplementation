@@ -39,20 +39,7 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType)
     return 0;
 }
 
-/* stateHighScoreTable @0x41dfd0 — records / high-score table (menu "Rekord").
- * Original: draws 2 rows of the fshi table via commandDispatch; keys 6/7 ->
- * menuUpdate. TODO stub: log + return to menu. */
-int stateHighScoreTable(int nType, int nKey, int nKeyType)
-{
-    static int bLogged;
-    (void)nType; (void)nKey; (void)nKeyType;
-    if (!bLogged) {
-        bLogged = 1;
-        appLog("[stub TODO] stateHighScoreTable @0x41dfd0 not implemented (back to menu)");
-    }
-    g_pStateFunc = menuUpdate;
-    return 0;
-}
+/* stateHighScoreTable @0x41dfd0 — now implemented in record.c */
 
 /* stateCharacterSelect @0x41efa0 — character-select screen, entered by the
  * modeInit* game-type initializers (@0x41bf60-0x41bfe0). Original: character

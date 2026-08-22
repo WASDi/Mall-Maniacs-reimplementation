@@ -25,7 +25,7 @@ void gameInit(void);
  * gotoOptions @0x41d300 is now implemented in options.c (Alternativ ->
  * Svårighetsgrad, Grafik ignored). */
 int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
-int stateHighScoreTable(int nType, int nKey, int nKeyType);  /* @0x41dfd0 */
+/* stateHighScoreTable @0x41dfd0 — now implemented in record.c */
 
 /* stateCharacterSelect @0x41efa0 — character-select screen, entered by the
  * modeInit* game-type initializers (menu.c). Contract: state-func

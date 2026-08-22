@@ -323,3 +323,22 @@ void gxDrawQuad(void *v0, void *v1, void *v2, void *v3, int color, void *uv)
         g_driver.api.pDrawQuad(v0, v1, v2, v3, color, uv);
     }
 }
+
+/* gxDrawQuadColor @0x414470 — colored textured quad helper used by Rekord
+ * screen (and others). Original builds GxVert[4] at x0*0x100 etc, y*0x100,
+ * z 0, r=g=b=0xff, and GxColorUv with U=u0*0x100 etc, then gxDrawPolygon
+ * @0x433440 with flags 0x2004. Replicates the original's fixed-point math. */
+void gxDrawQuadColor(void *tex,int x0,int y0,int x1,int y1,int u0,int v0,int u1,int v1)
+{
+    GxVert v00,v01,v02,v03; GxColorUv uv;
+    v00.x = x0 << 8; v00.y = y0 << 8; v00.z = 0; v00.r=v00.g=v00.b=0xff;
+    v01.x = x1 << 8; v01.y = y0 << 8; v01.z = 0; v01.r=v01.g=v01.b=0xff;
+    v02.x = x1 << 8; v02.y = y1 << 8; v02.z = 0; v02.r=v02.g=v02.b=0xff;
+    v03.x = x0 << 8; v03.y = y1 << 8; v03.z = 0; v03.r=v03.g=v03.b=0xff;
+    uv.pTexture = tex; uv.pParam5 = NULL; uv.pad = 0;
+    uv.U = (unsigned short)(u0 << 8); uv.U2 = uv.U;
+    uv.V = (unsigned short)(v0 << 8); uv.V2 = uv.V;
+    uv.gwU = (unsigned short)(u1 << 8); uv.gwU2 = uv.gwU;
+    uv.hV = (unsigned short)(v1 << 8); uv.hV2 = uv.hV;
+    gxDrawPolygon(&v00,&v01,&v02,&v03,0x2004,&uv);
+}
