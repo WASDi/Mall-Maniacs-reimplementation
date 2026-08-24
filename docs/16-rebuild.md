@@ -228,3 +228,41 @@ chunk-relative offsets and bounds-checks `nVerts` to avoid crashes.
 
 Remaining: make the `sceneNodeRender` projection pixel-correct (currently
 best-effort world→screen divide/clip).
+
+## EXTRA-in-rebuild cleanup — 0 invented helpers, 2026-08-24
+
+`TrackRebuildDetailed.java` reported 12 functions defined in `src/` with no
+counterpart in the original binary. All 12 were invented helpers; the rebuild
+was changed so these operations reproduce the original's inline code instead:
+
+- **`sound.c`** — `sndReadRiff`, `sndFindFreeBank`, `sndParseLeadingIndex`,
+  `sndIsWavName`, `sndClearBufferDirect`, and `s_slot` were inlined into their
+  callers (`sndLoadWav @0x437420`, `sndLoadBankFromDir @0x437170`,
+  `dsoundInitMixer @0x439050`, `sndClearMixBuffer @0x438bb0`, `sndInitVoices
+  @0x438160`, `sndMixBuildVoiceChains @0x437fe0`). The RIFF header check,
+  free-bank scan, leading-index parse, `.WAV` suffix check, and
+  lock/clear/unlock all happen inline in the original disassembly; the helpers
+  were removed so the C matches that structure.
+- **`scene.c`** — `deg2rad` was inlined into `mathSinDeg @0x42d030` /
+  `mathCosDeg @0x42d050` as a multiply by the original `M_PI/180` constant
+  (`@0x44b788`), matching the FPU multiply in the disassembly.
+- **`menu.c`** — the `g_nMenuDecorY` / `g_anMenuFlingQuads` buffer accessors
+  `menuDecorCell`, `menuFlingUv`, `menuFlingVert` were inlined to direct
+  `col*0x10 + row*0x100` / `col*0x1c + row*0x1a4` indexing, matching the
+  original's direct global-buffer indexing.
+- **`setSignVerts`** (the only cross-file shared util) moved to the sanctioned
+  `src/custom_helpers.c` (declared in `src/custom_helpers.h`); it reproduces
+  the z/r/g/b fields the original `gameFrameUpdate @0x41aba5` color loop sets
+  on each sign quad.
+- **`TrackRebuildDetailed.java`** was updated so `findSourceDefinitions`
+  skips `src/custom_helpers.c` (the documented home for rebuild-only helpers
+  such as `appLog`), just as it already skips tracked-function scan of that
+  file. `appLog` in `custom_helpers.c` is therefore no longer reported as
+  EXTRA.
+
+Result: `=== EXTRA IN REBUILD ===` is 0 (was 12), and
+`Reimplemented with unexpected calls to other tracked functions` is 0.
+Verified with xdotool: intro → Spela → Varujakten reaches character select,
+Right/Left cycle Roland/Susanne/Åke/Agata with lazy TPG loads, Enter reaches
+`stateCharSelectOk @0x41ef40` → `stateLevelSelect`, Escape backs out to the
+game-type select, and Alt+F4 exits cleanly with no page fault.

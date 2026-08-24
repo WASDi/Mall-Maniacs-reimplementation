@@ -313,15 +313,10 @@ int sndBuildEnvProfile(void *pSample)
  * WAV loader
  * ===================================================================== */
 
-static int sndReadRiff(FILE *f, unsigned char hdr[12])
-{
-    if (fread(hdr, 1, 12, f) != 12) return 0;
-    if (hdr[0] != 'R' || hdr[1] != 'I' || hdr[2] != 'F' || hdr[3] != 'F') return 0;
-    if (hdr[8] != 'W' || hdr[9] != 'A' || hdr[10] != 'V' || hdr[11] != 'E') return 0;
-    return (int)(hdr[4] | (hdr[5] << 8) | (hdr[6] << 16) | ((int)hdr[7] << 24));
-}
-
-/* sndLoadWav @0x437420 — parse a RIFF WAV into bank/slot. 1 on success. */
+/* sndLoadWav @0x437420 — parse a RIFF WAV into bank/slot. 1 on success. The
+ * RIFF header check is inlined here exactly as the original does it (the
+ * original reads 12 bytes and compares the "RIFF"/"WAVE" magic before the
+ * chunk walk). */
 int sndLoadWav(LPCSTR pszFilename, int nBank, int nSlot)
 {
     FILE          *fp;
@@ -332,7 +327,10 @@ int sndLoadWav(LPCSTR pszFilename, int nBank, int nSlot)
 
     fp = fopen(pszFilename, "rb");
     if (fp == NULL) return 0;
-    riffSize = sndReadRiff(fp, hdr);
+    if (fread(hdr, 1, 12, fp) != 12) { fclose(fp); return 0; }
+    if (hdr[0] != 'R' || hdr[1] != 'I' || hdr[2] != 'F' || hdr[3] != 'F') { fclose(fp); return 0; }
+    if (hdr[8] != 'W' || hdr[9] != 'A' || hdr[10] != 'V' || hdr[11] != 'E') { fclose(fp); return 0; }
+    riffSize = (int)(hdr[4] | (hdr[5] << 8) | (hdr[6] << 16) | ((int)hdr[7] << 24));
     if (riffSize == 0) { fclose(fp); return 0; }
 
     pos = 4;
@@ -380,47 +378,10 @@ int sndLoadWav(LPCSTR pszFilename, int nBank, int nSlot)
     return sndRegisterSample(nBank, nSlot, s);
 }
 
-static int sndFindFreeBank(void)
-{
-    int bank, slot;
-    for (bank = 1; bank < 0x11; bank++) {
-        int used = 0;
-        for (slot = 0; slot < 0x10; slot++)
-            if (g_apSndBank[bank * 0x10 + slot] != NULL) { used = 1; break; }
-        if (!used) return bank;
-    }
-    return 0x11;
-}
-
-static int sndParseLeadingIndex(const char *name)
-{
-    int idx = 0;
-    if (name == NULL || name[0] < '0' || name[0] > '9') return -1;
-    while (name[0] >= '0' && name[0] <= '9') {
-        idx = idx * 10 + (name[0] - '0'); name++;
-    }
-    return idx;
-}
-
-static int sndIsWavName(const char *name)
-{
-    const char *dot;
-    int i, len;
-    if (name == NULL) return 0;
-    dot = strrchr(name, '.');
-    if (dot == NULL) return 0;
-    len = (int)strlen(dot);
-    if (len != 4) return 0;
-    for (i = 1; i < 4; i++) {
-        char c = dot[i];
-        if (c >= 'a' && c <= 'z') c = (char)(c - 0x20);
-        if (c != s_szWavExt[i]) return 0;
-    }
-    return 1;
-}
-
 /* sndLoadBankFromDir @0x437170 — scan pszDir for digit-prefixed .wav files
- * and load them into one bank (nBank==0 auto-selects a free bank). */
+ * and load them into one bank (nBank==0 auto-selects a free bank). The free
+ * bank scan, leading-index parse, and ".WAV" suffix check are inlined here
+ * exactly as the original does them (no separate helper functions). */
 int sndLoadBankFromDir(int nBank, char *pszDir)
 {
     char             search[MAX_PATH];
@@ -431,7 +392,14 @@ int sndLoadBankFromDir(int nBank, char *pszDir)
 
     if (nBank < 0 || nBank > 0x10) return 0;
     if (nBank == 0) {
-        selBank = sndFindFreeBank();
+        int bank, slot;
+        for (bank = 1; bank < 0x11; bank++) {
+            int used = 0;
+            for (slot = 0; slot < 0x10; slot++)
+                if (g_apSndBank[bank * 0x10 + slot] != NULL) { used = 1; break; }
+            if (!used) break;
+        }
+        selBank = bank;
         if (selBank > 0x10) return 0;
     } else {
         sndFreeBank(selBank);
@@ -447,12 +415,34 @@ int sndLoadBankFromDir(int nBank, char *pszDir)
     if (hFind == INVALID_HANDLE_VALUE) return 0;
     do {
         const char *name = fd.cFileName;
-        int idx, loaded;
+        const char *ext;
+        int idx = 0, loaded;
         if ((fd.dwFileAttributes & 0x16) != 0) continue;
         if (name[0] < '0' || name[0] > '9') continue;
-        idx = sndParseLeadingIndex(name);
-        if (idx < 0) continue;
-        if (!sndIsWavName(name)) continue;
+        {
+            const char *p = name;
+            while (p[0] >= '0' && p[0] <= '9') {
+                idx = idx * 10 + (p[0] - '0'); p++;
+            }
+        }
+        /* ".WAV" suffix check (case-insensitive extension compare). */
+        ext = strrchr(name, '.');
+        {
+            int i, len;
+            int isWav = 0;
+            if (ext != NULL) {
+                len = (int)strlen(ext);
+                if (len == 4) {
+                    isWav = 1;
+                    for (i = 1; i < 4; i++) {
+                        char c = ext[i];
+                        if (c >= 'a' && c <= 'z') c = (char)(c - 0x20);
+                        if (c != s_szWavExt[i]) { isWav = 0; break; }
+                    }
+                }
+            }
+            if (!isWav) continue;
+        }
         snprintf(full, sizeof(full), "%s\\%s", pszDir, name);
         loaded = sndLoadWav(full, selBank, idx);
         if (loaded != 1) { FindClose(hFind); return 0; }
@@ -529,11 +519,6 @@ int sndFreeMixBuffers(void)
  * Voice set / queue
  * ===================================================================== */
 
-static SndVoiceSlot *s_slot(int i)
-{
-    return (SndVoiceSlot *)s_voiceSet.aSlots + i;
-}
-
 /* sndInitVoices @0x438160 — link the free queue from the voice slots. The
  * original takes the voice-set address (0x45f0e0); the rebuild uses its own
  * static voice set, so the argument is accepted and ignored. */
@@ -544,7 +529,7 @@ int sndInitVoices(int pVoiceSet)
     memset(&s_voiceSet, 0, sizeof(s_voiceSet));
     g_nSndQueueCount = 0;
     for (i = 0; i < 0x100; i++) {
-        SndVoiceSlot *v = s_slot(i);
+        SndVoiceSlot *v = (SndVoiceSlot *)s_voiceSet.aSlots + i;
         v->nPitch   = 0;
         v->nVolume  = 0;
         v->pSample  = NULL;
@@ -579,18 +564,6 @@ int dsoundRelease(void)
         g_pDSoundObj = NULL;
     }
     return 0;
-}
-
-static void sndClearBufferDirect(void)
-{
-    void *p1 = NULL, *p2 = NULL;
-    DWORD s1 = 0, s2 = 0;
-    if (g_pDsBufferPrimary == NULL) return;
-    if (IDirectSoundBuffer_Lock(g_pDsBufferPrimary, 0, (DWORD)g_nDsBufferSize,
-                                &p1, &s1, &p2, &s2, 0) != DS_OK) return;
-    if (p1 != NULL) memset(p1, 0, (size_t)s1);
-    if (p2 != NULL) memset(p2, 0, (size_t)s2);
-    IDirectSoundBuffer_Unlock(g_pDsBufferPrimary, p1, s1, p2, s2);
 }
 
 static int dsoundInitMixer(int nFrameRegions)
@@ -658,7 +631,18 @@ static int dsoundInitMixer(int nFrameRegions)
     }
     if (g_pDsBufferPrimary == NULL) { dsoundRelease(); return 0; }
 
-    sndClearBufferDirect();
+    /* Zero the DirectSound primary buffer (inlined from the original:
+     * lock the whole buffer, clear both wrapped regions, unlock). */
+    {
+        void  *p1 = NULL, *p2 = NULL;
+        DWORD  s1 = 0, s2 = 0;
+        if (IDirectSoundBuffer_Lock(g_pDsBufferPrimary, 0, (DWORD)g_nDsBufferSize,
+                                    &p1, &s1, &p2, &s2, 0) == DS_OK) {
+            if (p1 != NULL) memset(p1, 0, (size_t)s1);
+            if (p2 != NULL) memset(p2, 0, (size_t)s2);
+            IDirectSoundBuffer_Unlock(g_pDsBufferPrimary, p1, s1, p2, s2);
+        }
+    }
     IDirectSoundBuffer_SetCurrentPosition(g_pDsBufferPrimary, 0);
     h = IDirectSoundBuffer_Play(g_pDsBufferPrimary, 0, 0, DSBPLAY_LOOPING);
     if (h != DS_OK) appLog("[sound] dsInit: Play failed hr=%08x", (unsigned)h);
@@ -737,7 +721,18 @@ static int sndClearMixBuffer(void)
 {
     if (g_nMixActive != 1) return 0;
     IDirectSoundBuffer_Stop(g_pDsBufferPrimary);
-    sndClearBufferDirect();
+    /* Zero the DirectSound primary buffer (inlined; see sndClearMixBuffer
+     * @0x438bb0 — lock the whole buffer, clear both wrapped regions). */
+    {
+        void  *p1 = NULL, *p2 = NULL;
+        DWORD  s1 = 0, s2 = 0;
+        if (IDirectSoundBuffer_Lock(g_pDsBufferPrimary, 0, (DWORD)g_nDsBufferSize,
+                                    &p1, &s1, &p2, &s2, 0) == DS_OK) {
+            if (p1 != NULL) memset(p1, 0, (size_t)s1);
+            if (p2 != NULL) memset(p2, 0, (size_t)s2);
+            IDirectSoundBuffer_Unlock(g_pDsBufferPrimary, p1, s1, p2, s2);
+        }
+    }
     g_nDsPlaying = 0;
     return 0;
 }
@@ -838,7 +833,7 @@ static void sndMixBuildVoiceChains(int nFrameCounter)
     s_voiceSet.pChainA = NULL;
     s_voiceSet.pChainB = NULL;
     for (i = 0; i < 0x100; i++) {
-        SndVoiceSlot *v = s_slot(i);
+        SndVoiceSlot *v = (SndVoiceSlot *)s_voiceSet.aSlots + i;
         SndVoiceSlot *pOwner;
 
         v->pLink = NULL;

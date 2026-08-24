@@ -18,6 +18,10 @@
 /* Logging helper. */
 void appLog(const char *fmt, ...);                   /* no original (diag logger) */
 
+/* Sign-quad vertex common fields (gameFrameUpdate @0x41aba5 color loop):
+ * z = 0 and r = g = b = 0xff on all four vertices. A rebuild-only util shared
+ * by the menu/options/record/charselect sign quads. */
+void setSignVerts(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3);  /* no original */
 
 
 #endif /* CUSTOM_HELPERS_H */

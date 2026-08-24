@@ -76,10 +76,22 @@ static float g_flMathSin = 0.0f;
 static float g_flMathCos = 0.0f;
 static float g_flMathAtan = 0.0f;
 
-static float deg2rad(short d) { return (float)d * (float)M_PI / 180.0f; }
-float mathSinDeg(short d) { g_flMathSin = (float)sin((double)deg2rad(d)); return g_flMathSin; }
-float mathCosDeg(short d) { g_flMathCos = (float)cos((double)deg2rad(d)); return g_flMathCos; }
-float mathAtan2Deg(float y, float x) {
+/* The original mathSinDeg/mathCosDeg/mathAtan2Deg fold the degree->radian
+ * multiply (by the double constant at 0x44b788 / 0x44b780 = M_PI/180) directly
+ * into the FPU op; the deg2rad step is inlined here, not a separate function. */
+static const double g_dblDegToRad = M_PI / 180.0;  /* @0x44b788 / @0x44b780 */
+float mathSinDeg(short d)
+{
+    g_flMathSin = (float)sin((double)d * g_dblDegToRad);
+    return g_flMathSin;
+}
+float mathCosDeg(short d)
+{
+    g_flMathCos = (float)cos((double)d * g_dblDegToRad);
+    return g_flMathCos;
+}
+float mathAtan2Deg(float y, float x)
+{
     g_flMathAtan = (float)(atan2((double)y, (double)x) * 180.0 / M_PI);
     return g_flMathAtan;
 }

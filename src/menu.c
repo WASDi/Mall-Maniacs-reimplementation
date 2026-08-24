@@ -103,35 +103,15 @@ unsigned char g_nMenuDecorY[0x1010];             /* @0x45c3a0-0x45d3af */
  * buffer because the row stride is not a clean C 2-D array. */
 unsigned char g_anMenuFlingQuads[15 * 0x1a4];    /* @0x45a778-0x45bffb */
 
-/* Decor cell accessor (g_nMenuDecorY @0x45c3a4 layout). */
-static GxVert *menuDecorCell(int col, int row)
-{
-    return (GxVert *)(g_nMenuDecorY + col * 0x10 + row * 0x100);
-}
+/* Decor cell accessor (g_nMenuDecorY @0x45c3a4 layout): cell (col,row)
+ * GxVert at offset col*0x10 + row*0x100. Inlined at call sites to match the
+ * original's direct buffer indexing. */
 
-/* Fling UV record accessor (g_anMenuFlingQuads @0x45a778 layout). */
-static GxColorUv *menuFlingUv(int col, int row)
-{
-    return (GxColorUv *)(g_anMenuFlingQuads + col * 0x1c + row * 0x1a4);
-}
-
-/* Fling vertex accessor (g_anMenuDecorQuadVerts @0x45c4b0 layout, inside the
- * shared decor region). */
-static GxVert *menuFlingVert(int col, int row)
-{
-    return (GxVert *)(g_nMenuDecorY + 0x110 + col * 0x10 + row * 0x100);
-}
+/* Fling UV record accessor (g_anMenuFlingQuads @0x45a778 layout): cell
+ * (col,row) GxColorUv at byte offset col*0x1c + row*0x1a4. Inlined. */
 
 /* Sign-quad vertex common fields (gameFrameUpdate @0x41aba5 color loop):
- * z = 0 and r = g = b = 0xff on all four vertices. Shared with options.c. */
-void setSignVerts(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3)
-{
-    v0->z = v1->z = v2->z = v3->z = 0;
-    v0->r = v0->g = v0->b = 0xff;
-    v1->r = v1->g = v1->b = 0xff;
-    v2->r = v2->g = v2->b = 0xff;
-    v3->r = v3->g = v3->b = 0xff;
-}
+ * z = 0 and r = g = b = 0xff on all four vertices. Moved to custom_helpers.c. */
 
 /* Rebuild storage for menuInit/menuUpdate's original string and handle
  * tables. The original data lives in .rdata/.data at the noted addresses. */
@@ -802,7 +782,7 @@ void menuInit(int nRestartMode)
         int u = (col * 0x100 / 15) << 8;
         int gu = ((col * 0x100 / 15) + 0x10) << 8;
         for (row = 0; row < 15; row++) {
-            GxColorUv *rec = menuFlingUv(col, row);
+            GxColorUv *rec = (GxColorUv *)(g_anMenuFlingQuads + col * 0x1c + row * 0x1a4);
             int v = (row * 0x100 / 15) << 8;
             int hv = ((row * 0x100 / 15) + 0x10) << 8;
             rec->pTexture = g_hMenuTexFling;
@@ -826,7 +806,7 @@ void menuInit(int nRestartMode)
     for (col = 0; col < 16; col++) {
         int x = (col * 0x294 / 15) << 8;   /* col*44 */
         for (row = 0; row < 16; row++) {
-            GxVert *cell = menuDecorCell(col, row);
+            GxVert *cell = (GxVert *)(g_nMenuDecorY + col * 0x10 + row * 0x100);
             int y = (row * 0x1f4 / 15) << 8;  /* floor(row*500/15) */
             cell->x = x;
             cell->y = y;
@@ -928,7 +908,7 @@ void gameFrameUpdate(void)
 
                 for (col = 0; col < 16; col++) {
                     colBase = col * 0x294 / 15;  /* col*660/15 = col*44 */
-                    cell = menuDecorCell(col, 0);
+                    cell = (GxVert *)(g_nMenuDecorY + col * 0x10 + 0);
                     for (row = 0; row < 16; row++) {
                         rowBase = row * 0x1f4 / 15;  /* floor(row*500/15) */
                         s = sinf(((float)row - fVar9) *
@@ -950,8 +930,8 @@ void gameFrameUpdate(void)
                  * (col-1,row-1)..(col,row), i.e. gxDrawPolygon(p-0x11,
                  * p-0x10, p, p-1, 0x204, uv) in GxVert pointer units. */
                 for (col = 0; col < 15; col++) {
-                    cu = menuFlingUv(col, 0);
-                    p = menuFlingVert(col, 0);
+                    cu = (GxColorUv *)(g_anMenuFlingQuads + col * 0x1c + 0);
+                    p = (GxVert *)(g_nMenuDecorY + 0x110 + col * 0x10 + 0);
                     for (row = 0; row < 15; row++) {
                         gxDrawPolygon(p - 0x11, p - 0x10, p, p - 1, 0x204, cu);
                         cu = (GxColorUv *)((char *)cu + 0x1a4);
