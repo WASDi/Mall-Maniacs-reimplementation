@@ -257,53 +257,6 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
 
     if (nType != 0) return 0;
 
-    /* Ensure UI textures loaded (original loads gfx/tom elsewhere; rebuild lazy-loads). */
-    if (g_hMenuTexGfx == NULL) {
-        g_hMenuTexGfx = (void*)(uintptr_t)gxLoadTpgFile("menu\\gfx00.tpg");
-        if (g_hMenuTexGfx == NULL) {
-            g_hMenuTexGfx = (void*)(uintptr_t)gxLoadTpgFile("menu\\GFX00.TPG");
-            if (g_hMenuTexGfx == NULL) appLog("[charselect] WARNING gfx00.tpg load failed");
-            else appLog("[charselect] GFX00.TPG loaded");
-        } else appLog("[charselect] gfx00.tpg loaded for stats/bars");
-    }
-    if (g_hMenuTexTom == NULL) {
-        g_hMenuTexTom = (void*)(uintptr_t)gxLoadTpgFile("menu\\tom00.tpg");
-        if (g_hMenuTexTom == NULL) g_hMenuTexTom = (void*)(uintptr_t)gxLoadTpgFile("menu\\TOM00.TPG");
-        if (g_hMenuTexTom == NULL) g_hMenuTexTom = (void*)(uintptr_t)gxLoadTpgFile("menu\\tom.tpg");
-    }
-    {
-        static const char *kCharTpg[10] = {
-            "menu\\ROLAND00.TPG",   /* 0 Roland */
-            "menu\\SUSANNE00.TPG",  /* 1 Susanne */
-            "menu\\OKE00.TPG",      /* 2 Åke */
-            "menu\\AGATA00.TPG",    /* 3 Agata */
-            "menu\\HEKTOR00.TPG",   /* 4 Hektor */
-            "menu\\HUGO00.TPG",     /* 5 Hugo */
-            "menu\\BOSSE00.TPG",    /* 6 Bosse */
-            "menu\\KLARA00.TPG",    /* 7 Klara */
-            "menu\\KALLE00.TPG",    /* 8 Kalle */
-            "menu\\KAJSA00.TPG"     /* 9 Kajsa */
-        };
-        if (g_nCharSelIdx >=0 && g_nCharSelIdx <10 && g_anMenuCharTex[g_nCharSelIdx]==NULL && g_nCharSelIdx < g_nLevelCount +5) {
-            void *t = (void*)(uintptr_t)gxLoadTpgFile(kCharTpg[g_nCharSelIdx]);
-            if (t) {
-                g_anMenuCharTex[g_nCharSelIdx]=t;
-                appLog("[charselect] %s loaded", kCharTpg[g_nCharSelIdx]);
-            } else {
-                char fallback[64];
-                snprintf(fallback,sizeof(fallback),"menu\\char%02d.tpg", g_nCharSelIdx);
-                t = (void*)(uintptr_t)gxLoadTpgFile(fallback);
-                if (t) {
-                    g_anMenuCharTex[g_nCharSelIdx]=t;
-                    appLog("[charselect] %s loaded (fallback)", fallback);
-                } else if (g_anMenuCharTex[g_nCharSelIdx]==NULL) {
-                    /* keep TOM fallback */
-                    appLog("[charselect] char tex %s missing, using TOM", kCharTpg[g_nCharSelIdx]);
-                }
-            }
-        }
-    }
-
     /* Frame — original 3D character preview via scene graph.
      * Model (re)allocation: original @0x41f553. Per-frame update:
      * original @0x41f647. Camera/root: original @0x41f7b8. State match

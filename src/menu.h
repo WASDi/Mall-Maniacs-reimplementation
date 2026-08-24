@@ -51,8 +51,8 @@ void gameFrameUpdate(void);
  * stubs.c can return to the main menu. */
 int  menuUpdate(int nType, int nKey, int nKeyType);
 
-/* tgaLoad16 @0x415df0. */
-unsigned short *tgaLoad16(LPCSTR path);
+/* imageLoadByMode @0x4102e0 — dispatcher: tgaLoad16Pal or tgaLoad16. */
+unsigned short *imageLoadByMode(LPCSTR path);
 
 /* Menu-state globals (maniac addresses). */
 extern float  g_introFade_2;    /* @0x45d444 intro timeline ms */

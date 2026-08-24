@@ -75,12 +75,7 @@ int stateOptions(int nType, int nKey, int nKeyType)
     g_nPlayerCount = 8; /* original stateOptions sets this on every entry */
 
     if (nType == 0) {
-        /* Frame: ensure the gfx banner texture is available (original loads
-         * it in menuInit @0x419c20: g_hMenuTexGfx @0x45a6bc = gfx00.tpg;
-         * the rebuild loads lazily). */
-        if (g_hMenuTexGfx == NULL) {
-            g_hMenuTexGfx = (void *)(uintptr_t)gxLoadTpgFile("menu\\gfx00.tpg");
-        }
+        /* Frame: g_hMenuTexGfx is loaded in menuInit @0x419c20. */
 
         /* Label "Svårighetsgrad" — original at x=0xac,y=0x32 highlighted
          * with msfnt/mfnt; we center it and use the highlight fonts when

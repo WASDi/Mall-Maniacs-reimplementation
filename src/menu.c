@@ -160,8 +160,9 @@ PStateFunc g_kGameModeInit[4] = {
     modeInitVarujakten, modeInitMatkrig, modeInitFrogesport, modeInitVagnrace
 };
 
-/* tgaLoad16 @0x415df0 — load the original 16-bit TGA surface buffer. */
-unsigned short *tgaLoad16(LPCSTR path)
+/* imageLoadByMode @0x4102e0 — dispatcher: tgaLoad16Pal (3dfx) or tgaLoad16
+ * (software) based on g_nGfxMode. The rebuild always uses the software path. */
+unsigned short *imageLoadByMode(LPCSTR path)
 {
     int             dataOffset;
     char           *data;
@@ -654,9 +655,9 @@ void menuInit(int nRestartMode)
     }
 
     /* Six intro logos in the original order (menuInit @0x419c20 load block;
-         * imageLoadByMode here == tgaLoad16 @0x415df0. */
+         * imageLoadByMode @0x4102e0 dispatches to tgaLoad16 for software mode). */
     for (i = 0; i < 6; i++) {
-        g_hIntroTex[i] = tgaLoad16(g_kIntroTga[i]);
+        g_hIntroTex[i] = imageLoadByMode(g_kIntroTga[i]);
         if (g_hIntroTex[i] == NULL) {
             appLog("[assets] %s load failed", g_kIntroTga[i]);
         }
@@ -699,8 +700,8 @@ void menuInit(int nRestartMode)
         appLog("[assets] WARNING: some menu fonts failed to load");
     }
 
-    /* Quit-confirm background (menuInit @0x419c20 imageLoadByMode). */
-    g_hMenuQuitTex = tgaLoad16("menu\\quit.tga");
+    /* Quit-confirm background (menuInit @0x419c20 imageLoadByMode @0x4102e0). */
+    g_hMenuQuitTex = imageLoadByMode("menu\\quit.tga");
     if (g_hMenuQuitTex == NULL) {
         appLog("[assets] menu\\quit.tga load failed");
     }
@@ -710,6 +711,9 @@ void menuInit(int nRestartMode)
      * sign300 @0x450508). The first .tpg load already installed the palette,
      * so the handle values are directly usable as GxColorUv.pTexture. */
     g_hMenuTexFling   = (void *)(unsigned int)gxLoadTpgFile("menu\\fling00.tpg");
+    g_hMenuTexGfx     = (void *)(unsigned int)gxLoadTpgFile("menu\\gfx00.tpg");
+    g_hMenuTexChar    = (void *)(unsigned int)gxLoadTpgFile("menu\\char00.tpg");
+    g_hMenuTexLevel   = (void *)(unsigned int)gxLoadTpgFile("menu\\level00.tpg");
     g_hMenuTexSign100 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign100.tpg");
     g_hMenuTexSign200 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign200.tpg");
     g_hMenuTexSign300 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign300.tpg");
@@ -718,6 +722,28 @@ void menuInit(int nRestartMode)
         appLog("[assets] fling + sign textures loaded");
     } else {
         appLog("[assets] WARNING: some sign/fling textures failed to load");
+    }
+
+    /* UI textures for character-select, high-score, and options screens
+     * (loaded here to match the original menuInit load order). */
+    {
+        static const char *kCharTpg[10] = {
+            "menu\\ROLAND00.TPG", "menu\\SUSANNE00.TPG", "menu\\OKE00.TPG",
+            "menu\\AGATA00.TPG", "menu\\HEKTOR00.TPG",   "menu\\HUGO00.TPG",
+            "menu\\BOSSE00.TPG", "menu\\KLARA00.TPG",    "menu\\KALLE00.TPG",
+            "menu\\KAJSA00.TPG"
+        };
+        int ci;
+        for (ci = 0; ci < 10; ci++) {
+            g_anMenuCharTex[ci] = (void *)(unsigned int)gxLoadTpgFile(kCharTpg[ci]);
+            if (g_anMenuCharTex[ci] == NULL) {
+                char fallback[64];
+                snprintf(fallback, sizeof(fallback), "menu\\char%02d.tpg", ci);
+                g_anMenuCharTex[ci] = (void *)(unsigned int)gxLoadTpgFile(fallback);
+            }
+        }
+        g_hMenuTexTom = (void *)(unsigned int)gxLoadTpgFile("menu\\tom00.tpg");
+        appLog("[assets] char/tom textures loaded (%d/10 chars)", ci);
     }
 
     /* Scene system init (menuInit @0x419ca9): allocates node/mesh/sort

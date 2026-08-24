@@ -118,9 +118,6 @@ int stateHighScoreTable(int nType, int nKey, int nKeyType)
     }
 
     if (nType == 0) {
-        if (g_hMenuTexLevel == NULL) g_hMenuTexLevel = (void*)(uintptr_t)gxLoadTpgFile("menu\\level00.tpg");
-        if (g_hMenuTexChar == NULL) g_hMenuTexChar = (void*)(uintptr_t)gxLoadTpgFile("menu\\char00.tpg");
-        if (g_hMenuTexGfx == NULL) g_hMenuTexGfx = (void*)(uintptr_t)gxLoadTpgFile("menu\\gfx00.tpg");
 
         g_nScoreTableRow = 0;
         do {
@@ -257,7 +254,6 @@ int stateHighScoreTable(int nType, int nKey, int nKeyType)
                 g_nResultsLevel++;
                 int mx = g_nLevelCount >4 ? 4 : g_nLevelCount;
                 if (g_nResultsLevel > mx) g_nResultsLevel = 0;
-                sndPlaySfx(0,1,1,0xffff,0,0x400);
                 appLog("[record] level %d", g_nResultsLevel);
             }
             return 0;
@@ -268,35 +264,28 @@ int stateHighScoreTable(int nType, int nKey, int nKeyType)
                     int mx = g_nLevelCount >4 ? 4 : g_nLevelCount;
                     g_nResultsLevel = mx;
                 }
-                sndPlaySfx(0,1,1,0xffff,0,0x400);
                 appLog("[record] level %d", g_nResultsLevel);
             }
             return 0;
         } else if (nKey == 2) {
             if (g_nRecordsRow > 0) {
-                sndPlaySfx(0,1,1,0xffff,0,0x400);
                 g_nRecordsRow--;
             } else {
-                sndPlaySfx(0,1,1,0xffff,0,0x400);
                 g_nRecordsRow = 1;
             }
             return 0;
         } else if (nKey == 3) {
             if (g_nRecordsRow < 1) {
-                sndPlaySfx(0,1,1,0xffff,0,0x400);
                 g_nRecordsRow++;
             } else {
-                sndPlaySfx(0,1,1,0xffff,0,0x400);
                 g_nRecordsRow = 0;
             }
             return 0;
         } else if (nKey == 6) {
-            sndPlaySfx(0,1,3,0xffff,0,0x400);
             appLog("[record] Enter row %d -> menu", g_nRecordsRow);
             g_pStateFunc = menuUpdate;
             return 0;
         } else if (nKey == 7) {
-            sndPlaySfx(0,1,4,0xffff,0,0x400);
             appLog("[record] Esc -> menu");
             g_pStateFunc = menuUpdate;
             return 0;

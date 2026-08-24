@@ -4,6 +4,7 @@
 #include "input.h"
 #include "custom_helpers.h"
 #include "menu.h"
+#include "stubs.h"
 
 /* =====================================================================
  * Mall Maniacs (maniac.exe) replacement — main translation unit. Compiled
@@ -17,7 +18,7 @@
  *   - menuInit/introUpdate/menuUpdate/stateQuitConfirm (see menu.c)
  * ===================================================================== */
 
-static HWND      g_hWnd;          /* maniac g_hMainWindow @0x459ce0 */
+HWND      g_hWnd;          /* maniac g_hMainWindow @0x459ce0 */
 static HINSTANCE g_hInstance;     /* maniac g_hAppInstance @0x459cdc */
 static int       g_bRunning = 1;  /* rebuild loop state; no original global */
 
@@ -120,11 +121,11 @@ static int initWindowAndInput(int nShowCmd)
 }
 
 /* WinMain @0x4160a0 — simplified: window, driver, state loop (intro
- * timeline then main menu), clean close. */
+ * timeline then main menu), clean close. The original calls gameInit @0x409d90
+ * which handles gxLoadDriver, gxInit, and menuInit. */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nShowCmd)
 {
-    GxMode mode;
     MSG    msg;
 
     (void)hPrevInstance;
@@ -138,26 +139,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         return 1;
     }
 
-    /* Mode struct as built by gameInit @0x40a0cd: width/height/bpp/hInstance/hwnd. */
-    mode.width    = 0x280;
-    mode.height   = 0x1e0;
-    mode.bpp      = 0x10;
-    mode.hInstance = (unsigned int)g_hInstance;
-    mode.hwnd     = (unsigned int)g_hWnd;
-
-    if (!gxLoadDriver("DRIVERS\\GXSOFT.DLL")) {
-        appLog("[winmain] gxLoadDriver failed");
-        goto out;
-    }
-    if (!gxInit(&mode)) {
-        appLog("[winmain] gxInit/pSetMode failed");
-        goto out;
-    }
-    appLog("[winmain] gxSetMode done (640x480, bpp forced by driver)");
-
-    menuInit(0);
+    /* gameInit @0x409d90 — original WinMain calls this; it handles
+     * gxLoadDriver, gxInit, and menuInit. */
+    gameInit();
     if (g_pStateFunc == NULL) {
-        appLog("[winmain] state setup failed");
+        appLog("[winmain] gameInit / state setup failed");
         goto out;
     }
     appLog("[winmain] running intro timeline (6 logos)");
@@ -190,7 +176,8 @@ out:
         g_hWnd = NULL;
         DestroyWindow(hWnd);
     }
-    gxUnloadDriver();
+    /* Original cleanup path calls roundTeardown/shutdownRenderer/unloadGameWorld;
+     * gxUnloadDriver is NOT called directly by WinMain in the original. */
     appLog("[winmain] === done ===\n");
     return 0;
 }

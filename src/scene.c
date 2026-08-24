@@ -254,8 +254,9 @@ int sceneNodeFacePos(int pNode, int nChannel, float flX, float flY, float flZ, i
         float dy = flY - ch->y;
         float dz = flZ - ch->z;
         float d = (float)sqrt(dx * dx + dz * dz);
-        ch->rot[1] = (short)mathAtan2Deg(dx, dz);
-        ch->rot[0] = (short)mathAtan2Deg(-dy, d);
+        /* Original uses x87 FPATAN (radians), not a degrees helper. */
+        ch->rot[1] = (short)(int)atan2f(dx, dz);
+        ch->rot[0] = (short)(int)atan2f(-dy, d);
         return 1;
     }
     return 0;
