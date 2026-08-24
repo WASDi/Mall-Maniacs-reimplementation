@@ -125,7 +125,13 @@ typedef struct __attribute__((packed)) SceneNode {
     SceneChannel ch;            /* +0x38 (0x70) embedded channel */
 } SceneNode;                    /* 0xa8 */
 
-/* camera/root block passed to sceneRender (mode==2 @+0, viewport rect @+0x20) */
+/* camera/root block passed to sceneRender (mode==2 @+0, viewport rect @+0x20)
+ * Layout verified vs disasm 0x4318e0 / 0x42f1c0: +0 mode (short, ==2),
+ * +0x20 vx/vy/vw/vh (short), +0x28 nWidth (float), +0x2c nHeight (float),
+ * +0x30 renderT (float/int bits, used as float via FILD). The original
+ * repurposes a SceneNode (0xa8 bytes) as this block — fields at +0x20..+0x30
+ * overlap SceneNode.nId/bType/pTypeDef region but sceneRender only reads
+ * mode and the viewport fields. For type safety nWidth/nHeight are float. */
 typedef struct SceneCameraBlock {
     short mode;         /* +0  == 2 */
     short unk2;
@@ -135,13 +141,13 @@ typedef struct SceneCameraBlock {
     int   unk10;
     int   unk14;
     int   unk18;
-    short vx;           /* +0x20 virtual rect x (short, *width) */
+    short vx;           /* +0x20 virtual rect x (short) */
     short vy;           /* +0x22 */
     short vw;           /* +0x24 */
     short vh;           /* +0x26 */
-    int   nWidth;       /* +0x28 */
-    int   nHeight;      /* +0x2c */
-    float renderT;      /* +0x30 */
+    float nWidth;       /* +0x28 float (bits moved via int in disasm) */
+    float nHeight;      /* +0x2c float */
+    float renderT;      /* +0x30 float (stored via int, FILD in sceneNodeRender) */
 } SceneCameraBlock;
 
 /* --- globals --- */
@@ -155,15 +161,22 @@ extern void *g_pNodePoolCur;       /* @0x45e908 cursor into g_pNodePool */
 extern void *g_pNodePool2Cur;      /* @0x45e5fc cursor into g_pNodePool2 */
 extern void *g_pRootMatrix;        /* @0x45e818 camera/world matrix */
 extern char  g_abSceneRootNode[0xb0]; /* root node storage */
+extern float *g_pSinTable;           /* @0x45e5f8 sin table 0x400 */
+extern float *g_pSinTree;            /* @0x45e888 sin tree 0x3ff8 */
 extern int   g_nSceneNodeCount;
 extern int   g_nSceneNodeMemUsed;
 extern int   g_nSceneryObjCountPeak;
 extern int   g_nSceneNodeCountPeak;
 extern int   g_nSceneNodeMemPeak;
-extern int   g_nSceneWidth;
-extern int   g_nSceneHeight;
+extern float g_nSceneWidth;  /* @0x45e900 float */
+extern float g_nSceneHeight; /* @0x45e614 float */
 extern float g_flSceneAspect;
 extern float g_sceneRenderT;
+extern int   g_nSceneHalfWidth;   /* @0x450f70 */
+extern int   g_centerX;           /* @0x450f74 */
+extern int   g_centerY;           /* @0x450f78 */
+extern float g_flSceneRenderT2;   /* @0x450f7c */
+extern float g_flSceneYScale;     /* @0x450f80 */
 extern int   g_nSceneDistMax;
 extern int   g_nSceneDrawCount;
 extern float g_gxClipTest;
@@ -200,6 +213,7 @@ typedef struct AnmFile {
 
 /* --- prototypes --- */
 int  sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount, int nMeshPoolSize, unsigned int nFlags);
+void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, short nMeshIdx, short nUnk5, short nUnk6, short nUnk7); /* @0x4318e0 */
 void *sceneNodeAllocChild(int pParent, void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, void *pChannelPtr4);
 void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, int nChanPtr4,
                       short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef);
@@ -223,7 +237,7 @@ void eventAnimReset(AnmFile *pAnm);
 int  eventAnimStep(AnmFile *pAnm, byte bLoop);
 void anmFree(AnmFile *pAnm);
 void mat3x3Mul(float *a, float *b, float *out);
-void chanBuildRotMatrix(short *pRot);
+void chanBuildRotMatrix(SceneChannel *ch);
 int  sceneCacheLocalVerts(int pNode);
 
 #endif /* SCENE_H */

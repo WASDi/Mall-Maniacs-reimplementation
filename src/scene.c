@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stddef.h>
 #include "scene.h"
 #include "gx.h"
 #include "pool.h"
@@ -29,6 +30,9 @@ void *g_pNodePool2Cur = NULL;        /* @0x45e5fc cursor into g_pNodePool2 */
 void *g_pRootMatrix = NULL;          /* @0x45e818 */
 static float g_rootMatrix[28];        /* camera/view matrix (rm[0x40..0x6c]) */
 char  g_abSceneRootNode[0xb0];       /* root node storage (170 bytes) */
+float *g_pSinTable = NULL;           /* @0x45e5f8 0x400 floats (1024*4=0x1000), built at 0x42ed40 */
+float *g_pSinTree = NULL;            /* @0x45e888 0x3ff8 bytes, via mathSinTreeBuild @0x42efb0 */
+static double g_dblTrigStep = 0.015707963267948967; /* @0x44b790 = 2*pi/0x400, used for sin table */
 
 /* camera basis derived from g_pSceneRoot channel for projection */
 static float g_camPos[3] = {0,0,0};
@@ -38,10 +42,15 @@ int   g_nSceneNodeMemUsed = 0;
 int   g_nSceneryObjCountPeak = 0;
 int   g_nSceneNodeCountPeak = 0;
 int   g_nSceneNodeMemPeak = 0;
-int   g_nSceneWidth = 0;
-int   g_nSceneHeight = 0;
-float g_flSceneAspect = 1.0f;
+float g_nSceneWidth = 0.0f;   /* @0x45e900 float, disasm moves via int */
+float g_nSceneHeight = 0.0f;  /* @0x45e614 float */
+float g_flSceneAspect = 1.0f; /* @0x45e8fc */
 float g_sceneRenderT = 0.0f;
+int   g_nSceneHalfWidth = 0;      /* @0x450f70 */
+int   g_centerX = 0;              /* @0x450f74 */
+int   g_centerY = 0;              /* @0x450f78 */
+float g_flSceneRenderT2 = 0.0f;   /* @0x450f7c stored as int bits, FILD in culling */
+float g_flSceneYScale = 0.0f;     /* @0x450f80 */
 int   g_nSceneDistMax = 0x7fffffff;
 int   g_nSceneDrawCount = 0;
 float g_gxClipTest = 0.0f;
@@ -97,22 +106,87 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
     g_nSceneNodeCount = 0;
     g_nSceneNodeCountPeak = 0;
     g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
+    /* Build sin table 0x400 entries = sin(i * 2*pi/0x400), then sin tree.
+     * Verified vs disasm 0x42ed40..0x42ee97 (malloc 0x1000 / 0x3ff8). */
+    g_pSinTable = (float *)malloc(0x1000);
+    if (!g_pSinTable) return 0;
+    for (int i = 0; i < 0x400; i++) {
+        g_pSinTable[i] = (float)sin((double)i * g_dblTrigStep);
+    }
+    g_pSinTree = (float *)malloc(0x3ff8);
+    if (!g_pSinTree) return 0;
+    mathSinTreeBuild(0, 0x400, g_pSinTree);
+
     g_pRootMatrix = g_rootMatrix;
-    g_pSceneNodeList = g_abSceneRootNode;
+    g_pSceneNodeList = NULL; /* @0x42ef38 original sets to 0; camera block @0x4318e0 will link into it */
     memset(g_abSceneRootNode, 0, sizeof(g_abSceneRootNode));
     SceneNode *root = (SceneNode *)g_abSceneRootNode;
     root->nId = 0;
-    root->pParent = (int)g_abSceneRootNode; /* self-parent for calc */
+    root->pParent = 0; /* original root has no parent (NULL), chanCalc maps NULL->root */
     root->pChild = 0;
     root->pChannels = (int)((char *)root + 0x38);
     SceneChannel *rc = (SceneChannel *)root->pChannels;
     rc->wmat[0] = 1; rc->wmat[4] = 1; rc->wmat[8] = 1;   /* identity (column-major) */
     rc->matr[0] = 1; rc->matr[4] = 1; rc->matr[8] = 1;
-    rc->fUnk6 = 1.0f;                                     /* scale so rot=0 -> identity */
+    rc->fUnk6 = 1.0f;
+    /* Copy rootmatrix local->world identity block as original does at 0x42eed1..0x42eee3
+     * (copies 9 floats from 0x45e834..0x45e858). Stubbed as identity copy for now. */
     g_pSceneRoot = g_abSceneRootNode;
     g_nSceneFlags = nFlags & 0xffffffef;
     g_nSceneFlagTexAnim = ((int)(char)nFlags & 0x10U) >> 4;
     return 1;
+}
+
+/* ===================================================================
+ * sceneNodeAlloc @0x4318e0 — camera/block alloc (0xa8, mode 2)
+ * Verified vs disasm 0x4318e0: PUSH 0xa8; CALL malloc; links into
+ * g_pSceneNodeList @0x45e8cc and g_abSceneRootNode list; sets
+ * mode=2 @+0x00, nWidth/nHeight/renderT @+0x28/0x2c/0x30, vx/vy/vw/vh
+ * @+0x20/0x22/0x24/0x26, pChannels @+0x14 -> +0x38, channel @+0x38 cleared
+ * with fUnk6=1.0, bFlagA/B=0. Called by menuInit @0x41a24e with
+ * {1.0, 10.0, 500000, 0,0,0x1000,0x1000} and by playerSetupSceneObjects.
+ * Ghidra name is sceneNodeAlloc; prototype matches verified 7-arg form.
+ * =================================================================== */
+void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, short nMeshIdx, short nUnk5, short nUnk6, short nUnk7)
+{
+    SceneNode *n = (SceneNode *)malloc(0xa8);
+    if (!n) return NULL;
+    memset(n, 0, 0xa8);
+    n->pParent = (int)g_abSceneRootNode;
+    /* Link into flat list g_pSceneNodeList @0x45e8cc (head insert) */
+    n->pNextSib = (int)g_pSceneNodeList;
+    g_pSceneNodeList = n;
+    /* Also link as child of root's list (original does both) */
+    if (((SceneNode *)g_abSceneRootNode)->pChild) {
+        SceneNode *root = (SceneNode *)g_abSceneRootNode;
+        n->pNextSib = root->pChild;
+        root->pChild = (int)n;
+    } else {
+        ((SceneNode *)g_abSceneRootNode)->pChild = (int)n;
+    }
+    n->nId = 2; /* mode ==2 for sceneRender gate */
+    n->pChannels = (int)((char *)n + 0x38);
+    n->pTypeDef = 0;
+    /* viewport fields repurposed at +0x20..+0x30 — pChannelPtr args are
+     * actually float/int bits (nWidth/nHeight/renderT) passed as void*
+     * per Ghidra's mis-typed prototype; reinterpret via int. */
+    *(int *)((char *)n + 0x28) = (int)(uintptr_t)pChannelPtr;
+    *(int *)((char *)n + 0x2c) = (int)(uintptr_t)pChannelPtr2;
+    *(int *)((char *)n + 0x30) = (int)(uintptr_t)pChannelPtr3;
+    *(short *)((char *)n + 0x20) = nMeshIdx;
+    *(short *)((char *)n + 0x22) = nUnk5;
+    *(short *)((char *)n + 0x24) = nUnk6;
+    *(short *)((char *)n + 0x26) = nUnk7;
+    SceneChannel *ch = (SceneChannel *)n->pChannels;
+    ch->fUnk6 = 1.0f;
+    ch->bFlagA = 0;
+    ch->bFlagB = 0;
+    ch->nIdx = 0;
+    g_nSceneNodeCount++;
+    if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
+    g_nSceneNodeMemUsed += 0xa8;
+    if (g_nSceneNodeMemPeak < g_nSceneNodeMemUsed) g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
+    return n;
 }
 
 /* ===================================================================
@@ -311,17 +385,19 @@ void mat3x3Mul(float *a, float *b, float *out)
 
 /* ===================================================================
  * chanBuildRotMatrix @0x42f030 (build local rotation matrix from euler)
- * pRot points at the channel's rot[3] (int16); scale float is at +6.
+ * Original took short *pRot pointing at channel's rot[3] (int16); scale
+ * float at +6. Re-typed to SceneChannel* to avoid GCC
+ * -Waddress-of-packed-member (packed->short* conversion) while preserving
+ * binary layout (rot[3] at +0, fUnk6 at +6).
  * =================================================================== */
-void chanBuildRotMatrix(short *pRot)
+void chanBuildRotMatrix(SceneChannel *ch)
 {
-    SceneChannel *ch = (SceneChannel *)pRot;
-    float s0 = mathSinDeg(pRot[0]);   /* yaw   */
-    float c0 = mathCosDeg(pRot[0]);
-    float s1 = mathSinDeg(pRot[1]);   /* pitch */
-    float c1 = mathCosDeg(pRot[1]);
-    float s2 = mathSinDeg(pRot[2]);   /* roll  */
-    float c2 = mathCosDeg(pRot[2]);
+    float s0 = mathSinDeg(ch->rot[0]);   /* yaw   */
+    float c0 = mathCosDeg(ch->rot[0]);
+    float s1 = mathSinDeg(ch->rot[1]);   /* pitch */
+    float c1 = mathCosDeg(ch->rot[1]);
+    float s2 = mathSinDeg(ch->rot[2]);   /* roll  */
+    float c2 = mathCosDeg(ch->rot[2]);
     float f  = ch->fUnk6;
     /* column-major m[col*3+row] (verified vs disasm 0x42f030) */
     ch->matr[0] = (s2*s1*s0 + c2*c1) * f;
@@ -342,9 +418,19 @@ void chanBuildRotMatrix(short *pRot)
 void chanCalcWorldTransform(int param_1, int param_2)
 {
     SceneNode *n = (SceneNode *)param_1;
+    if (!n) n = (SceneNode *)g_abSceneRootNode;
+    if ((void *)n == g_abSceneRootNode && param_2 == 0) {
+        /* Root node's world transform is identity; avoid infinite self-parent recursion
+         * (original 0x42f520 sets root's wmat to identity and marks bFlagB without recursion). */
+        SceneChannel *rch = (SceneChannel *)((char *)n->pChannels + param_2 * 0x70);
+        if (rch->bFlagB) return;
+        if (!rch->bFlagA) chanBuildRotMatrix(rch);
+        rch->bFlagB = 1;
+        return;
+    }
     SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + param_2 * 0x70);
     if (ch->bFlagB) return;                          /* already computed */
-    if (!ch->bFlagA) chanBuildRotMatrix((short *)ch);
+    if (!ch->bFlagA) chanBuildRotMatrix(ch);
     int idx = ch->nIdx;
     SceneChannel *parentWorld;
     if (param_2 == 0) {
@@ -356,7 +442,17 @@ void chanCalcWorldTransform(int param_1, int param_2)
         chanCalcWorldTransform((int)n, idx);
         parentWorld = (SceneChannel *)((char *)n->pChannels + idx * 0x70);
     }
-    mat3x3Mul(ch->matr, parentWorld->wmat, ch->wmat);
+    /* mat3x3Mul on packed members would be -Waddress-of-packed-member
+     * (matr @0x1c, wmat @0x40 are inside packed SceneChannel). Copy via
+     * char+offsetof (no &packed-member) to aligned temporaries. Original
+     * MSVC packed(1) build had no such warning — x86 allows unaligned. */
+    {
+        float aM[9], bM[9], outM[9];
+        memcpy(aM, (char *)ch + offsetof(SceneChannel, matr), sizeof(aM));
+        memcpy(bM, (char *)parentWorld + offsetof(SceneChannel, wmat), sizeof(bM));
+        mat3x3Mul(aM, bM, outM);
+        memcpy((char *)ch + offsetof(SceneChannel, wmat), outM, sizeof(outM));
+    }
     ch->wx = (float)ch->x * parentWorld->wmat[0] + (float)ch->y * parentWorld->wmat[1] + (float)ch->z * parentWorld->wmat[2] + parentWorld->wx;
     ch->wy = (float)ch->x * parentWorld->wmat[3] + (float)ch->y * parentWorld->wmat[4] + (float)ch->z * parentWorld->wmat[5] + parentWorld->wy;
     ch->wz = (float)ch->x * parentWorld->wmat[6] + (float)ch->y * parentWorld->wmat[7] + (float)ch->z * parentWorld->wmat[8] + parentWorld->wz;
@@ -623,21 +719,22 @@ int sceneNodeRender(void *pNode)
                     float wx = fx * ch->wmat[0] + fy * ch->wmat[1] + fz * ch->wmat[2] + ch->wx;
                     float wy = fx * ch->wmat[3] + fy * ch->wmat[4] + fz * ch->wmat[5] + ch->wy;
                     float wz = fx * ch->wmat[6] + fy * ch->wmat[7] + fz * ch->wmat[8] + ch->wz;
-                    /* perspective: disasm 0x42fb82..0x42fbee uses g_pNodePoolCur etc */
-                    float rx = wx - g_camPos[0];
-                    float ry = wy - g_camPos[1];
-                    float rz = wz - g_camPos[2];
-                    float vx = g_camMat[0]*rx + g_camMat[1]*ry + g_camMat[2]*rz;
-                    float vy = g_camMat[3]*rx + g_camMat[4]*ry + g_camMat[5]*rz;
-                    float vz = g_camMat[6]*rx + g_camMat[7]*ry + g_camMat[8]*rz;
-                    if (vz <= 1.0f) vz = 1.0f;
-                    float focal = (float)g_nSceneHeight;
-                    int sx_out = (int)(320.0f + (vx / vz) * focal);
-                    int sy_out = (int)(240.0f - (vy / vz) * focal);
+                    /* Perspective projection (verified vs disasm 0x42fb82..0x42fc19):
+                     * scale = halfWidth / ((aspect + worldZ) * nWidth)
+                     * screenX = ftol(scale * worldX + centerX)
+                     * screenY = ftol(Yscale * scale * worldY + centerY)
+                     * depth = ftol((aspect + worldZ) * 16.0) */
+                    float az = g_flSceneAspect + wz;
+                    if (az <= 0.0f) az = 0.001f;
+                    float denom = az * g_nSceneWidth;
+                    float scale = (denom != 0.0f) ? (float)g_nSceneHalfWidth / denom : 0.0f;
+                    int screenX = (int)(scale * wx + (float)g_centerX);
+                    int screenY = (int)(g_flSceneYScale * scale * wy + (float)g_centerY);
+                    int depth = (int)(az * 16.0f);
                     int *dstV = (int *)g_pNodePoolCur;
                     int *dstN = (int *)g_pNodePool2Cur;
-                    dstV[0] = sx_out; dstV[1] = sy_out; dstV[2] = (int)wz;
-                    dstN[0] = sx_out; dstN[1] = sy_out; dstN[2] = (int)wz;
+                    dstV[0] = screenX; dstV[1] = screenY; dstV[2] = depth;
+                    dstN[0] = screenX; dstN[1] = screenY; dstN[2] = depth;
                     *(byte *)((int)dstN + 0xc) = *(byte *)(vbuf + 6);
                     *(byte *)((int)dstN + 0xd) = *(byte *)(vbuf + 7);
                     *(byte *)((int)dstN + 0xe) = *(byte *)(vbuf + 6);
@@ -714,15 +811,67 @@ int sceneRender(void *pCameraBlock)
     SceneCameraBlock *cb = (SceneCameraBlock *)pCameraBlock;
     g_nSceneDistMax = 0x7fffffff;
     g_nSceneDrawCount = 0;
-    if (!cb || cb->mode != 2) return 0;
-    if (!g_pSceneNodeList) return 1;
+    appLog("[sceneRender] cb=%p", pCameraBlock);
+    if (!cb || cb->mode != 2) { appLog("[sceneRender] early exit mode=%d", cb ? cb->mode : -1); return 0; }
+    if (!g_pSceneNodeList) { appLog("[sceneRender] no node list (preview fallback -> use root)"); g_pSceneNodeList = g_abSceneRootNode; }
+
+    /* Compute viewport constants from CameraBlock (verified vs disasm 0x42f207..0x42f2da) */
+    g_nSceneWidth = cb->nWidth;                   /* @0x45e900 */
+    g_nSceneHeight = cb->nHeight;                 /* @0x45e614 */
+    g_flSceneAspect = cb->nHeight / cb->nWidth;   /* @0x45e8fc */
+    g_flSceneRenderT2 = cb->renderT;              /* @0x450f7c */
+
+    GxMode gxMode; int gxRect[4] = {0};
+    int gxWidth = 640, gxHeight = 480;
+    /* Faithful: original calls gxGetMode @0x43310 and gxGetViewport @0x43390
+     * at 0x42f254/0x42f25e. Use driver state if available, fallback to 640x480. */
+    if (gxGetMode(&gxMode) == 0) {
+        gxWidth = gxMode.width; gxHeight = gxMode.height;
+    }
+    gxGetViewport(gxRect);
+    (void)gxRect;
+
+    /* g_flSceneYScale = GxMode.height * 0.5 / GxMode.width */
+    g_flSceneYScale = (float)((double)gxHeight * 0.5 / (double)gxWidth);
+
+    /* Viewport projection constants from CameraBlock vw/vh/vx/vy and GxMode:
+     * vw_scaled = vw * GxMode.height >> 4
+     * vx_scaled = vx * GxMode.height >> 4
+     * vh_scaled = vh * GxMode.width >> 4
+     * vy_scaled = vy * GxMode.width >> 4
+     * halfWidth = (vw_scaled - vx_scaled) >> 1
+     * centerX = halfWidth + vx_scaled
+     * centerY = (vh_scaled + vy_scaled) >> 1 */
+    int vw = (int)cb->vw;
+    int vh = (int)cb->vh;
+    int vx = (int)cb->vx;
+    int vy = (int)cb->vy;
+    int vw_scaled = (vw * gxHeight) >> 4;
+    int vx_scaled = (vx * gxHeight) >> 4;
+    int vh_scaled = (vh * gxWidth) >> 4;
+    int vy_scaled = (vy * gxWidth) >> 4;
+    g_nSceneHalfWidth = (vw_scaled - vx_scaled) >> 1;  /* @0x450f70 */
+    g_centerX = g_nSceneHalfWidth + vx_scaled;          /* @0x450f74 */
+    g_centerY = (vh_scaled + vy_scaled) >> 1;           /* @0x450f78 */
+
+    /* Reset pool cursors */
     g_pSortBufCur = g_pSortBuffer;
-    g_pNodePoolCur = g_pNodePool;      /* @0x45e908 / @0x45e5fc cursors */
+    g_pNodePoolCur = g_pNodePool;
     g_pNodePool2Cur = g_pNodePool2;
+
+    /* Set GX viewport for 3D rendering (original calls gxSetViewport @0x433370
+     * at 0x42f339 with the scaled rect before sceneBuildRootMatrix).
+     * Use full-screen viewport (0,0,640,480) for the menu preview. */
+    appLog("[sceneRender] gx %dx%d -> gxSetViewport", gxWidth, gxHeight);
+    {
+        int vpRect[4] = {0, 0, gxWidth, gxHeight};
+        gxSetViewport(vpRect);
+    }
+    appLog("[sceneRender] calling sceneBuildRootMatrix...");
     sceneBuildRootMatrix(g_pSceneRoot);
-    sceneCameraBasisCalc();
-    for (void *p = (void *)(uintptr_t)((SceneNode *)g_pSceneRoot)->pChild; p; p = (void *)((SceneNode *)p)->pNextSib)
-        sceneNodeRender(p);
+    appLog("[sceneRender] STUB - skip calc/render for bisect");
+    // sceneCameraBasisCalc();
+    // for (void *p = (void *)(uintptr_t)((SceneNode *)g_pSceneRoot)->pChild; p; p = (void *)((SceneNode *)p)->pNextSib) sceneNodeRender(p);
     /* drain sort buffer (original also restores viewport/matrix) */
     if (g_pSortBuffer < g_pSortBufCur) {
         int *pi = (int *)((int)g_pSortBuffer + 0xc);

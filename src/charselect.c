@@ -334,7 +334,9 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
                 sceneObjSetPos((int)g_pCharModelNodePrev, 0, 0x1f4, 0, 0x2);  /* @0x430660 */
             }
         }
-        /* Camera / root placement (original @0x41f7b8). */
+        /* Camera placement (original @0x41f7b8): g_pSceneRoot is the camera
+         * block allocated by menuInit @0x41a24e via sceneNodeAlloc @0x4318e0
+         * with {1.0,10.0,500000,0,0,0x1000,0x1000} (mode 2). No hack needed here. */
         sceneObjSetPos((int)g_pSceneRoot, 0, -1600, -2000, 0x2);        /* @0x430660 */
         sceneNodeFacePos((int)g_pSceneRoot, 0, -2100.0f, 0.0f, 1000.0f, 0x2);  /* @0x431030 */
         sceneRender(g_pSceneRoot);                                      /* @0x42f1c0 */

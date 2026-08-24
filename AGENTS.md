@@ -49,4 +49,4 @@ VERY IMPORTANT! REMEMBER THESE:
 - The new code and the ghidra view should be in sync. After writing new code, update ghidra with newly discovered information such as function types and structs.
 Use `set_function_prototype` and  `create_struct`.
 
-The ghidra script `~/ghidra_scripts/TrackRebuildDetailed.java` reports overall progress.
+The ghidra script `~/ghidra_scripts/TrackRebuildDetailed.java` reports overall progress in `/tmp/opencode/tracked-rebuild-detailed.txt`.

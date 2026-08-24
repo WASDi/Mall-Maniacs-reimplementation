@@ -754,6 +754,16 @@ void menuInit(int nRestartMode)
      * 0x7d0, 0x2). */
     sceneSystemInit(100000, 40000, 40000, 2000, 0x2);
     appLog("[menu] sceneSystemInit done (root=%p)", g_pSceneRoot);
+    /* Camera alloc (menuInit @0x41a24e): sceneNodeAlloc @0x4318e0 with
+     * {1.0, 10.0, 500000, 0,0,0x1000,0x1000} -> g_pSceneRoot (camera block).
+     * Original then does sceneObjSetPos(g_pSceneRoot, 0,-1600,-2000) and
+     * sceneNodeFacePos(..., -2100,0,1000) before first frame; charselect
+     * repeats that per-frame at 0x41f7b8. */
+    {
+        void *pCam = sceneNodeAlloc((void*)0x3f800000, (void*)0x41200000, (void*)0x7a120, 0, 0, 0x1000, 0x1000);
+        if (pCam) g_pSceneRoot = pCam;
+        appLog("[menu] sceneNodeAlloc @0x4318e0 done (cam=%p root=%p)", pCam, g_pSceneRoot);
+    }
 
     /* Scene + character-anim data (menuInit @0x419c20, in this order):
      * fileReadRaw of the two .ANM files first (the character preview anim
