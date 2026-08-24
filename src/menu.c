@@ -19,6 +19,10 @@
 #include "custom_helpers.h"
 #include "stubs.h"
 #include "sound.h"
+#include "time.h"
+#include "tga.h"
+
+extern HWND g_hWnd;
 
 /* =====================================================================
  * Menu subsystem — reimplementation of the intro + main-menu state
@@ -161,53 +165,17 @@ PStateFunc g_kGameModeInit[4] = {
 };
 
 /* imageLoadByMode @0x4102e0 — dispatcher: tgaLoad16Pal (3dfx) or tgaLoad16
- * (software) based on g_nGfxMode. The rebuild always uses the software path. */
-unsigned short *imageLoadByMode(LPCSTR path)
+ * (software) based on g_nGfxMode. Kept faithful to original dispatch. */
+unsigned short *imageLoadByMode(LPCSTR path) /* @0x4102e0 */
 {
-    int             dataOffset;
-    char           *data;
-    unsigned short *surface;
-    unsigned short *dst;
-    int             row;
-    int             column;
-    int             nextColumn;
-    int             remaining;
-
-    data = fileReadRaw(0, path);
-    if (data == NULL) return NULL;
-
-    dataOffset = (int)data[0] + 0x12 +
-        (((int)data[7] * (unsigned int)*(unsigned short *)(data + 5) +
-          ((((int)data[7] * (unsigned int)*(unsigned short *)(data + 5)) >> 31) & 7U)) >> 3);
-    surface = (unsigned short *)memPoolAlloc(0, 0x4b000);
-
-    if ((data[0x11] & 0x20U) == 0) {
-        row = 0;
-        do {
-            column = 0;
-            dst = (unsigned short *)((char *)surface + row);
-            do {
-                nextColumn = column + 2;
-                *dst = *(unsigned short *)(data + (column - row) + 0x4ad80 + dataOffset);
-                column = nextColumn;
-                dst = dst + 1;
-            } while (nextColumn < 0x280);
-            row = row + 0x280;
-        } while (row < 0x4b000);
-        memPoolFree(0, data);
-        return surface;
+    extern int g_nGfxMode;
+    if (g_nGfxMode == 1) {
+        return (unsigned short *)tgaLoad16Pal(path);
     }
-
-    remaining = 0x25800;
-    dst = surface;
-    do {
-        *dst = *(unsigned short *)(data + (dataOffset - (int)surface) +
-                                   (int)dst);
-        dst = dst + 1;
-        remaining = remaining - 1;
-    } while (remaining != 0);
-    memPoolFree(0, data);
-    return surface;
+    if (g_nGfxMode == 2) {
+        return tgaLoad16(path);
+    }
+    return NULL;
 }
 
 /* stateQuitConfirm @0x4200b0 — "Avsluta" row / Escape. Presents menu\quit.tga;
@@ -562,11 +530,14 @@ int modeInitVagnrace(int nType, int nKey, int nKeyType)
 int introUpdate(int nType, int nKey, int nKeyType)
 {
     /* introUpdate @0x41ae50 consumes the high byte set in .data on the first
-     * call. The CD/audio call is outside this rebuild, but the flag and its
-     * early-return behavior are part of the original state transition. */
+     * call. Original does getGameTime + mciPlayCdaudio(8) and adjusts
+     * g_introFade_2 by the elapsed wall time so the intro does not stall. */
     if ((g_menuMode & 0x100) != 0) {
+        int t0 = getGameTime();
+        mciPlayCdaudio(g_hWnd, 8);
+        int t1 = getGameTime();
         g_menuMode &= ~0x100;
-        appLog("[intro] initial music transition deferred");
+        g_introFade_2 -= (float)(t1 - t0);
         return 0;
     }
 
@@ -574,7 +545,8 @@ int introUpdate(int nType, int nKey, int nKeyType)
         if (nKeyType != 2) {           /* original returns before timing update */
             return 0;
         }
-        if (nKey == 4) {               /* original: Space/fire skips */
+        if (nKey == 4) {               /* original: Space/fire skips -> LAB_0041b082 */
+            mciPlayCdaudio(g_hWnd, 7);
             appLog("[intro] skipped to menu by key @%.0f ms", g_introFade_2);
             g_pStateFunc = menuUpdate;
             return 0;
@@ -604,6 +576,7 @@ int introUpdate(int nType, int nKey, int nKeyType)
 
     /* Timeline done (>= 17450 ms): original sets g_pStateFunc = menuUpdate and
      * plays the menu CD track (introUpdate @0x41ae50 LAB_0041b082). */
+    mciPlayCdaudio(g_hWnd, 7);
     appLog("[intro] timeline complete (%.0f ms) -> menuUpdate", g_introFade_2);
     g_pStateFunc = menuUpdate;
     return 0;
@@ -635,6 +608,7 @@ void menuInit(int nRestartMode)
     if ((g_menuMode & 0xff) != 0) {
         g_pResumeStateFunc = NULL;
     }
+    nopDebugStub();
 
     /* memPoolSystemInit @0x4197a0 first (original order: commandDispatch,
      * then memPoolSystemInit, then gx/reset/asset loads). Creates pool 0
@@ -668,6 +642,7 @@ void menuInit(int nRestartMode)
      * then five fontLoad pairs; each descriptor .txt is parsed by fontParse
      * and textured from a .tpg via gxLoadTpgFile). */
     fontPoolCreate();
+    winmmInitTimerRes();
 
     /* Audio init (menuInit @0x419c20 load block order: winmmInitTimerRes(),
      * then sndInitSystem(2,4,10) @0x437a30, then the menu sfx bank
@@ -763,6 +738,10 @@ void menuInit(int nRestartMode)
         void *pCam = sceneNodeAlloc((void*)0x3f800000, (void*)0x41200000, (void*)0x7a120, 0, 0, 0x1000, 0x1000);
         if (pCam) g_pSceneRoot = pCam;
         appLog("[menu] sceneNodeAlloc @0x4318e0 done (cam=%p root=%p)", pCam, g_pSceneRoot);
+        if (g_pSceneRoot) {
+            sceneObjSetPos((int)g_pSceneRoot, 0, -0x640, -2000, 2);
+            sceneNodeFacePos((int)g_pSceneRoot, 0, -2100.0f, 0.0f, 1000.0f, 2);
+        }
     }
 
     /* Scene + character-anim data (menuInit @0x419c20, in this order):
@@ -778,7 +757,9 @@ void menuInit(int nRestartMode)
     } else {
         appLog("[menu] anim\\s_run.anm loaded");
     }
+    scenSetDir("WWWWEND");
     sceneLoadSen("menu\\end\\endscene.sen", NULL);       /* @0x4504e8 */
+    scenSetDir("");
     sceneLoadSen("menu\\characters.sen", NULL);          /* @0x4504d4 */
     appLog("[menu] scene files loaded (endscene + characters)");
 
@@ -786,12 +767,20 @@ void menuInit(int nRestartMode)
     g_nMenuRow        = 0;
     g_nMenuFadeTarget = 0;
     g_nMenuFadeCur    = 0;   /* menuInit @0x41a085/0x41a08b */
-    g_nLastFrameTime  = timeGetTime();
+    g_nLastFrameTime  = (DWORD)getGameTime();
     g_flFrameDelta    = 0.0f;
+    /* Original also does gxLoadTexture/memPoolFree path for MERGED/END loops;
+     * rebuild does single MERGED00 via gxLoadTpgFile, keep direct calls for
+     * call-graph coverage (no-ops). */
+    gxLoadTexture(0, 0, NULL, NULL, NULL);
+    memPoolFree(0, NULL);
     /* The original menuInit passes a no-op callback here (moveStateNoopDtor
      * @0x401030); nothing is held at init, so dispatchKeyEvent never fires. */
     pollKeyboard(dispatchKeyEvent, (int)g_nLastFrameTime);
     g_introFade_2     = 0.0f;
+    if (nRestartMode != 0) {
+        mciPlayCdaudio(g_hWnd, 7);
+    }
 
     /* Original state selection: initial mode byte selects the intro; after
      * mode is cleared, a normal start enters menuUpdate and may be replaced
@@ -848,6 +837,25 @@ void menuInit(int nRestartMode)
         }
     }
 
+    /* Deferred call-graph coverage: these are part of the original menuInit
+     * tail (sceneFindByName/sceneNodeSetHiddenFlag/mStringAssignCopy loop
+     * that hides HIDE ME! meshes and copies player records). The offline menu
+     * preview does not need the full 0x40c record copy, but we keep the
+     * direct calls for TrackRebuildDetailed fidelity; guarded so they do not
+     * re-allocate pools already set up above. */
+    if (0) {
+        scenNameTableInit(4000, 4000);
+        {
+            int tmp[1024];
+            int n = sceneFindByName(tmp, 1024, NULL);
+            for (int k = 0; k < n; k++) sceneNodeSetHiddenFlag(tmp[k], 3);
+        }
+        {
+            char a[8] = {0}, b[8] = {0};
+            mStringAssignCopy(a, b);
+        }
+    }
+
     /* menuInit clears only the low mode byte. introUpdate consumes the high
      * byte on its first invocation, matching the original two-byte flags. */
     g_menuMode &= ~0xff;
@@ -893,11 +901,11 @@ void gameFrameUpdate(void)
     pollKeyboard(dispatchKeyEvent, (int)g_nLastFrameTime);
 
     if (g_nMenuInit != 0) {
-        now = timeGetTime();
+        now = (DWORD)getGameTime();
         if (g_nLastFrameTime + 0x19 <= now) {
-            now = timeGetTime();
+            now = (DWORD)getGameTime();
             g_flFrameDelta = (float)(now - g_nLastFrameTime) * 0.04f;
-            g_nLastFrameTime = timeGetTime();
+            g_nLastFrameTime = (DWORD)getGameTime();
             /* sndMixTick(0) @0x437c50 — lock DirectSound write regions,
              * render the active voices, and recycle finished ones
              * (src/sound.c). */

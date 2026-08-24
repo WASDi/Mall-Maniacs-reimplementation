@@ -42,7 +42,7 @@ milestone in `docs/16-rebuild.md`.
 
 VERY IMPORTANT! REMEMBER THESE:
 
-- Always look at the assembly using `disassemble_function`, thoroughly verify that the assembly logic matches the reimplemented code. Using `decompile_function` produces lossy psuedocode and should only be used to get the overall structure of a function. Use precise types rather than Ghidra undefined placeholders. Give proper names to everything (not "param_1" etc).
+- Always look at the assembly using `disassemble_function`, thoroughly verify that the assembly logic matches the reimplemented code. Using `decompile_function` produces lossy psuedocode and should only be used to get the overall structure of a function. Use precise types rather than Ghidra undefined placeholders. Give proper names to everything (not ghidra placeholder names like "param_1" or "iVar3" etc).
 - Reimplemented functions must ONLY call functions also called by the original binary to preserve call hierarchy. Report any violation found in existing code. Do not invent new functions, except for temporary debug purposes and logging or utils in `src/custom_helpers.c`.
 - Comment every reimplemented function and global with its original address. Write comment above function declaration.
 - Implement called functions fully or provide documented stubs in `src/stubs.c` without changing callers or interfaces. Keep the original calling conventions in Ghidra, but omit convention keywords from rebuild declarations as required by the project style.

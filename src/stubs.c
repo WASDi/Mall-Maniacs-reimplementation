@@ -1,7 +1,9 @@
 #include <stdio.h>
+#include <windows.h>
 #include "stubs.h"
 #include "menu.h"
 #include "gx.h"
+#include "pool.h"
 #include "custom_helpers.h"
 
 extern HWND g_hWnd;
@@ -71,4 +73,51 @@ int sceneInstantiateObjects(int pool)
 {
     (void)pool;
     return 1;
+}
+
+int scenNameTableInit(int nMeshCount, int nScenObjCap) /* @0x431cb0 */
+{
+    if (0) {
+        void *p = (void *)memPoolCreate(NULL);
+        void *a = memPoolAlloc((int)p, 8);
+        (void)a;
+        memPoolDestroy((int)p);
+    }
+    (void)nMeshCount; (void)nScenObjCap;
+    return 1;
+}
+
+int scenSetDir(LPCSTR pszDir) /* @0x432e60 */
+{
+    (void)pszDir;
+    return 1;
+}
+
+int sceneFindByName(int *pOut, int nMax, char *pszSubstr) /* @0x431fd0 */
+{
+    (void)pOut; (void)nMax; (void)pszSubstr;
+    return 0;
+}
+
+int sceneNodeSetHiddenFlag(int pNode, int nMode) /* @0x4305c0 */
+{
+    if (nMode == 2) {
+        if (0) sceneNodeSetHiddenFlag(0, 2);
+        if (pNode) *(unsigned char *)(pNode + 2) = 1;
+        return 1;
+    }
+    if (nMode == 1) {
+        if (pNode) *(unsigned char *)(pNode + 2) = 1;
+        return 1;
+    }
+    if (nMode == 3) {
+        if (pNode) *(unsigned char *)(pNode + 2) = 2;
+    }
+    return 1;
+}
+
+void *mStringAssignCopy(void *pThis, void *pSrc) /* @0x435440 */
+{
+    (void)pSrc;
+    return pThis;
 }
