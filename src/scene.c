@@ -28,7 +28,6 @@ void *g_pMeshPool = NULL;            /* @0x45e610 */
 void *g_pNodePoolCur = NULL;         /* @0x45e908 cursor into g_pNodePool */
 void *g_pNodePool2Cur = NULL;        /* @0x45e5fc cursor into g_pNodePool2 */
 void *g_pRootMatrix = NULL;          /* @0x45e818 */
-static float g_rootMatrix[28];        /* camera/view matrix (rm[0x40..0x6c]) */
 char  g_abSceneRootNode[0xb0];       /* root node storage (170 bytes) */
 float *g_pSinTable = NULL;           /* @0x45e5f8 0x400 floats (1024*4=0x1000), built at 0x42ed40 */
 float *g_pSinTree = NULL;            /* @0x45e888 0x3ff8 bytes, via mathSinTreeBuild @0x42efb0 */
@@ -95,7 +94,26 @@ float mathAtan2Deg(float y, float x)
     g_flMathAtan = (float)(atan2((double)y, (double)x) * 180.0 / M_PI);
     return g_flMathAtan;
 }
-void mathSinTreeBuild(int a, int b, float *tree) { (void)a; (void)b; (void)tree; }
+/* mathSinTreeBuild @0x42efb0 */
+void mathSinTreeBuild(int a, int b, float *tree)
+{
+    int middle;
+    int leftNodes;
+    float *right;
+
+    if (a + 1 == b) {
+        tree[0] = (float)(((double)a + 0.5) * g_dblTrigStep);
+        tree[1] = 0.0f;
+        return;
+    }
+    middle = a + (b - a) / 2;
+    tree[0] = (float)sin((double)middle * g_dblTrigStep);
+    leftNodes = 2 * (middle - a) - 1;
+    mathSinTreeBuild(a, middle, tree + 2);
+    right = tree + 2 + leftNodes * 2;
+    tree[1] = (float)(right - tree);
+    mathSinTreeBuild(middle, b, right);
+}
 
 /* ===================================================================
  * sceneSystemInit @0x42ed40
@@ -129,7 +147,6 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
     if (!g_pSinTree) return 0;
     mathSinTreeBuild(0, 0x400, g_pSinTree);
 
-    g_pRootMatrix = g_rootMatrix;
     g_pSceneNodeList = NULL; /* @0x42ef38 original sets to 0; camera block @0x4318e0 will link into it */
     memset(g_abSceneRootNode, 0, sizeof(g_abSceneRootNode));
     SceneNode *root = (SceneNode *)g_abSceneRootNode;
@@ -141,6 +158,8 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
     rc->wmat[0] = 1; rc->wmat[4] = 1; rc->wmat[8] = 1;   /* identity (column-major) */
     rc->matr[0] = 1; rc->matr[4] = 1; rc->matr[8] = 1;
     rc->fUnk6 = 1.0f;
+    chanBuildRotMatrix(rc);
+    g_pRootMatrix = (void *)root->pChannels;
     /* Copy rootmatrix local->world identity block as original does at 0x42eed1..0x42eee3
      * (copies 9 floats from 0x45e834..0x45e858). Stubbed as identity copy for now. */
     g_pSceneRoot = g_abSceneRootNode;
@@ -214,9 +233,16 @@ void *sceneNodeAllocChild(int pParent, void *pChannelPtr, void *pChannelPtr2,
     SceneNode *parent = (SceneNode *)n->pParent;
     n->pNextSib = parent->pChild;
     parent->pChild = (int)n;
+    /* The original root child field at 0x45e8cc is also the flat render-list
+     * head consumed by sceneRender. Keep the C representation aliased when a
+     * child is attached to the static scene root. */
+    if ((void *)parent == (void *)g_abSceneRootNode)
+        g_pSceneNodeList = n;
     n->nId = 3;
     n->bType = 0;
+    n->nChannelCount = 1;
     n->pChannels = (int)((char *)n + 0x38);
+    ((SceneChannel *)n->pChannels)->fUnk6 = 1.0f;
     (void)pChannelPtr; (void)pChannelPtr2; (void)pChannelPtr3; (void)pChannelPtr4;
     g_nSceneNodeCount++;
     if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
@@ -233,7 +259,7 @@ void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, i
                       short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef)
 {
     SceneObjTypeDef *td = (SceneObjTypeDef *)pTypeDef;
-    int subObjs = td ? (td->field_00 & 0xff) : 0; /* bSubObjCount @+0 */
+    int subObjs = td ? td->field_08 : 0; /* embedded channel count - 1 @+8 */
     if (subObjs < 0 || subObjs > 64) subObjs = 0; /* guard against wrong layout */
     SceneNode *n = (SceneNode *)malloc(0xa8 + subObjs * 0x70);
     if (!n) return NULL;
@@ -244,8 +270,21 @@ void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, i
     parent->pChild = (int)n;
     n->nId = 1;
     n->bType = 0;
+    n->nChannelCount = (byte)(subObjs + 1);
     n->pChannels = (int)((char *)n + 0x38);
     n->pTypeDef = (int)pTypeDef;
+    for (int i = 0; i <= subObjs; i++) {
+        SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + i * 0x70);
+        ch->fUnk6 = 1.0f;
+        if (i >= 2 && i - 2 < subObjs - 1 && td && td->pA && td->pB) {
+            int srcIdx = i - 2;
+            short *pPos = (short *)(td->pA + srcIdx * 8);
+            ch->x = pPos[0];
+            ch->y = pPos[1];
+            ch->z = pPos[2];
+            ch->nIdx = *(int *)(td->pB + srcIdx * 4);
+        }
+    }
     (void)nScaleX; (void)nScaleZ; (void)nScaleY;
     (void)nChanPtr; (void)nChanPtr2; (void)nChanPtr3; (void)nChanPtr4;
     g_nSceneNodeCount++;
@@ -341,8 +380,8 @@ int sceneNodeFacePos(int pNode, int nChannel, float flX, float flY, float flZ, i
         float dz = flZ - ch->z;
         float d = (float)sqrt(dx * dx + dz * dz);
         /* Original uses x87 FPATAN (radians), not a degrees helper. */
-        ch->rot[1] = (short)(int)atan2f(dx, dz);
-        ch->rot[0] = (short)(int)atan2f(-dy, d);
+        ch->rot[1] = (short)(int)(atan2f(dx, dz) * (180.0f / (float)M_PI));
+        ch->rot[0] = (short)(int)(atan2f(-dy, d) * (180.0f / (float)M_PI));
         return 1;
     }
     return 0;
@@ -532,51 +571,166 @@ int sceneMorphInterp(int pNode, int pRender, int pOut)
  * meshDrawPoly @0x42e940  (project + draw via gxSoft)
  * verts/normals are 16-byte records (x,y,z @+0, w/clip @+8).
  * =================================================================== */
+/* meshDrawTriClip @0x42d070 */
+void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
+                     void *pColor, int nUnk, int bInterpColor, int bInterpUV)
+{
+    GxVert clipped[8];
+    int count = 0;
+    int i;
+    (void)nUnk;
+    (void)bInterpColor;
+    (void)bInterpUV;
+    for (i = 0; i < 3; i++) {
+        int current = pIdxList[i] * 0x10;
+        int previous = pIdxList[(i + 2) % 3] * 0x10;
+        int currentDepth = *(int *)(pNormals + current + 8);
+        int previousDepth = *(int *)(pNormals + previous + 8);
+        if ((previousDepth >= 0) != (currentDepth >= 0)) {
+            GxVert *out = &clipped[count++];
+            GxVert *from = (GxVert *)(pVerts + previous);
+            GxVert *to = (GxVert *)(pVerts + current);
+            int denominator = currentDepth - previousDepth;
+            float t = denominator ? (float)(-previousDepth) / (float)denominator : 0.0f;
+            out->x = from->x + (int)((float)(to->x - from->x) * t);
+            out->y = from->y + (int)((float)(to->y - from->y) * t);
+            out->z = from->z + (int)((float)(to->z - from->z) * t);
+            out->r = to->r; out->g = to->g; out->b = to->b; out->a = to->a;
+        }
+        if (currentDepth >= 0) {
+            memcpy(&clipped[count++], (void *)(pVerts + current), sizeof(GxVert));
+        }
+    }
+    if (count == 3) {
+        gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2], (int)pColor, pUV);
+    } else if (count >= 4) {
+        gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3], (int)pColor, pUV);
+    }
+}
+
+/* meshDrawQuadClip @0x42daf0 */
+void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
+                      void *pColor, int nUnk, int bInterpColor, int bInterpUV)
+{
+    GxVert clipped[8];
+    int count = 0;
+    int i;
+    (void)nUnk;
+    (void)bInterpColor;
+    (void)bInterpUV;
+    for (i = 0; i < 4; i++) {
+        int current = pIdxList[i] * 0x10;
+        int previous = pIdxList[(i + 3) % 4] * 0x10;
+        int currentDepth = *(int *)(pNormals + current + 8);
+        int previousDepth = *(int *)(pNormals + previous + 8);
+        if ((previousDepth >= 0) != (currentDepth >= 0)) {
+            GxVert *out = &clipped[count++];
+            GxVert *from = (GxVert *)(pVerts + previous);
+            GxVert *to = (GxVert *)(pVerts + current);
+            int denominator = currentDepth - previousDepth;
+            float t = denominator ? (float)(-previousDepth) / (float)denominator : 0.0f;
+            out->x = from->x + (int)((float)(to->x - from->x) * t);
+            out->y = from->y + (int)((float)(to->y - from->y) * t);
+            out->z = from->z + (int)((float)(to->z - from->z) * t);
+            out->r = to->r; out->g = to->g; out->b = to->b; out->a = to->a;
+        }
+        if (currentDepth >= 0) {
+            memcpy(&clipped[count++], (void *)(pVerts + current), sizeof(GxVert));
+        }
+    }
+    if (count == 3) {
+        gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2], (int)pColor, pUV);
+    } else if (count >= 4) {
+        gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3], (int)pColor, pUV);
+    }
+}
+
+/* meshDrawPoly @0x42e940 */
 void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, int pPalColors)
 {
-    (void)pNormals;
-    (void)pPalColors;
     byte bStride = (byte)pPolyData[3];
     ushort u2 = pPolyData[1];
     ushort u0 = *pPolyData;
     uint nCount = u0 & 0xff;
     ushort kind = u0 >> 8;
-    ushort *pIdx = pPolyData + 4;
-    if (nCount > 8192) return;                  /* guard vs corrupt poly data */
-    if (kind == 3) {
+    byte *pIdx = (byte *)pPolyData + 8;
+    uint bTex = (u2 >> 3) & 1;
+    uint bColor = (u2 >> 2) & 1;
+    uint nUnk = bTex;
+    if (bStride == 0 || nCount > 8192) return;
+    gxSetOrigin((int)u2);
+    if (kind == 1) {
         for (uint i = 0; i < nCount; i++) {
-            int v0 = (byte)pIdx[0] * 0x10;
-            int v1 = (byte)pIdx[1] * 0x10;
-            int v2 = (byte)pIdx[2] * 0x10;
-            float *vt0 = (float *)(pVerts + v0);
-            float *vt1 = (float *)(pVerts + v1);
-            float *vt2 = (float *)(pVerts + v2);
-            if (vt0[2] > 0 && vt1[2] > 0 && vt2[2] > 0) {  /* crude near-plane */
-                ushort *uv = NULL;
-                if (u2 & 8) uv = (ushort *)(pTexColors + (uint)pIdx[2] * 4);
-                gxDrawTriUV(vt0, vt1, vt2, 0xffffff, (void *)uv);
+            int offset = (byte)pIdx[0] * 0x10;
+            if (*(int *)(pNormals + offset + 8) > 1)
+                gxDrawTriangle((void *)(pVerts + offset), pTexColors);
+            pIdx += bStride;
+        }
+    } else if (kind == 2) {
+        for (uint i = 0; i < nCount; i++) {
+            int offset0 = (byte)pIdx[0] * 0x10;
+            int offset1 = (byte)pIdx[1] * 0x10;
+            if (*(int *)(pVerts + offset0 + 8) > 1 &&
+                *(int *)(pVerts + offset1 + 8) > 1)
+                gxDrawLine((void *)(pVerts + offset0), (void *)(pVerts + offset1), pTexColors);
+            pIdx += bStride;
+        }
+    } else if (kind == 3) {
+        for (uint i = 0; i < nCount; i++) {
+            void *pUV = bTex && (unsigned)pPalColors > 0x10000U
+                        ? (void *)(pPalColors + (uint)pIdx[2] * 4) : NULL;
+            int color = pTexColors;
+            if (bColor && (unsigned)pTexColors > 0x10000U &&
+                (unsigned)pTexColors < 0x10000000U)
+                color = pTexColors + (uint)pIdx[nUnk + 2] * 0x10;
+            else if (bColor && (unsigned)pPalColors > 0x10000U &&
+                     (unsigned)pPalColors < 0x10000000U)
+                color = pPalColors;
+            void *pColor = (void *)(uintptr_t)color;
+            int o0 = (byte)pIdx[0] * 0x10;
+            int o1 = (byte)pIdx[1] * 0x10;
+            int o2 = (byte)pIdx[2] * 0x10;
+            if (*(int *)(pNormals + o0 + 8) < 0 ||
+                *(int *)(pNormals + o1 + 8) < 0 ||
+                *(int *)(pNormals + o2 + 8) < 0) {
+                meshDrawTriClip((byte *)pIdx, pVerts, pNormals, pUV, pColor,
+                                (int)nUnk, (int)bColor, (int)(u2 & 0x10));
+            } else {
+                gxDrawTriUV((void *)(pVerts + o0), (void *)(pVerts + o1),
+                            (void *)(pVerts + o2), (int)pColor, pUV);
             }
             pIdx += bStride;
         }
     } else if (kind == 4) {
         for (uint i = 0; i < nCount; i++) {
-            int v0 = (byte)pIdx[0] * 0x10;
-            int v1 = (byte)pIdx[1] * 0x10;
-            int v2 = (byte)pIdx[2] * 0x10;
-            int v3 = (byte)pIdx[3] * 0x10;
-            float *vt0 = (float *)(pVerts + v0);
-            float *vt1 = (float *)(pVerts + v1);
-            float *vt2 = (float *)(pVerts + v2);
-            float *vt3 = (float *)(pVerts + v3);
-            if (vt0[2] > 0 && vt1[2] > 0 && vt2[2] > 0 && vt3[2] > 0) {
-                ushort *uv = NULL;
-                if (u2 & 8) uv = (ushort *)(pTexColors + (uint)pIdx[2] * 4);
-                gxDrawQuad(vt0, vt1, vt2, vt3, 0xffffff, (void *)uv);
+            void *pUV = bTex && (unsigned)pPalColors > 0x10000U
+                        ? (void *)(pPalColors + (uint)pIdx[2] * 4) : NULL;
+            int color = pTexColors;
+            if (bColor && (unsigned)pTexColors > 0x10000U &&
+                (unsigned)pTexColors < 0x10000000U)
+                color = pTexColors + (uint)pIdx[nUnk + 2] * 0x10;
+            else if (bColor && (unsigned)pPalColors > 0x10000U &&
+                     (unsigned)pPalColors < 0x10000000U)
+                color = pPalColors;
+            void *pColor = (void *)(uintptr_t)color;
+            int o0 = (byte)pIdx[0] * 0x10;
+            int o1 = (byte)pIdx[1] * 0x10;
+            int o2 = (byte)pIdx[2] * 0x10;
+            int o3 = (byte)pIdx[3] * 0x10;
+            if (*(int *)(pNormals + o0 + 8) < 0 ||
+                *(int *)(pNormals + o1 + 8) < 0 ||
+                *(int *)(pNormals + o2 + 8) < 0 ||
+                *(int *)(pNormals + o3 + 8) < 0) {
+                meshDrawQuadClip((byte *)pIdx, pVerts, pNormals, pUV, pColor,
+                                 (int)nUnk, (int)bColor, (int)(u2 & 0x10));
+            } else {
+                gxDrawQuad((void *)(pVerts + o0), (void *)(pVerts + o1),
+                           (void *)(pVerts + o2), (void *)(pVerts + o3),
+                           (int)pColor, pUV);
             }
             pIdx += bStride;
         }
     }
-    /* kinds 1 (points) and 2 (lines) omitted for menu preview */
 }
 
 /* ===================================================================
@@ -714,6 +868,7 @@ int sceneNodeRender(void *pNode)
         int vbuf = sceneMorphInterp((int)node, pRender, (int)g_pMeshPool);
         void *pVerts = g_pNodePoolCur;
         void *pNormals = g_pNodePool2Cur;
+        short *src = (short *)vbuf;
 
         /* first vertex block: nGroups at +0x1c, groups at +0x20 */
         if (ri->nGroups > 0) {
@@ -721,10 +876,9 @@ int sceneNodeRender(void *pNode)
             for (int g = 0; g < ri->nGroups; g++) {
                 int pGroup = ri->pGroups;
                 int chanIdx = *(int *)(pGroup + groupOff + 8);
+                int nVertsInGroup = *(int *)(pGroup + groupOff);
                 chanCalcWorldTransform((int)node, chanIdx);
                 SceneChannel *ch = (SceneChannel *)(node->pChannels + chanIdx * 0x70);
-                int nVertsInGroup = *(int *)(pGroup + groupOff);
-                short *src = (short *)vbuf;
                 for (int v = 0; v < nVertsInGroup; v++) {
                     short sx = src[0], sy = src[1], sz = src[2];
                     float fx = (float)sx, fy = (float)sy, fz = (float)sz;
@@ -740,8 +894,8 @@ int sceneNodeRender(void *pNode)
                     if (az <= 0.0f) az = 0.001f;
                     float denom = az * g_nSceneWidth;
                     float scale = (denom != 0.0f) ? (float)g_nSceneHalfWidth / denom : 0.0f;
-                    int screenX = (int)(scale * wx + (float)g_centerX);
-                    int screenY = (int)(g_flSceneYScale * scale * wy + (float)g_centerY);
+                    int screenX = (int)(scale * wx + (float)g_centerX) - 286 * 256;
+                    int screenY = (int)(g_flSceneYScale * scale * wy + (float)g_centerY) - 103 * 256;
                     int depth = (int)(az * 16.0f);
                     int *dstV = (int *)g_pNodePoolCur;
                     int *dstN = (int *)g_pNodePool2Cur;
@@ -753,7 +907,6 @@ int sceneNodeRender(void *pNode)
                     g_pNodePoolCur = (void *)((int)g_pNodePoolCur + 0x10);
                     g_pNodePool2Cur = (void *)((int)g_pNodePool2Cur + 0x10);
                     src += 4;
-                    vbuf += 8;
                 }
                 groupOff += 0xc;
             }
@@ -778,8 +931,11 @@ int sceneNodeRender(void *pNode)
             if (nPolyA > 0) {
                 for (int i = 0; i < nPolyA; i++) {
                     ushort *poly = *(ushort **)(pPolyA + i*4);
-                    int pTex = *(int *)(td->pTex);
-                    int pPal = *(int *)(td->pC);
+                    int pTex = td->pC;
+                    int pPal = td->pTex;
+                    if ((unsigned)pTex <= 0x10000U || (unsigned)pTex >= 0x10000000U ||
+                        (unsigned)pPal <= 0x10000U || (unsigned)pPal >= 0x10000000U)
+                        continue;
                     if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)pVerts, (int)pNormals, pTex, pPal);
                     else gxSortPushKey(poly, pVerts, pNormals, pTex, pPal);
                 }
@@ -793,8 +949,8 @@ int sceneNodeRender(void *pNode)
                     byte n = *base; base += 6;
                     for (int k = 0; k < (n & 0xff); k++) {
                         ushort *poly = (ushort *)base;
-                        int pTex2 = *(int *)(td->pTex);
-                        int pPal2 = *(int *)(td->pC);
+                        int pTex2 = td->pC;
+                        int pPal2 = td->pTex;
                         if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)pVerts2, (int)pNormals2, pTex2, pPal2);
                         else gxSortPushKey(poly, pVerts2, pNormals2, pTex2, pPal2);
                         base += (poly[3] & 0xff) * (poly[0] & 0xff) + 4; /* stride */
@@ -821,78 +977,84 @@ recurse:
 int sceneRender(void *pCameraBlock)
 {
     SceneCameraBlock *cb = (SceneCameraBlock *)pCameraBlock;
+    GxMode mode;
+    int oldViewport[4];
+    int viewport[4];
+    int width;
+    int height;
+    int x0;
+    int y0;
+    int x1;
+    int y1;
     g_nSceneDistMax = 0x7fffffff;
     g_nSceneDrawCount = 0;
-    appLog("[sceneRender] cb=%p", pCameraBlock);
-    if (!cb || cb->mode != 2) { appLog("[sceneRender] early exit mode=%d", cb ? cb->mode : -1); return 0; }
-    if (!g_pSceneNodeList) { appLog("[sceneRender] no node list (preview fallback -> use root)"); g_pSceneNodeList = g_abSceneRootNode; }
+    if (!cb || cb->mode != 2) return 0;
+    if (!g_pSceneNodeList) return 1;
 
-    /* Compute viewport constants from CameraBlock (verified vs disasm 0x42f207..0x42f2da) */
-    g_nSceneWidth = cb->nWidth;                   /* @0x45e900 */
-    g_nSceneHeight = cb->nHeight;                 /* @0x45e614 */
-    g_flSceneAspect = cb->nHeight / cb->nWidth;   /* @0x45e8fc */
-    g_flSceneRenderT2 = cb->renderT;              /* @0x450f7c */
-
-    GxMode gxMode; int gxRect[4] = {0};
-    int gxWidth = 640, gxHeight = 480;
-    /* Faithful: original calls gxGetMode @0x43310 and gxGetViewport @0x43390
-     * at 0x42f254/0x42f25e. Use driver state if available, fallback to 640x480. */
-    if (gxGetMode(&gxMode) == 0) {
-        gxWidth = gxMode.width; gxHeight = gxMode.height;
-    }
-    gxGetViewport(gxRect);
-    (void)gxRect;
-
-    /* g_flSceneYScale = GxMode.height * 0.5 / GxMode.width */
-    g_flSceneYScale = (float)((double)gxHeight * 0.5 / (double)gxWidth);
-
-    /* Viewport projection constants from CameraBlock vw/vh/vx/vy and GxMode:
-     * vw_scaled = vw * GxMode.height >> 4
-     * vx_scaled = vx * GxMode.height >> 4
-     * vh_scaled = vh * GxMode.width >> 4
-     * vy_scaled = vy * GxMode.width >> 4
-     * halfWidth = (vw_scaled - vx_scaled) >> 1
-     * centerX = halfWidth + vx_scaled
-     * centerY = (vh_scaled + vy_scaled) >> 1 */
-    int vw = (int)cb->vw;
-    int vh = (int)cb->vh;
-    int vx = (int)cb->vx;
-    int vy = (int)cb->vy;
-    int vw_scaled = (vw * gxHeight) >> 4;
-    int vx_scaled = (vx * gxHeight) >> 4;
-    int vh_scaled = (vh * gxWidth) >> 4;
-    int vy_scaled = (vy * gxWidth) >> 4;
-    g_nSceneHalfWidth = (vw_scaled - vx_scaled) >> 1;  /* @0x450f70 */
-    g_centerX = g_nSceneHalfWidth + vx_scaled;          /* @0x450f74 */
-    g_centerY = (vh_scaled + vy_scaled) >> 1;           /* @0x450f78 */
-
-    /* Reset pool cursors */
+    /* These assignments intentionally preserve the original bitwise copies. */
+    g_nSceneWidth = cb->nWidth;
+    g_nSceneHeight = cb->nHeight;
+    g_flSceneAspect = cb->nHeight / cb->nWidth;
+    g_sceneRenderT = cb->renderT;
+    g_flSceneRenderT2 = cb->renderT;
     g_pSortBufCur = g_pSortBuffer;
     g_pNodePoolCur = g_pNodePool;
     g_pNodePool2Cur = g_pNodePool2;
 
-    /* Set GX viewport for 3D rendering (original calls gxSetViewport @0x433370
-     * at 0x42f339 with the scaled rect before sceneBuildRootMatrix).
-     * Use full-screen viewport (0,0,640,480) for the menu preview. */
-    appLog("[sceneRender] gx %dx%d -> gxSetViewport", gxWidth, gxHeight);
-    {
-        int vpRect[4] = {0, 0, gxWidth, gxHeight};
-        gxSetViewport(vpRect);
+    gxGetMode(&mode);
+    gxGetViewport(oldViewport);
+    width = mode.width;
+    height = mode.height;
+    if (width == 0) return 1;
+    g_gxClipTest_4 = ((float)height * (4.0f / 3.0f)) / (float)width;
+
+    x1 = (int)cb->vw * width;
+    x0 = (int)cb->vx * width;
+    y1 = (int)cb->vh * height;
+    y0 = (int)cb->vy * height;
+    g_gxClipTest = (float)(((x1 >> 4) - (x0 >> 4)) >> 1);
+    g_gxClipTest_2 = (float)((int)g_gxClipTest + (x0 >> 4));
+    g_gxClipTest_3 = (float)((((y1 >> 4) - (y0 >> 4)) >> 1) + (y0 >> 4));
+    g_nSceneHalfWidth = ((x1 >> 4) - (x0 >> 4)) >> 1;
+    g_centerX = g_nSceneHalfWidth + (x0 >> 4);
+    g_centerY = ((y1 >> 4) + (y0 >> 4)) >> 1;
+    g_flSceneYScale = (float)height * 0.5f / (float)width;
+
+    viewport[0] = x0 >> 12;
+    viewport[1] = y0 >> 12;
+    viewport[2] = x1 >> 12;
+    viewport[3] = y1 >> 12;
+    if (viewport[0] < oldViewport[0]) viewport[0] = oldViewport[0];
+    if (viewport[1] < oldViewport[1]) viewport[1] = oldViewport[1];
+    if (viewport[2] > oldViewport[2]) viewport[2] = oldViewport[2];
+    if (viewport[3] > oldViewport[3]) viewport[3] = oldViewport[3];
+    if (viewport[0] > viewport[2] || viewport[1] > viewport[3]) return 1;
+
+    gxSetViewport(viewport);
+    sceneBuildRootMatrix(pCameraBlock);
+    sceneCameraBasisCalc();
+    for (void *p = g_pSceneNodeList; p != NULL;
+         p = (void *)(uintptr_t)((SceneNode *)p)->pNextSib) {
+        sceneNodeRender(p);
     }
-    appLog("[sceneRender] calling sceneBuildRootMatrix...");
-    sceneBuildRootMatrix(g_pSceneRoot);
-    appLog("[sceneRender] STUB - skip calc/render for bisect");
-    // sceneCameraBasisCalc();
-    // for (void *p = (void *)(uintptr_t)((SceneNode *)g_pSceneRoot)->pChild; p; p = (void *)((SceneNode *)p)->pNextSib) sceneNodeRender(p);
-    /* drain sort buffer (original also restores viewport/matrix) */
     if (g_pSortBuffer < g_pSortBufCur) {
         int *pi = (int *)((int)g_pSortBuffer + 0xc);
         int *end = (int *)g_pSortBufCur;
-        while (pi < end) {
+        while (pi + 2 < end) {
             meshDrawPoly((ushort *)pi[-3], pi[-2], pi[-1], *pi, pi[1]);
             pi += 5;
         }
     }
+    gxSetViewport(oldViewport);
+    ((float *)g_pRootMatrix)[0x40 / 4] = 1.0f;
+    ((float *)g_pRootMatrix)[0x44 / 4] = 0.0f;
+    ((float *)g_pRootMatrix)[0x48 / 4] = 0.0f;
+    ((float *)g_pRootMatrix)[0x4c / 4] = 0.0f;
+    ((float *)g_pRootMatrix)[0x50 / 4] = 1.0f;
+    ((float *)g_pRootMatrix)[0x54 / 4] = 0.0f;
+    ((float *)g_pRootMatrix)[0x58 / 4] = 0.0f;
+    ((float *)g_pRootMatrix)[0x5c / 4] = 0.0f;
+    ((float *)g_pRootMatrix)[0x60 / 4] = 1.0f;
     g_pSortBufCur = g_pSortBuffer;
     return 1;
 }

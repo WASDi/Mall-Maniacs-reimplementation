@@ -181,7 +181,7 @@ void sceneMeshFixup(int param_1, char param_2, int param_3)
                 if (0 < piVar3[3] + piVar3[7]) {
                     do {
                         iVar2 = iVar2 + 1;
-                        *piVar4 = *piVar4 + param_1;
+                        *piVar4 = *piVar4 + (g_pSubObjData ? (int)g_pSubObjData : param_1);
                         piVar4 = piVar4 + 1;
                     } while (iVar2 < piVar3[3] + piVar3[7]);
                 }
@@ -190,7 +190,7 @@ void sceneMeshFixup(int param_1, char param_2, int param_3)
                 if (0 < piVar3[3] + piVar3[7]) {
                     do {
                         iVar2 = iVar2 + 1;
-                        *piVar4 = *piVar4 + param_1;
+                        *piVar4 = *piVar4 + (g_pSubObjData ? (int)g_pSubObjData : param_1);
                         piVar4 = piVar4 + 1;
                     } while (iVar2 < piVar3[3] + piVar3[7]);
                 }
@@ -198,7 +198,7 @@ void sceneMeshFixup(int param_1, char param_2, int param_3)
                 iVar2 = 0;
                 if (0 < piVar3[3] + piVar3[7]) {
                     do {
-                        *piVar4 = *piVar4 + *(int *)(param_3 + 0x10);
+                        *piVar4 = *piVar4 + (g_pSubObjData ? (int)g_pSubObjData : *(int *)(param_3 + 0x10));
                         iVar2 = iVar2 + 1;
                         piVar4 = piVar4 + 1;
                     } while (iVar2 < piVar3[3] + piVar3[7]);

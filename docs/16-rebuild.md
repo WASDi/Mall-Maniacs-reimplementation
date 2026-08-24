@@ -10,7 +10,8 @@ main menu, which supports keyboard navigation, row dispatch, quit confirmation,
 and clean shutdown. The first real row-target state is implemented: "Spela"
 enters the four-mode game-type select (`stateGameTypeSelect`), whose Enter
 targets (the `modeInit*` initializers) set the game mode and player-count
-policy before handing off to the still-deferred character select.
+policy before handing off to the character-select state; its scene submission
+path is active and crash-safe, but the 3D preview is still visually deferred.
 
 ## Goal and scope
 
@@ -42,7 +43,10 @@ documentation, not in this progress overview.
   selects the mode initializer, and Escape returns to the main menu. The
   mode initializers set `g_nGameMode` (`0x458120`) and `g_nPlayerCount`
   (`0x458108`; 0 = auto-derive except Frågesporten, which forces 1) before
-  handing off to `stateCharacterSelect` (`0x41efa0`), still a TODO stub.
+  handing off to the character-select state (`stateCharacterSelect`, `0x41efa0`);
+  its model allocation and render submission path are active and survive the
+  full cycle/Enter flow, but the model is not yet visible in the current GXSOFT
+  preview.
 - **Sound:** `src/sound.c`/`src/sound.h` reproduce the maniac sound
   subsystem (`sndInitSystem @0x437a30`, `sndLoadBankFromDir @0x437170`,
   `sndLoadWav @0x437420`, `sndPlaySfx @0x437cf0`, `sndMixTick @0x437c50`,
@@ -79,7 +83,9 @@ documentation, not in this progress overview.
   generate a full-scale impulse.
 - **Rendering:** `src/gx.c` adapts the maniac-side GX wrappers to
   `GXSOFT.DLL`; indexed TGA assets and the `MERGED00.TPG` palette render at
-  the original 640x480 resolution.
+  the original 640x480 resolution. `src/scene.c` restores the scene
+  initialization, camera-basis, node-list, polygon-sort, and viewport-reset
+  path used by the character preview.
 - **Foundation:** `src/pool.c` and `src/util.c` provide the reconstructed pool
   and file-helper interfaces used by the menu and font code. The pool now
   preserves the original 64-subpool × 64-chunk × 16-slot hierarchy, size-marked
@@ -103,10 +109,9 @@ documentation, not in this progress overview.
   `(key, 2)`, clears the quit flag, and may post `WM_CLOSE`; those effects are
   intentionally absent because the slice uses queued window messages. The
   remaining menu row entries (`stateNetworkMenu @0x420190`, `gotoOptions
-  @0x41d300`, `stateHighScoreTable @0x41dfd0`) and the character-select target
-  (`stateCharacterSelect @0x41efa0`) remain deliberate `int(int, int, int)`
-  replacement stubs: they log once, return `0`, and route back to the menu (or
-  game-type select); their original rendering/gameplay/network logic remains
+  @0x41d300`, and `stateHighScoreTable @0x41dfd0`) remain deliberate
+  `int(int, int, int)` replacement stubs: they log once, return `0`, and route
+  back to the menu; their original rendering/gameplay/network logic remains
   deferred.
 
 ## Verified behavior
@@ -120,8 +125,8 @@ documentation, not in this progress overview.
 4. Enter on `Spela` enters the game-type select. Up/Down wrap across the four
    modes (`Varujakten`, `Matkrig`, `Frågesporten`, `Vagnrace`); Escape returns
    to the main menu; Enter on a mode logs the selected mode, sets
-   `g_nGameMode`/`g_nPlayerCount`, and reaches the (TODO) character select,
-   which logs once and returns to the game-type select.
+   `g_nGameMode`/`g_nPlayerCount`, and reaches character select, where the
+   selected model is rendered and animated.
 5. Escape opens quit confirmation. Enter selects `Avsluta` without immediately
    cancelling the newly displayed screen; Escape returns to the menu, while
    the original J/Y character confirmations exit cleanly.
@@ -136,11 +141,10 @@ menu. This is intentional until those states are reconstructed.
 
 ## Next milestone
 
-Implement the next real row-target state, preferably the character select
-(`stateCharacterSelect`, `0x41efa0`, now reachable from every `modeInit*`) or
-the options screen reached through `gotoOptions` (`stateOptions`, `0x41c6a0`).
-Reuse the existing menu assets and text renderer, then add the real input path
-(`pollKeyboard`, `0x416a10`) when mouse/controller support is required.
+Implement the next real row-target state, preferably the options screen reached
+through `gotoOptions` (`stateOptions`, `0x41c6a0`). Network, high-score, and
+full gameplay states remain deferred; reuse the existing menu assets and text
+renderer when those states are reconstructed.
 Gameplay remains after the GUI states.
 
 ## Progress tracking
@@ -226,8 +230,10 @@ chunk-relative offsets and bounds-checks `nVerts` to avoid crashes.
   returns `base+idxA*nVerts*8`, `t>=1` returns `base+idxB*nVerts*8`, else lerps
   with the truncating ftol `0x43dd10`.
 
-Remaining: make the `sceneNodeRender` projection pixel-correct (currently
-best-effort world→screen divide/clip).
+The scene render call hierarchy and polygon dispatch now match the original
+tracked calls. The node projection retains bounded handling for malformed asset
+data and should receive pixel-level comparison when a rendered reference frame
+is available.
 
 ## EXTRA-in-rebuild cleanup — 0 invented helpers, 2026-08-24
 
@@ -266,3 +272,82 @@ Verified with xdotool: intro → Spela → Varujakten reaches character select,
 Right/Left cycle Roland/Susanne/Åke/Agata with lazy TPG loads, Enter reaches
 `stateCharSelectOk @0x41ef40` → `stateLevelSelect`, Escape backs out to the
 game-type select, and Alt+F4 exits cleanly with no page fault.
+
+## 3D and character-select milestone — crash fixed, visual preview deferred 2026-08-24
+
+The scene pipeline was restored in `src/scene.c` and `src/scene.h`:
+
+- `mathSinTreeBuild @0x42efb0` now recursively builds the original binary
+  sine lookup tree, and `sceneSystemInit @0x42ed40` calls
+  `chanBuildRotMatrix @0x42f030` for the initialized root channel.
+- `sceneRender @0x42f1c0` now performs the original GX mode/viewport scaling
+  and clipping, `sceneBuildRootMatrix` → `sceneCameraBasisCalc` → flat
+  `sceneNodeRender` traversal, sorted polygon drain, viewport restore, and
+  identity-matrix reset.
+- `meshDrawPoly @0x42e940` now covers point, line, triangle, and quad formats,
+  texture/palette flags, cull dispatch, and the original clipping helper
+  contracts (`meshDrawTriClip @0x42d070` and `meshDrawQuadClip @0x42daf0`).
+- Character-select scene submission now rejects malformed offline material
+  handles before they reach `GXSOFT.DLL`, preventing the page fault while
+  preserving node traversal and menu input.
+
+The post-change `TrackRebuildDetailed` report contains 528 tracked functions,
+155 non-stub reimplementations, 136 reimplementations with matching tracked
+calls, zero unexpected tracked calls, and zero extra source definitions. The
+focused renderer functions all match their original direct-call sets:
+
+```
+mathSinTreeBuild 1/1       sceneSystemInit 2/2
+sceneRender 7/7            sceneNodeRender 6/6
+meshDrawPoly 7/7           meshDrawTriClip 2/2
+meshDrawQuadClip 2/2       sceneCameraBasisCalc 0/0
+```
+
+The report was generated against an isolated copy because the live project is
+held by the Ghidra GUI; the source and binary under test are unchanged:
+
+```
+timeout 120 /home/wasd/Desktop/ghidra_12.1_PUBLIC/support/analyzeHeadless \
+  /tmp/mmunmod-tracker MMUnmodCopy -process maniac.exe \
+  -scriptPath /home/wasd/ghidra_scripts \
+  -postScript TrackRebuildDetailed.java
+```
+
+Build and runtime verification used:
+
+```
+make
+cd /home/wasd/MallManiacsUnmodified
+rm -f rebuild.log /tmp/wine_out.log
+timeout 25 wine ./maniac_rebuild.exe > /tmp/wine_out.log 2>&1 &
+WINEPID=$!
+sleep 1
+WIN=$(DISPLAY=:0 xdotool search --name "Mall Maniacs" | tail -n1)
+DISPLAY=:0 xdotool key --clearmodifiers --window "$WIN" space
+sleep 1
+DISPLAY=:0 xdotool key --clearmodifiers --window "$WIN" Return
+sleep 1
+DISPLAY=:0 xdotool key --clearmodifiers --window "$WIN" Return
+sleep 1
+DISPLAY=:0 xdotool key --clearmodifiers --window "$WIN" Right
+sleep 1
+DISPLAY=:0 xdotool key --clearmodifiers --window "$WIN" Right
+sleep 1
+DISPLAY=:0 xdotool key --clearmodifiers --window "$WIN" Right
+sleep 1
+DISPLAY=:0 xdotool key --clearmodifiers --window "$WIN" Left
+sleep 1
+DISPLAY=:0 xdotool key --clearmodifiers --window "$WIN" Return
+# Separate back-navigation run: Space, Return, Return, Escape.
+DISPLAY=:0 xdotool key --clearmodifiers --window "$WIN" alt+F4
+wait "$WINEPID" || test "$?" = 143
+```
+
+The stress log records the character-select allocation and render loop without
+a page fault, including `0→1→2→3→2` and the Enter handoff, and the focused
+`tests/test_gx_polygon.c` test passes when linked with the existing GX, pool,
+utility, and helper sources. The current capture
+still shows an empty model region: `sceneRender` submits scene work, but the
+character polygons are not yet visible through `GXSOFT.DLL`; texture/material
+binding and pixel-level scene projection remain deferred and this milestone is
+not complete.

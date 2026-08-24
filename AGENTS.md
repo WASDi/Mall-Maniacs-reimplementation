@@ -17,11 +17,11 @@ milestone in `docs/16-rebuild.md`.
 
 ## Implementation
 - Do not reimplement system libraries, runtime code, import stubs, or compiler glue.
-  Network features and the in-game console are out of scope.
+  Network features and the in-game console are out of scope. `memPool` functions should not be reimplemented, use standard malloc/free instead.
 - Build 32-bit Windows with `i686-w64-mingw32-gcc` and the needed original system
   libraries (`KERNEL32`, `USER32`, `GDI32`, `WINMM`). Skip DirectInput, DirectSound,
   and Winsock. Use `DRIVERS\GXSOFT.DLL` through its GX interface, not a GDI backend.
-- Check `docs/README.md` for documentation. Update `docs/16-rebuild.md` with current status.
+- Check `docs/README.md` for documentation. Update `docs/16-rebuild.md` with current status (not "work performed").
 - Give every unresolved dependency a documented contract and a safe temporary `TODO`
   stub in `src/stubs.c`/`src/stubs.h`.
 - Reproduce initialization and state-machine behavior subsystem by subsystem, while
@@ -42,11 +42,11 @@ milestone in `docs/16-rebuild.md`.
 
 VERY IMPORTANT! REMEMBER THESE:
 
-- Always look at the assembly using `disassemble_function`, thoroughly verify that the assembly logic matches the reimplemented code. Using `decompile_function` produces lossy psuedocode and should only be used to get the overall structure of a function. Use precise types rather than Ghidra undefined placeholders. Give proper names to everything (not ghidra placeholder names like "param_1" or "iVar3" etc).
+- Always look at both `decompile_function` and `disassemble_function` when reimplementing a function. The decompile serves as an overall structure, but it is lossy so the disassembly needs to be thoroughly verified so its logic matches the reimplemented code.
+- Use precise types rather than Ghidra undefined placeholders. Give proper names to everything (not ghidra placeholder names like "param_1" or "iVar3" etc). Use `set_function_prototype` and  `create_struct` to come up with structs the the original code likely had.
 - Reimplemented functions must ONLY call functions also called by the original binary to preserve call hierarchy. Report any violation found in existing code. Do not invent new functions, except for temporary debug purposes and logging or utils in `src/custom_helpers.c`.
 - Comment every reimplemented function and global with its original address. Write comment above function declaration.
 - Implement called functions fully or provide documented stubs in `src/stubs.c` without changing callers or interfaces. Keep the original calling conventions in Ghidra, but omit convention keywords from rebuild declarations as required by the project style.
 - The new code and the ghidra view should be in sync. After writing new code, update ghidra with newly discovered information such as function types and structs.
-Use `set_function_prototype` and  `create_struct`.
 
 The ghidra script `~/ghidra_scripts/TrackRebuildDetailed.java` reports overall progress in `/tmp/opencode/tracked-rebuild-detailed.txt`.

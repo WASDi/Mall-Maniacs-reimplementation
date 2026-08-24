@@ -141,6 +141,7 @@ typedef struct SceneCameraBlock {
     int   unk10;
     int   unk14;
     int   unk18;
+    int   unk1c;
     short vx;           /* +0x20 virtual rect x (short) */
     short vy;           /* +0x22 */
     short vw;           /* +0x24 */
@@ -231,6 +232,10 @@ int  sceneNodeRender(void *pNode);
 int  sceneMorphInterp(int param_1, int param_2, int param_3);
 void chanCalcWorldTransform(int param_1, int param_2);
 void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, int pPalColors);
+void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
+                     void *pColor, int nUnk, int bInterpColor, int bInterpUV); /* @0x42d070 */
+void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
+                      void *pColor, int nUnk, int bInterpColor, int bInterpUV); /* @0x42daf0 */
 void gxSortPushKey(void *pMesh, void *pVerts, void *pNormals, int pTex, int pPalette);
 AnmFile *anmLoad(byte *pData, void *pMasterNode, void *pObj);
 void eventAnimReset(AnmFile *pAnm);
