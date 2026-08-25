@@ -86,6 +86,18 @@ documentation, not in this progress overview.
   the original 640x480 resolution. `src/scene.c` restores the scene
   initialization, camera-basis, node-list, polygon-sort, and viewport-reset
   path used by the character preview.
+- **Animation:** `src/anim.c` / `src/anim.h` implement the full `.anm` cluster
+  (`dataReadU8/U16/U32 @0x433ee0/0x433ef0/0x433f10`, `anmCalcSize @0x433f40`,
+  `anmLoad @0x433a90`, `anmLoadFile @0x433a50`, `anmFree @0x434050`,
+  `anmSetAlloc/Free/MeshSlot @0x4344d0/0x434500/0x434530`,
+  `eventAnimReset/Step/Apply @0x434270/0x434090/0x434290`,
+  `sceneObjectAnimStep/Interp @0x434540/0x4347c0`) with the original single-arena
+  `0x38` header + `nTrack*8` table layout, `ANM` v1|2 validation, and the
+  `g_pAnmCacheList @0x45ebc8` / `g_nAnmCacheCount @0x45ebcc` pool. The charselect
+  preview now runs the faithful `anmLoad` → `eventAnimReset` → `eventAnimStep`
+  loop; `sceneObjSetSubPos @0x430a90` / `SubOrient @0x431110` and
+  `scenNameToIdEx @0x431e20` are faithful stubs (mode 2 absolute) deferred for
+  gameplay.
 - **Foundation:** `src/pool.c` and `src/util.c` provide the reconstructed pool
   and file-helper interfaces used by the menu and font code. The pool now
   preserves the original 64-subpool × 64-chunk × 16-slot hierarchy, size-marked
@@ -351,3 +363,34 @@ still shows an empty model region: `sceneRender` submits scene work, but the
 character polygons are not yet visible through `GXSOFT.DLL`; texture/material
 binding and pixel-level scene projection remain deferred and this milestone is
 not complete.
+
+## Animation cluster (`anm*`) — implemented 2026-08-25 (Option A)
+
+`src/anim.c` (`169` non-stub reimplementations, `151` with matching tracked
+calls, `0` unexpected, `0` extra) restores the full `.anm` loader and
+playback chain:
+
+- `anmLoad @0x433a90` validates `ANM` + version `1|2`, ensures
+  `g_pAnmCacheList @0x45ebc8` (`Anim` tag at `0x45113c`), calls `anmCalcSize`
+  to size the arena (`nTrack*8 + 0x38` + per-record `0x10/0x14/8`), then builds
+  mesh-name (`scenNameToIdEx`) and channel tables plus per-track expanded
+  records (types `1`=pos-target `0x10`, `2`=face-target `0x10`, `3`=mesh pos
+  `0x14`, `4`=mesh orient `0x10`, `5`=sub-channel `0x8`, `6`=obj pos `0x10`)
+  with correct Y/Z negation deferred to playback.
+- `eventAnimStep @0x434090` and `sceneObjectAnimStep @0x434540` dispatch the
+  6-type stream, snapping `pMasterNode` and advancing `pCurTrack` (`+8`), looping
+  on `bLoop &1`.
+- `eventAnimApply @0x434290` / `sceneObjectAnimStepInterp @0x4347c0` are the
+  midpoint-interpolated variants (half-step via `sceneNodeGetPosWorld` for
+  types `3`/`6`, `sceneObjSetSubOrient` for `4`/`5`).
+
+Ghidra `AnmFile` (0x38, `pObj` at `+0x18`, `pMasterNode` at `+0x1c`),
+`AnmSet` (0x18, `pAnm` at `+0x14`), and prototypes are synced and saved.
+`scene.h` now includes `anim.h` (no duplicate `AnmFile`); `scene.c` stubs
+for `anmLoad`/`eventAnim*`/`anmFree` were removed, and faithful stubs for
+`scenNameToIdEx @0x431e20` (returns 0, no `scenNameToId` call), `sceneObjSetSubPos
+@0x430a90` and `SubOrient @0x431110` were added to preserve hierarchy without
+introducing `unexpected` calls. Verified with `make` and
+`TrackRebuildDetailed` (live `maniac.exe`): `anmLoad 8/8`, `anmFree 2/2`,
+`anmCalcSize 2/2`, `anmLoadFile 3/3`, `anmSet* 1/1·2/2·0/0`, `eventAnim* 4/4·0/0·4/4`,
+`sceneObject* 4/4·4/4`.

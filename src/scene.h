@@ -3,6 +3,7 @@
 
 #include "gx.h"
 #include "pool.h"
+#include "anim.h"
 
 #ifndef ushort
 typedef unsigned short ushort;
@@ -16,8 +17,7 @@ typedef unsigned int   uint;
  *   sceneNodeGetPosWorld @0x430e80  sceneNodeFacePos @0x431030  sceneNodeFree @0x430460
  *   sceneRender @0x42f1c0       sceneBuildRootMatrix @0x42f520  sceneCameraBasisCalc @0x42f460
  *   sceneNodeRender @0x42f8c0   sceneMorphInterp @0x4300d0      chanCalcWorldTransform @0x42f6e0
- *   meshDrawPoly @0x42e940      gxSortPushKey @0x42ecf0         anmLoad @0x433a90
- *   eventAnimReset @0x434270    eventAnimStep @0x434090         anmFree @0x434050
+ *   meshDrawPoly @0x42e940      gxSortPushKey @0x42ecf0         (anim cluster in anim.h)
  *
  * The SceneObjTypeDef is the MESH chunk serialized in a .sen file; scenNameToId
  * returns its raw bytes (see sen.c). The SceneNode is a 0xa8 (+subobj*0x70) record. */
@@ -198,29 +198,18 @@ extern float g_sceneCameraBasis_5;
 extern float g_sceneCameraBasis_6;
 extern float g_sceneCameraBasis_7;
 
-/* animation file (anmLoad) */
-typedef struct AnmFile {
-    int   nFrame;          /* +0 */
-    int   nFrameCount;     /* +4 */
-    void *pTrackBase;      /* +8 */
-    void *pCurTrack;       /* +0xc */
-    int   nLoopStart;      /* +0x10 */
-    void *pPool;           /* +0x14 */
-    void *pMasterNode;     /* +0x18 */
-    void *pObj;            /* +0x1c */
-    int   nPosX, nPosY, nPosZ;
-    int   nFaceX, nFaceY, nFaceZ;
-} AnmFile;
-
 /* --- prototypes --- */
 int  sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount, int nMeshPoolSize, unsigned int nFlags);
 void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, short nMeshIdx, short nUnk5, short nUnk6, short nUnk7); /* @0x4318e0 */
 void *sceneNodeAllocChild(int pParent, void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, void *pChannelPtr4);
 void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, int nChanPtr4,
                       short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef);
- int  scenNameToId(LPCSTR pszName);
+int  scenNameToId(LPCSTR pszName);
+int  scenNameToIdEx(LPCSTR pszName); /* @0x431e20 */
 int  sceneObjSetPos(int nObj, int nX, int nY, int nZ, int nMode);
 int  sceneObjSetPosOrient(int pObj, short nYaw, short nPitch, short nRoll, byte nMode);
+int  sceneObjSetSubPos(int pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode, float flPitch, int nUnk, float flFwd, float flSide); /* @0x430a90 */
+int  sceneObjSetSubOrient(int pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll); /* @0x431110 */
 int  sceneNodeGetPosWorld(int nNode, float *pOutXYZ, int nMode);
 int  sceneNodeFacePos(int pNode, int nChannel, float flX, float flY, float flZ, int nMode);
 void sceneNodeFree(void *pNode, int nFreeChildren);
@@ -237,10 +226,6 @@ void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
 void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
                       void *pColor, int nUnk, int bInterpColor, int bInterpUV); /* @0x42daf0 */
 void gxSortPushKey(void *pMesh, void *pVerts, void *pNormals, int pTex, int pPalette);
-AnmFile *anmLoad(byte *pData, void *pMasterNode, void *pObj);
-void eventAnimReset(AnmFile *pAnm);
-int  eventAnimStep(AnmFile *pAnm, byte bLoop);
-void anmFree(AnmFile *pAnm);
 void mat3x3Mul(float *a, float *b, float *out);
 void chanBuildRotMatrix(SceneChannel *ch);
 int  sceneCacheLocalVerts(int pNode);

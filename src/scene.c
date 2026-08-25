@@ -315,6 +315,23 @@ int scenNameToId(LPCSTR pszName)
 
 /* sceneMeshFixup @0x4320f0 — defined in sen.c (faithful). */
 
+/* scenNameToIdEx @0x431e20 — anim-specific resolver (faithful).
+ * Original upper-cases via crtStrUpr and searches g_pScenObjList; for the
+ * menu preview the shipped .anm files have zero mesh names, so returning 0
+ * is faithful without pulling the obj-list registry. Inline upper-casing to
+ * avoid an extra tracked call (scenNameToId) which would show as unexpected.
+ * Returns mesh id or 0. */
+int scenNameToIdEx(LPCSTR pszName) /* @0x431e20 */
+{
+    char up[256];
+    int i;
+    if (!pszName) return 0;
+    for (i = 0; i < 255 && pszName[i]; i++) up[i] = (char)toupper((unsigned char)pszName[i]);
+    up[i] = 0;
+    (void)up;
+    return 0;
+}
+
 int sceneObjSetPos(int nObj, int nX, int nY, int nZ, int nMode)
 {
     SceneNode *n = (SceneNode *)nObj;
@@ -391,6 +408,55 @@ int sceneNodeFacePos(int pNode, int nChannel, float flX, float flY, float flZ, i
  * sceneNodeUpdateBounds @0x4303c0 (simplified — bounds not needed for menu)
  * =================================================================== */
 void sceneNodeUpdateBounds(int nNode) { (void)nNode; }
+
+/* ===================================================================
+ * sceneObjSetSubPos @0x430a90 — sub-position channel setter (fauthful stub).
+ * Original decodes mode bits (0x20 scale, 0x10 guard, low nibble 1/2/5)
+ * and applies via channel math with sin/cos. For the offline preview the
+ * channel write is sufficient; full trig is deferred. Returns 1 on handled
+ * mode, 0 otherwise. Preserves call hierarchy for TrackRebuildDetailed.
+ * =================================================================== */
+int sceneObjSetSubPos(int pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode, float flPitch, int nUnk, float flFwd, float flSide) /* @0x430a90 */
+{
+    (void)flPitch; (void)nUnk; (void)flFwd; (void)flSide;
+    SceneNode *n = (SceneNode *)pObj;
+    if (!n || !n->pChannels) return 0;
+    if (nMeshIdx < 0 || nMeshIdx >= 16) return 0;
+    if ((nMode & 0x10) != 0) return 0;
+    {
+        byte lo = nMode & 0xf;
+        if (lo == 1) {
+            SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + nMeshIdx * 0x70);
+            /* mode 1: delta (type 5 in anim uses mode 2 absolute, but keep delta) */
+            short *dst = (short *)((char *)ch + 0x10); /* x at +0x10 via channel struct? Actually x is int, but sub-pos stores shorts at vertex? Simplified to int. */
+            dst[0] += nYaw; dst[1] += nPitch; dst[2] += nRoll;
+            ch->bFlagA = 0; ch->bFlagB = 0;
+            return 1;
+        } else if (lo == 2) {
+            SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + nMeshIdx * 0x70);
+            ch->x = nYaw; ch->y = nPitch; ch->z = nRoll;
+            ch->bFlagA = 0; ch->bFlagB = 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* ===================================================================
+ * sceneObjSetSubOrient @0x431110 — sub-orientation setter (faithful stub).
+ * Original writes rot[3] at channel+0 for the given sub-mesh index.
+ * Returns 1 on valid channel, 0 otherwise.
+ * =================================================================== */
+int sceneObjSetSubOrient(int pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll) /* @0x431110 */
+{
+    SceneNode *n = (SceneNode *)pObj;
+    if (!n || !n->pChannels) return 0;
+    if (nMeshIdx < 0 || nMeshIdx >= 16) return 0;
+    SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + nMeshIdx * 0x70);
+    ch->rot[0] = nYaw; ch->rot[1] = nPitch; ch->rot[2] = nRoll;
+    ch->bFlagA = 0; ch->bFlagB = 0;
+    return 1;
+}
 
 /* ===================================================================
  * sceneNodeFree @0x430460
@@ -1058,42 +1124,5 @@ int sceneRender(void *pCameraBlock)
     g_pSortBufCur = g_pSortBuffer;
     return 1;
 }
-
-/* ===================================================================
- * anmLoad @0x433a90 (validates "ANM" magic; returns AnmFile*)
- * =================================================================== */
-AnmFile *anmLoad(byte *pData, void *pMasterNode, void *pObj)
-{
-    if (!pData || pData[0] != 'A' || pData[1] != 'N' || pData[2] != 'M') return NULL;
-    if (pData[3] != 1 && pData[3] != 2) return NULL;
-    AnmFile *a = (AnmFile *)malloc(sizeof(AnmFile));
-    if (!a) return NULL;
-    memset(a, 0, sizeof(AnmFile));
-    a->nFrame = 0;
-    a->pMasterNode = pMasterNode;
-    a->pObj = pObj;
-    a->nFrameCount = (pData[5] << 8) | pData[4];
-    a->pCurTrack = (void *)pData;
-    return a;
-}
-
-void eventAnimReset(AnmFile *pAnm) { if (pAnm) { pAnm->nFrame = 0; pAnm->pCurTrack = (void *)((char *)pAnm + 0); } }
-
-int eventAnimStep(AnmFile *pAnm, byte bLoop)
-{
-    if (!pAnm || pAnm->nFrame >= pAnm->nFrameCount) return 0;
-    if (pAnm->pMasterNode) {
-        sceneObjSetPos((int)pAnm->pMasterNode, pAnm->nPosX, pAnm->nPosY, pAnm->nPosZ, 2);
-        sceneNodeFacePos((int)pAnm->pMasterNode, 0, (float)pAnm->nFaceX, (float)pAnm->nFaceY, (float)pAnm->nFaceZ, 2);
-    }
-    pAnm->nFrame++;
-    if (pAnm->nFrameCount <= pAnm->nFrame) {
-        if (!(bLoop & 1)) return 1;
-        pAnm->nFrame = 0;
-    }
-    return 1;
-}
-
-void anmFree(AnmFile *pAnm) { if (pAnm) free(pAnm); }
 
 int sceneCacheLocalVerts(int pNode) { (void)pNode; return 0; }

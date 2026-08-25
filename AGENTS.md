@@ -17,7 +17,7 @@ milestone in `docs/16-rebuild.md`.
 
 ## Implementation
 - Do not reimplement system libraries, runtime code, import stubs, or compiler glue.
-  Network features and the in-game console are out of scope. `memPool` functions should not be reimplemented, use standard malloc/free instead.
+  Network features and the in-game console are out of scope.
 - Build 32-bit Windows with `i686-w64-mingw32-gcc` and the needed original system
   libraries (`KERNEL32`, `USER32`, `GDI32`, `WINMM`). Skip DirectInput, DirectSound,
   and Winsock. Use `DRIVERS\GXSOFT.DLL` through its GX interface, not a GDI backend.
@@ -34,7 +34,7 @@ milestone in `docs/16-rebuild.md`.
   prototypes, comments, structs, and string searches. Pass `program=maniac.exe` when
   multiple programs are open.
 - Save the Ghidra program periodically; do not commit unless asked.
-- Use `run_ghidra_script` as documented in `Ghidra_scripts.md`, not `run_script_inline`.
+- Toe run ghidra scripts, follow `Ghidra_scripts.md`.
 - Inspect assembly closely enough for the reconstructed source to match the original.
 - Follow established patterns and code format and comment structures.
 

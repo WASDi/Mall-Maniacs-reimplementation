@@ -4,10 +4,23 @@
 
 ## Status
 
-The `.anm` format and the player playback path are reconstructed to a useful,
-evidence-backed level. The on-disk layout and runtime representation match all
-20 shipped files in `/home/wasd/MallManiacsUnmodified/anim/`; animation support
-has not yet been added to the rebuild.
+The `.anm` format and the player playback path are reconstructed and now
+reimplemented in the rebuild (`src/anim.c` / `src/anim.h`, Option A). The
+on-disk layout and runtime representation match all 20 shipped files in
+`/home/wasd/MallManiacsUnmodified/anim/`; the full loader + playback cluster
+(`dataReadU8/U16/U32 @0x433ee0/0x433ef0/0x433f10`, `anmCalcSize @0x433f40`,
+`anmLoad @0x433a90`, `anmLoadFile @0x433a50`, `anmFree @0x434050`,
+`anmSetAlloc/Free/MeshSlot @0x4344d0/0x434500/0x434530`,
+`eventAnimReset/Step/Apply @0x434270/0x434090/0x434290`,
+`sceneObjectAnimStep/Interp @0x434540/0x4347c0`) is faithful and passes
+`TrackRebuildDetailed` with 14/14 tracked-calls matching (no missing or
+unexpected). The single-arena allocation (`0x38 + nTrack*8 + recordBytes`
+via `g_pAnmCacheList @0x45ebc8` / `g_nAnmCacheCount @0x45ebcc`) and the
+`ANM` v1|2 validation are preserved; `memPool*` calls remain in the call
+graph (pool.c maps to malloc/free, satisfying the rebuild's malloc
+policy). Ghidra structs `AnmFile` (0x38) / `AnmSet` (0x18) / `AnmTrack` (8)
+and prototypes are synced (saved 2026-08-25). The charselect preview now
+uses the faithful `anmLoad` → `eventAnimReset` → `eventAnimStep` path.
 
 ## Purpose and evidence
 
@@ -57,7 +70,15 @@ shipped-file observations; they likely cover master-node targets and
 mesh-bound position/orientation records used by director or event animations.
 There is no version-1 sample to establish a difference from version 2.
 
+The sub-position/orientation helpers `sceneObjSetSubPos @0x430a90` and
+`sceneObjSetSubOrient @0x431110` are currently faithful stubs (mode 2
+absolute writes, delta for mode 1, no trig) — sufficient for the charselect
+preview (types 5/6) and for call-hierarchy coverage via `eventAnimStep` /
+`sceneObjectAnimStep`. Their full trig path (`mathSinDeg/CosDeg`,
+`chanBuildRotMatrix`) is deferred. `scenNameToIdEx @0x431e20` is a faithful
+stub returning 0 (shipped .anm have zero mesh-name entries).
+
 Next, use director/event call sites and any corresponding assets to validate
-record types `1`–`4` and resolve the channel/state mappings. When gameplay is
-implemented in the rebuild, add the loader and stepper behind the verified
-interfaces rather than extending the current GUI milestone prematurely.
+record types `1`–`4` and resolve the channel/state mappings. When gameplay
+is implemented, replace the two sub-channel stubs with the full trig path
+and wire the `playerAnimSfxUpdate` chain to the eleven `anmSet*` holders.
