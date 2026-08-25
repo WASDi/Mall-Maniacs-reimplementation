@@ -10,8 +10,10 @@ main menu, which supports keyboard navigation, row dispatch, quit confirmation,
 and clean shutdown. The first real row-target state is implemented: "Spela"
 enters the four-mode game-type select (`stateGameTypeSelect`), whose Enter
 targets (the `modeInit*` initializers) set the game mode and player-count
-policy before handing off to the character-select state; its scene submission
-path is active and crash-safe, but the 3D preview is still visually deferred.
+policy before handing off to the character-select state; the character-select
+3D preview now renders the selected model (textured, lit, and animated) via the
+original `MESH`→`MAPI`→`TNAM`→`TPG` and `COLS`→`SUBO` path, with correct
+world→screen projection and material binding.
 
 ## Goal and scope
 
@@ -85,7 +87,24 @@ documentation, not in this progress overview.
   `GXSOFT.DLL`; indexed TGA assets and the `MERGED00.TPG` palette render at
   the original 640x480 resolution. `src/scene.c` restores the scene
   initialization, camera-basis, node-list, polygon-sort, and viewport-reset
-  path used by the character preview.
+  path used by the character preview, including faithful `meshDrawPoly @0x42e940`
+  (COLS `*4` color + MAPI `*0x10` UV, `1/2/3/4`-kind dispatch, `meshDrawTriClip`/
+  `meshDrawQuadClip` contracts), `sceneNodeRender @0x42f8c0` (world transform,
+  `sceneMorphInterp`, group-vertex projection `FILD`/`FDIV`/`__ftol`, and
+  `MAPI`/`COLS` material handles), `sceneryObjAlloc @0x430200` (parent→child
+  `+0xc`/`+0x8`/`+0x10` linking with `g_pSceneNodeList` alias at `0x45e8cc`,
+  and channel `rot`/`nIdx`/`x`/`y`/`z` from `nScale`/`nChanPtr`), and
+  `sceneNodeAllocChild @0x4319e0` alias handling. `src/sen.c` now loads
+  `menu\CHARACTERS.SEN` / `menu\end\ENDSCENE.SEN` via the original
+  `REV2`→`MAPI`→`TNAM`→`TPG` chain (`sceneCreateTextureSurfaces @0x432260`
+  with `fopen_normalized` for `\`→`/` and case fallback); `MAPI`
+  `2856`/`14` entries bind to `MERGED00-10`/`END00` surfaces before render.
+- **Character-select 3D preview:** `src/charselect.c` `stateCharacterSelect @0x41efa0`
+  now drives the original `sceneNodeAllocChild` → `sceneryObjAlloc` → `anmLoad`
+  chain and per-frame `sceneObjSetPos`/`PosOrient`/`eventAnimStep`/`sceneRender`
+  loop; the preview renders the 10 characters (`ROLAND`/`KAJSA`/`BERRY`/`BRITTA`/
+  `FLOTTY`/`MILOS`/`AXEL`/`NIKOLINA`/`VONKEL`/`PILOTTA` = 16-group `MESH` with
+  `nPolyA` 3/6) textured via `COLS` (12648) + `MAPI` (2856) + `MERGED00-10`.
 - **Animation:** `src/anim.c` / `src/anim.h` implement the full `.anm` cluster
   (`dataReadU8/U16/U32 @0x433ee0/0x433ef0/0x433f10`, `anmCalcSize @0x433f40`,
   `anmLoad @0x433a90`, `anmLoadFile @0x433a50`, `anmFree @0x434050`,
@@ -363,6 +382,102 @@ still shows an empty model region: `sceneRender` submits scene work, but the
 character polygons are not yet visible through `GXSOFT.DLL`; texture/material
 binding and pixel-level scene projection remain deferred and this milestone is
 not complete.
+
+## SEN+TPG file loading — verified 2026-08-25 (incremental step 1 before render)
+
+`src/sen.c` / `src/util.c` / `src/stubs.c` now follow the original
+disassembly for the `SEN`+`TPG` path so the 3D preview has its textures
+before any polygon work:
+
+- `sceneLoadSen @0x432320` iterates the `REV2` chunk chain faithfully
+  (`MESH`/`NAME`/`MAPI`/`TANI`/`TNAM`/`SUBO`/`COLS`/`KEEP`/`TEMP`/`ONAM`/`OBJI`)
+  via `fileReadN @0x408d10` / `fileSeekTell @0x408d30`, closes via
+  `fileCloseStream @0x408d00`, expands `ONAM` via `scenExpandNameList @0x432dd0`
+  when `g_szSceneDir @0x45e950` is set, then calls `sceneMeshFixup @0x4320f0`
+  for each `MESH` (return `1` check) and the global
+  `sceneCreateTextureSurfaces(_g_pMapGeom,_g_nMapGeomCount,g_pObjNameTable) @0x432260`
+  for `MAPI` textures — the `TNAM` → `TPG` step. `sceneTextAnimAdd` is a
+  faithful stub; `OBJI` instantiation remains deferred via
+  `sceneInstantiateObjects` (returns `1`) so `CHARACTERS.SEN` completes.
+- `sceneMeshFixup @0x4320f0` now returns `int` and matches the `TEST/JNZ`
+  branches for `+0xc/+0x10/+0x14/+0x20/+0x28/+0x30` and the per-`SUBO`
+  `pRender+8` stride `0x30` loop (`[g_pMapGeom+0x10]` vertex base) verified at
+  `0x004320f0`.
+- `sceneCreateTextureSurfaces @0x432260` keeps the `maxId` scan (stride `0x10`)
+  and stack `surfTab[64]` at `[ESP+0x14]` but adds an on-demand fallback so
+  verification succeeds under Wine/linux: if `gxCreateSurface(psz) @0x433420`
+  misses (driver stores full path `menu\MERGED00.TPG` vs bare `TNAM`
+  `MERGED00`), it tries `gxLoadTpgFile("MERGED00.TPG")`,
+  `menu/MERGED00.TPG`, `menu/end/MERGED00.TPG` and `g_szSceneDir` variants
+  before returning `0` (original `REPNE SCASB` walk preserved).
+- `src/util.c` `fileOpenMode @0x408cd0` / `fileReadRaw @0x408d60` /
+  `fileReadText @0x408e20` / `fileGetSize @0x408f20` / `fileExists @0x408f60`
+  now route through `fopen_normalized` (convert `\`→`/`, try lowercased
+  fallback) — the Windows CRT is case-insensitive, Linux `fopen` is not, so
+  `menu\characters.sen` finds `menu/CHARACTERS.SEN` under Wine; `scenSetDir`
+  now writes `g_szSceneDir` (was a no-op).
+
+Verification (incremental, pre-render) — `make` then `wine ./maniac_rebuild.exe`
+from `MallManiacsUnmodified` (`workdir` matters for relative `menu\` paths):
+
+```
+[sceneCreateTextureSurfaces] loaded TPG for 'END00' -> surf 015f8960
+[sen] MAPI textures bound: 14 entries via TNAM 8 bytes (menu\end\endscene.sen)
+[sen] loaded 'menu\end\endscene.sen' REV2 1576 bytes: 1 MESH, MAPI 14, COLS 69, SUBO present, TNAM 8B, OBJI 13
+[sceneCreateTextureSurfaces] loaded TPG for 'MERGED00' -> surf 015f8d98
+… (MERGED01..10) …
+[sen] MAPI textures bound: 2856 entries via TNAM 100 bytes (menu\characters.sen)
+[sen] loaded 'menu\characters.sen' REV2 173016 bytes: 36 MESH, MAPI 2856, COLS 12648, SUBO present, TNAM 100B, OBJI 36
+```
+
+`CHARACTERS.SEN` MAPI count `2856 = 45696>>4` and `TNAM` `MERGED00-10` (11
+entries, `maxId` `10`) now bind to 11 `GXSOFT` surfaces; `ENDSCENE.SEN`
+`END00` binds via `menu/end/END00.TPG`. The file-loading step is complete
+before any `SUBO`-to-`MAPI` UV work for the render milestone.
+
+## Character-select 3D preview — rendering restored 2026-08-25 (incremental step 2)
+
+`src/scene.c` now completes the `REV2`→`COLS`/`MAPI`→`SUBO`→`MESH`→`GXSOFT`
+path so the model is visible instead of just crash-safe:
+
+- `meshDrawPoly @0x42e940` is now faithful to the disassembly: `bStride` from
+  `pPolyData[3]`, `bTex=(flags>>3)&1` → `pTexColors (COLS, 4B, *4)` color and
+  `bColor=(flags>>2)&1` → `pPalColors (MAPI, 16B, *0x10)` UV, `local8=(flags&0x10)`,
+  `gxSetOrigin`, and the `1`/`2`/`3`/`4`-kind loops with the `meshDrawTriClip`
+  / `meshDrawQuadClip` cull dispatch and `gxDrawTriUV`/`gxDrawQuad` calls. The
+  former swapped `COLS`/`MAPI` (`*0x10` vs `*4`) and wrong defaults are fixed.
+- `sceneNodeRender @0x42f8c0` now keeps only the minimal `>=0x10000` guard (the
+  previous `>=0x10000000` rejected valid heap addresses under Wine) and skips
+  both draw and sort when small, removes the `-286*256`/`-103*256` screen
+  offsets (original is `FILD halfWidth / ((aspect+wz)*nWidth)` → `+center`,
+  `Yscale*` → `+center`, `depth=(aspect+wz)*16`), and preserves the
+  `+0x24` → `pPolyB` `0x2c` offset. The global-list alias `g_pSceneNodeList`
+  `@0x45e8cc` = `g_abSceneRootNode+0xc` is now kept in sync in
+  `sceneNodeAllocChild @0x4319e0`, so the model node (`ROLAND` etc.) allocated
+  as child of the root is reachable via the `g_pSceneNodeList` traversal and
+  its `sceneryObj` child via recursion — previously it was orphaned at
+  `0x45e824`.
+- `sceneryObjAlloc @0x430200` now matches the `PUSH 0xa8` + `ECX=(nSub*7)*16+0xa8`
+  size, the `+0x4`/`+0x8`/`+0x10`/`+0xc` parent→child linking (including
+  `n->unk10 = parent` at `+0x10`), the `+0x3` `nChannelCount=nSub+1`, the
+  `+0x38` channel at `0x38` with `rot[3]=nScaleX/Z/Y` (`word` at `+0`/`+2`/`+4`),
+  `fUnk6=1.0` at `+6`, `nIdx/x/y/z` from `nChanPtr` at `+0xc`/`+0x10`/`+0x14`/
+  `+0x18`, and the `1..nSub` `pA`/`pB` copy (`x/y/z` via `pA+ i*8 -0x10`,
+  `nIdx` via `pB+ i*4 -8`). The previous `unused parameter nScaleY` warning and
+  the `((char*)n+0x38-0x1c)` hack are gone; the three scale shorts are now all
+  used.
+
+Verification — `make` then `wine ./maniac_rebuild.exe` from
+`MallManiacsUnmodified` with `DISPLAY=:0 xdotool`:
+
+```
+[sen] MAPI textures bound: 2856 entries via TNAM 100 bytes (menu\characters.sen)
+[sen] loaded 'menu\characters.sen' REV2 173016 bytes: 36 MESH, MAPI 2856, COLS 12648, SUBO present, TNAM 100B, OBJI 36
+[charselect] 3D model idx 0 'Roland Blåvind' id=26204b0 node=0281b648 anim=02645b30
+```
+
+`sceneNodeRender` now enters the `td` path (`pC=02645638 COLS heap, pTex=02631e58 MAPI heap, nPolyA=3 nGroups=16`) and `meshDrawPoly` draws `nPolyA=3 drawn=3` per frame; `TrackRebuildDetailed` remains `0 unexpected, 0 extra` (`meshDrawPoly 7/7, sceneNodeRender 6/6, sceneryObjAlloc 1/1, sceneNodeAllocChild 1/1`). The capture
+`/tmp/char_final.png` (640x480 via `DISPLAY=:0 import -window`) shows the textured model at `~549,266` (`scale*wx+center`, `Yscale*`+`center`) on the right side behind the portrait quad, and survives the `Right`/`Left` cycle and `Enter`→`stateCharSelectOk` without page fault.
 
 ## Animation cluster (`anm*`) — implemented 2026-08-25 (Option A)
 

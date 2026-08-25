@@ -34,8 +34,8 @@ int  senChunkParse(byte *pData, byte *pDataEnd);
 /* sceneMeshFixup @0x4320f0 — relocate the pointer fields of a loaded mesh
  * node. pMesh = node base (relocated MESH bytes = SceneObjTypeDef), pNames =
  * object-name table, pMapGeom = &g_pMapGeom (NULL or pointer to map-geometry
- * base; when non-null the +0x20/+0x28 and vertex fixups use it). */
-void sceneMeshFixup(int pMesh, void *pNames, int pMapGeom);
+ * base; when non-null the +0x20/+0x28 and vertex fixups use it). Returns 1. */
+int sceneMeshFixup(int pMesh, void *pNames, int pMapGeom);
 
 /* sceneCreateTextureSurfaces @0x432260 — bind a list of texture ids to
  * surfaces (via gxCreateSurface). pTexIdList is an array of 0x10-byte records
@@ -49,5 +49,13 @@ int  sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames)
  * the raw MESH chunk bytes, which are a serialized SceneObjTypeDef. */
 extern void *g_pMeshTable;      /* @0x45e930 */
 extern int   g_nMeshTableCount; /* @0x45e994 (count) / @0x45e944 alias in old map */
+extern char g_szSceneDir[];     /* @0x45e950 scene base dir (set by scenSetDir) */
+extern char *g_pObjNameTable;   /* @0x45e990 TNAM packed names */
+extern int g_nObjNameTableSize; /* @0x45eaa8 */
+extern int *g_pMapGeom;         /* @0x45eb20 MAPI base */
+extern int g_nMapGeomCount;     /* @0x45eb24 */
+extern char *g_pColsData;       /* @0x45eb28 COLS base */
+extern int g_nColsCount;        /* @0x45eb2c */
+extern char *g_pSubObjData;     /* @0x45eb30 SUBO base */
 
 #endif /* SEN_H */

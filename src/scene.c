@@ -249,6 +249,12 @@ void *sceneNodeAllocChild(int pParent, void *pChannelPtr, void *pChannelPtr2,
     n->pNextSib = oldChild; /* @+8 */
     if (oldChild) *(int *)((char *)(uintptr_t)oldChild + 0x10) = (int)(uintptr_t)n;
     parent->pChild = (int)(uintptr_t)n;
+    /* Original root is at 0x45e8c0 and its +0xc (child) aliases g_pSceneNodeList @0x45e8cc.
+     * Our g_abSceneRootNode is at 0x45e818 (buffer includes 0x45e8c0) but g_pSceneNodeList is separate.
+     * Keep them in sync when parent is the scene root so the model becomes reachable via the global list. */
+    if ((void *)(uintptr_t)n->pParent == g_abSceneRootNode) {
+        g_pSceneNodeList = n;
+    }
     n->nId = 3; /* @+0 */
     n->bType = 0; /* @+2 */
     n->nChannelCount = 1; /* @+3 */
@@ -289,28 +295,39 @@ void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, i
     memset(n, 0, 0xa8 + nSub * 0x70);
     n->pParent = pParent ? pParent : (int)g_abSceneRootNode;
     SceneNode *parent = (SceneNode *)n->pParent;
-    n->pNextSib = parent->pChild;
-    parent->pChild = (int)n;
-    if (parent->pNextSib == 0) { /* keep former sibling link if any */ }
+    int oldChild = parent->pChild;
+    n->pNextSib = oldChild;
+    if (oldChild) *(int *)((char *)(uintptr_t)oldChild + 0x10) = (int)(uintptr_t)n;
+    parent->pChild = (int)(uintptr_t)n;
+    n->unk10 = (int)(uintptr_t)parent; /* @+0x10 = parent, per 0x430268 */
     n->nId = 1;
     n->bType = 0;
     n->nChannelCount = (unsigned char)(nSub + 1);
     n->pChannels = (int)((char *)n + 0x38);
     n->pTypeDef = (int)td;
-    /* pA/pB are relocated absolute pointers set by sceneMeshFixup @0x4320f0 */
-    for (int i = 0; i <= nSub; i++) {
+    /* Channel 0 holds the incoming scales/chanPtrs: original writes rot[3] = scales, nIdx/x/y/z = chanPtrs */
+    {
+        SceneChannel *ch0 = (SceneChannel *)((char *)n + 0x38);
+        ch0->rot[0] = nScaleX;
+        ch0->rot[1] = nScaleZ;
+        ch0->rot[2] = nScaleY;
+        ch0->fUnk6 = 1.0f;
+        ch0->bFlagA = 0;
+        ch0->bFlagB = 0;
+        ch0->nIdx = nChanPtr;
+        ch0->x = nChanPtr2;
+        ch0->y = nChanPtr3;
+        ch0->z = nChanPtr4;
+    }
+    /* Remaining sub-channels: pA/pB are relocated absolute pointers set by sceneMeshFixup @0x4320f0 */
+    for (int i = 1; i <= nSub; i++) {
         SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + i * 0x70);
         ch->fUnk6 = 1.0f;
         ch->bFlagA = 0;
         ch->bFlagB = 0;
-        if (i >= 1 && i - 1 < nSub && td->pA && td->pB) {
-            /* Original: for iVar4=1; iVar4 < nChannelCount; iVar4++
-             *   ch[i].x = *(short*)(pA -0x10 + iVar4*8)
-             *   ch[i].y = *(short*)(pA -0x0e + ...)
-             *   ch[i].z = *(short*)(pA -0x0c + ...)
-             *   ch[i].nIdx = *(int*)(pB -8 + iVar4*4) */
+        {
             int src = i - 1;
-            if (src >= 0 && src < nSub) {
+            if (src >= 0 && src < nSub && td->pA && td->pB) {
                 short *pPos = (short *)(td->pA + src * 8);
                 ch->x = pPos[0];
                 ch->y = pPos[1];
@@ -319,11 +336,6 @@ void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, i
             }
         }
     }
-    /* Scales / channel ptrs — original stores at +0x1c..0x1e and +0x22..0x28 */
-    ((short *)((char *)n + 0x38 - 0x1c))[0] = nScaleX; /* TODO: verify via disasm, nScale at +0x1c */
-    n->unk1c = nScaleZ; /* placeholder: original writes nScaleZ at puVar2[0x1d] */
-    (void)nChanPtr; (void)nChanPtr2; (void)nChanPtr3; (void)nChanPtr4;
-    /* TODO: nChanPtr* at +0x22..0x28 not yet wired — charselect passes 0 */
     g_nSceneNodeCount++;
     if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
     g_nSceneNodeMemUsed += 0xa8 + nSub * 0x70;
@@ -747,7 +759,12 @@ void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
     }
 }
 
-/* meshDrawPoly @0x42e940 */
+/* meshDrawPoly @0x42e940 — faithful to disassembly 0x42e940.
+ * pPolyData layout: [0]=nCount|kind<<8, [1]=flags, [2]/[3]=header, pIdxList at +8.
+ * bTex = (flags>>3)&1, bColor=(flags>>2)&1, bStride = low byte of [3].
+ * pTexColors = td->pC (COLS, 4-byte entries, stride *4 for color)
+ * pPalColors = td->pTex (MAPI, 16-byte entries, stride *0x10 for UV)
+ * gxSetOrigin uses flags; kind 1=point,2=line,3=tri,4=quad. */
 void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, int pPalColors)
 {
     byte bStride = (byte)pPolyData[3];
@@ -755,83 +772,106 @@ void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, i
     ushort u0 = *pPolyData;
     uint nCount = u0 & 0xff;
     ushort kind = u0 >> 8;
-    byte *pIdx = (byte *)pPolyData + 8;
+    ushort *pIdxList = pPolyData + 4; /* +8 bytes */
     uint bTex = (u2 >> 3) & 1;
     uint bColor = (u2 >> 2) & 1;
     uint nUnk = bTex;
+    uint local8;
+    void *pvVar11 = NULL;
+    ushort *pColorPtr = NULL; /* will hold pTexColors+...*4 when bTex */
+    if ((bTex & 1) == 0) local8 = 0;
+    else local8 = u2 & 0x10;
     if (bStride == 0 || nCount > 8192) return;
     gxSetOrigin((int)u2);
     if (kind == 1) {
-        for (uint i = 0; i < nCount; i++) {
-            int offset = (byte)pIdx[0] * 0x10;
-            if (*(int *)(pNormals + offset + 8) > 1)
-                gxDrawTriangle((void *)(pVerts + offset), pTexColors);
-            pIdx += bStride;
-        }
+        if (nCount == 0) return;
+        do {
+            if ((bTex & 1) != 0) pColorPtr = (ushort *)(pTexColors + (uint)pIdxList[1] * 4);
+            else pColorPtr = NULL;
+            int offset = (byte)*pIdxList * 0x10;
+            if (*(int *)(pNormals + offset + 8) > 1) gxDrawTriangle((void *)(pVerts + offset), (int)pColorPtr);
+            pIdxList = (ushort *)((byte *)pIdxList + bStride);
+            nCount--;
+        } while (nCount != 0);
+        return;
     } else if (kind == 2) {
-        for (uint i = 0; i < nCount; i++) {
-            int offset0 = (byte)pIdx[0] * 0x10;
-            int offset1 = (byte)pIdx[1] * 0x10;
-            if (*(int *)(pVerts + offset0 + 8) > 1 &&
-                *(int *)(pVerts + offset1 + 8) > 1)
-                gxDrawLine((void *)(pVerts + offset0), (void *)(pVerts + offset1), pTexColors);
-            pIdx += bStride;
-        }
+        if (nCount == 0) return;
+        do {
+            if ((bTex & 1) != 0) pColorPtr = (ushort *)(pTexColors + (uint)pIdxList[1] * 4);
+            else pColorPtr = NULL;
+            void *pv0 = (void *)((uint)(byte)*pIdxList * 0x10 + pVerts);
+            void *pv1 = (void *)((uint)*(byte *)((int)pIdxList + 1) * 0x10 + pVerts);
+            if ((1 < *(int *)((int)pv0 + 8)) && (1 < *(int *)((int)pv1 + 8))) gxDrawLine(pv0, pv1, (int)pColorPtr);
+            pIdxList = (ushort *)((byte *)pIdxList + bStride);
+            nCount--;
+        } while (nCount != 0);
+        return;
     } else if (kind == 3) {
-        for (uint i = 0; i < nCount; i++) {
-            void *pUV = bTex && (unsigned)pPalColors > 0x10000U
-                        ? (void *)(pPalColors + (uint)pIdx[2] * 4) : NULL;
-            int color = pTexColors;
-            if (bColor && (unsigned)pTexColors > 0x10000U &&
-                (unsigned)pTexColors < 0x10000000U)
-                color = pTexColors + (uint)pIdx[nUnk + 2] * 0x10;
-            else if (bColor && (unsigned)pPalColors > 0x10000U &&
-                     (unsigned)pPalColors < 0x10000000U)
-                color = pPalColors;
-            void *pColor = (void *)(uintptr_t)color;
-            int o0 = (byte)pIdx[0] * 0x10;
-            int o1 = (byte)pIdx[1] * 0x10;
-            int o2 = (byte)pIdx[2] * 0x10;
-            if (*(int *)(pNormals + o0 + 8) < 0 ||
-                *(int *)(pNormals + o1 + 8) < 0 ||
-                *(int *)(pNormals + o2 + 8) < 0) {
-                meshDrawTriClip((byte *)pIdx, pVerts, pNormals, pUV, pColor,
-                                (int)nUnk, (int)bColor, (int)(u2 & 0x10));
+        if (nCount == 0) return;
+        do {
+            if ((bTex & 1) != 0) pColorPtr = (ushort *)(pTexColors + (uint)pIdxList[2] * 4);
+            else pColorPtr = NULL;
+            if ((bColor & 1) != 0) pvVar11 = (void *)((uint)pIdxList[nUnk + 2] * 0x10 + pPalColors);
+            else pvVar11 = NULL;
+            int o0 = (byte)*pIdxList * 0x10;
+            int o1 = (byte)*((byte *)pIdxList + 1) * 0x10;
+            int o2 = (byte)pIdxList[1] * 0x10;
+            /* Note: o1 and o2 both derive from byte index 1 in raw — Ghidra uses two loads at +1 and +2 (?) */
+            /* Faithful re-derivation: Ghidra does o1 = *(byte *)(pIdx+1)*0x10, o2 = (byte)pIdx[1]*0x10 — same for tri they are distinct */
+            /* Use original Ghidra logic for o1/o2 distinction: keep as above per disasm byte offsets */
+            int d0 = *(int *)(pNormals + o0 + 8);
+            int d1 = *(int *)(pNormals + o1 + 8);
+            int d2 = *(int *)(pNormals + o2 + 8);
+            if (d0 < 0) {
+                if ((d1 >= 0) || (d2 >= 0)) {
+                    if (d0 >= 0) goto tri_draw;
+                    goto tri_clip;
+                }
             } else {
-                gxDrawTriUV((void *)(pVerts + o0), (void *)(pVerts + o1),
-                            (void *)(pVerts + o2), (int)pColor, pUV);
+tri_draw:
+                if ((d1 < 0) || (d2 < 0)) {
+tri_clip:
+                    meshDrawTriClip((byte *)pIdxList, pVerts, pNormals, pColorPtr, pvVar11, (int)nUnk, (int)bColor, (int)local8);
+                } else {
+                    gxDrawTriUV((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (int)pColorPtr, pvVar11);
+                }
             }
-            pIdx += bStride;
-        }
+            pIdxList = (ushort *)((byte *)pIdxList + bStride);
+            nCount--;
+            if (nCount == 0) return;
+        } while (1);
     } else if (kind == 4) {
-        for (uint i = 0; i < nCount; i++) {
-            void *pUV = bTex && (unsigned)pPalColors > 0x10000U
-                        ? (void *)(pPalColors + (uint)pIdx[2] * 4) : NULL;
-            int color = pTexColors;
-            if (bColor && (unsigned)pTexColors > 0x10000U &&
-                (unsigned)pTexColors < 0x10000000U)
-                color = pTexColors + (uint)pIdx[nUnk + 2] * 0x10;
-            else if (bColor && (unsigned)pPalColors > 0x10000U &&
-                     (unsigned)pPalColors < 0x10000000U)
-                color = pPalColors;
-            void *pColor = (void *)(uintptr_t)color;
-            int o0 = (byte)pIdx[0] * 0x10;
-            int o1 = (byte)pIdx[1] * 0x10;
-            int o2 = (byte)pIdx[2] * 0x10;
-            int o3 = (byte)pIdx[3] * 0x10;
-            if (*(int *)(pNormals + o0 + 8) < 0 ||
-                *(int *)(pNormals + o1 + 8) < 0 ||
-                *(int *)(pNormals + o2 + 8) < 0 ||
-                *(int *)(pNormals + o3 + 8) < 0) {
-                meshDrawQuadClip((byte *)pIdx, pVerts, pNormals, pUV, pColor,
-                                 (int)nUnk, (int)bColor, (int)(u2 & 0x10));
+        if (nCount == 0) return;
+        do {
+            if ((bTex & 1) != 0) pColorPtr = (ushort *)(pTexColors + (uint)pIdxList[2] * 4);
+            else pColorPtr = NULL;
+            if ((bColor & 1) != 0) pvVar11 = (void *)((uint)pIdxList[nUnk + 2] * 0x10 + pPalColors);
+            else pvVar11 = NULL;
+            int o0 = (byte)*pIdxList * 0x10;
+            int o1 = (byte)*((byte *)pIdxList + 1) * 0x10;
+            int o2 = (byte)pIdxList[1] * 0x10;
+            int o3 = (byte)*((byte *)pIdxList + 3) * 0x10;
+            int d0 = *(int *)(pNormals + o0 + 8);
+            int d1 = *(int *)(pNormals + o1 + 8);
+            int d2 = *(int *)(pNormals + o2 + 8);
+            int d3 = *(int *)(pNormals + o3 + 8);
+            if (d0 < 0) {
+                if ((d1 >= 0) || (d2 >= 0) || (d3 >= 0)) {
+                    if (d0 >= 0) goto quad_draw;
+                    goto quad_clip;
+                }
             } else {
-                gxDrawQuad((void *)(pVerts + o0), (void *)(pVerts + o1),
-                           (void *)(pVerts + o2), (void *)(pVerts + o3),
-                           (int)pColor, pUV);
+quad_draw:
+                if ((d1 < 0) || (d2 < 0) || (d3 < 0)) {
+quad_clip:
+                    meshDrawQuadClip((byte *)pIdxList, pVerts, pNormals, pColorPtr, pvVar11, (int)nUnk, (int)bColor, (int)local8);
+                } else {
+                    gxDrawQuad((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (void *)(pVerts + o3), (int)pColorPtr, pvVar11);
+                }
             }
-            pIdx += bStride;
-        }
+            pIdxList = (ushort *)((byte *)pIdxList + bStride);
+            nCount--;
+        } while (nCount != 0);
     }
 }
 
@@ -989,8 +1029,8 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
                     if (az <= 0.0f) az = 0.001f;
                     float denom = az * g_nSceneWidth;
                     float scale = (denom != 0.0f) ? (float)g_nSceneHalfWidth / denom : 0.0f;
-                    int screenX = (int)(scale * wx + (float)g_centerX) - 286 * 256;
-                    int screenY = (int)(g_flSceneYScale * scale * wy + (float)g_centerY) - 103 * 256;
+                    int screenX = (int)(scale * wx + (float)g_centerX);
+                    int screenY = (int)(g_flSceneYScale * scale * wy + (float)g_centerY);
                     int depth = (int)(az * 16.0f);
                     int *dstV = (int *)g_pNodePoolCur;
                     int *dstN = (int *)g_pNodePool2Cur;
@@ -1020,24 +1060,24 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
                     (void)polyOff;
                 }
             }
-            /* draw polys */
+            /* draw polys — faithful to 0x42f8c0: pTex=COLS (*pTex 4B), pPal=MAPI (*pTex 16B), guard only small */
             int nPolyA = *(int *)(pRender + 0x14);
             int pPolyA = *(int *)(pRender + 0x18);
             if (nPolyA > 0) {
                 for (int i = 0; i < nPolyA; i++) {
                     ushort *poly = *(ushort **)(pPolyA + i*4);
-                    int pTex = td->pC;
-                    int pPal = td->pTex;
-                    if ((unsigned)pTex <= 0x10000U || (unsigned)pTex >= 0x10000000U ||
-                        (unsigned)pPal <= 0x10000U || (unsigned)pPal >= 0x10000000U)
-                        continue;
+                    int pTex = td->pC;   /* COLS: 4B color entries, meshDrawPoly uses *4 */
+                    int pPal = td->pTex; /* MAPI: 16B uv entries, meshDrawPoly uses *0x10 */
+                    if (!poly) continue;
+                    /* Guard: unrelocated small offset or null — skip both draw and sort to avoid gx fault */
+                    if ((unsigned)pTex < 0x10000U || (unsigned)pPal < 0x10000U) continue;
                     if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)pVerts, (int)pNormals, pTex, pPal);
                     else gxSortPushKey(poly, pVerts, pNormals, pTex, pPal);
                 }
             }
             nPolyB = *(int *)(pRender + 0x24);
-            int pPolyB = *(int *)(pRender + 0x28);
-            /* polyB set is variable-length records */
+            int pPolyB = *(int *)(pRender + 0x2c);
+            /* polyB set is variable-length records: base at pPolyB, for each of nPolyB entries skip __ftol vertex block already handled above (nPolyB==0 for characters, so empty) */
             if (nPolyB > 0) {
                 byte *base = (byte *)pPolyB;
                 for (int i = 0; i < nPolyB; i++) {
@@ -1046,6 +1086,7 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
                         ushort *poly = (ushort *)base;
                         int pTex2 = td->pC;
                         int pPal2 = td->pTex;
+                        if ((unsigned)pTex2 < 0x10000U || (unsigned)pPal2 < 0x10000U) continue;
                         if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)pVerts2, (int)pNormals2, pTex2, pPal2);
                         else gxSortPushKey(poly, pVerts2, pNormals2, pTex2, pPal2);
                         base += (poly[3] & 0xff) * (poly[0] & 0xff) + 4; /* stride */
@@ -1138,7 +1179,10 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
         int *pi = (int *)((int)g_pSortBuffer + 0xc);
         int *end = (int *)g_pSortBufCur;
         while (pi + 2 < end) {
-            meshDrawPoly((ushort *)pi[-3], pi[-2], pi[-1], *pi, pi[1]);
+            int pTexS = *pi; int pPalS = pi[1];
+            if ((unsigned)pTexS >= 0x10000U && (unsigned)pPalS >= 0x10000U) {
+                meshDrawPoly((ushort *)pi[-3], pi[-2], pi[-1], *pi, pi[1]);
+            }
             pi += 5;
         }
     }

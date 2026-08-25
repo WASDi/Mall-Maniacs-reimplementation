@@ -87,10 +87,25 @@ int scenNameTableInit(int nMeshCount, int nScenObjCap) /* @0x431cb0 */
     return 1;
 }
 
+extern char g_szSceneDir[]; /* @0x45e950 defined in sen.c */
 int scenSetDir(LPCSTR pszDir) /* @0x432e60 */
 {
-    (void)pszDir;
+    if (pszDir) {
+        strncpy(g_szSceneDir, pszDir, 255);
+        g_szSceneDir[255]='\0';
+    } else {
+        g_szSceneDir[0]='\0';
+    }
     return 1;
+}
+int scenExpandNameList(char *pList, void *pEnd, char *pszDir) /* @0x432dd0 */
+{
+    (void)pList; (void)pEnd; (void)pszDir;
+    return 0;
+}
+void sceneTextAnimAdd(void *pvPool, int *pMapGeom, char *pData, int nSize) /* @0x434a90 helper */
+{
+    (void)pvPool; (void)pMapGeom; (void)pData; (void)nSize;
 }
 
 int sceneFindByName(int *pOut, int nMax, char *pszSubstr) /* @0x431fd0 */

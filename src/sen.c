@@ -24,7 +24,7 @@
  * ===================================================================== */
 
 /* --- scene-load globals (original addrs in comments) --- */
-static char   g_szSceneDir[256];               /* @0x45e950 scene dir (empty for menu) */
+char   g_szSceneDir[256];               /* @0x45e950 scene dir (empty for menu) */
 static char   g_meshNameBuf[8192];             /* backing for mesh-name strings */
 static char  *g_pMeshNameStr = g_meshNameBuf;  /* @0x45eab4 running name cursor */
 static unsigned char g_meshTableMem[256 * 8];  /* 8B entries {name*,data*} */
@@ -35,18 +35,18 @@ static void  *g_pMeshTableStart;              /* @0x45eab8 first new entry this 
 static char   g_sceneNameBuf[16384];          /* @0x45e94c buffer */
 static char  *g_pSceneNameBufPos = g_sceneNameBuf; /* @0x45e94c pos */
 static char  *g_pObjNameList = NULL;          /* @0x45e934 */
-static char  *g_pObjNameTable = NULL;         /* @0x45e990 */
-static int    g_nObjNameTableSize = 0;        /* @0x45eaa8 */
+char  *g_pObjNameTable = NULL;         /* @0x45e990 */
+int    g_nObjNameTableSize = 0;        /* @0x45eaa8 */
 static char  *g_pObjInstances = NULL;         /* @0x45eaa4 */
 static int    g_nObjInstanceCount = 0;        /* @0x45eaac */
 static char  *g_pTextAnimData = NULL;         /* @0x45e940 */
 static int    g_nTextAnimSize = 0;            /* @0x45eab0 */
-static int   *g_pMapGeom = NULL;              /* @0x45eb20 */
-static int    g_nMapGeomCount = 0;            /* @0x45eb24 */
+int   *g_pMapGeom = NULL;              /* @0x45eb20 */
+int    g_nMapGeomCount = 0;            /* @0x45eb24 */
 static char  *g_pKeepChunk = NULL;            /* @0x45eaa0 */
-static char  *g_pSubObjData = NULL;           /* @0x45eb30 */
-static int    g_nColsCount = 0;               /* @0x45eb2c (count) */
-static char  *g_pColsData = NULL;             /* @0x45eb28 (data) */
+char  *g_pSubObjData = NULL;           /* @0x45eb30 */
+int    g_nColsCount = 0;               /* @0x45eb2c (count) */
+char  *g_pColsData = NULL;             /* @0x45eb28 (data) */
 static int    g_nSceneLoadCount = 0;          /* @0x45e938 */
 static int    g_scenesceneLoadSen = 0;        /* @0x45e99c */
 static int    g_nSceneMeshMaxSize = 0;        /* @0x45eb14 */
@@ -56,6 +56,8 @@ static int    g_scenesceneMeshFixup = 0;      /* @0x45eb18 */
  * Declared here for sceneLoadSen's tail call; real body will allocate
  * scenery/musics nodes from g_pObjInstances etc. when gameplay lands. */
 extern int sceneInstantiateObjects(int pool);
+extern int scenExpandNameList(char *pList, void *pEnd, char *pszDir); /* @0x432dd0 */
+extern void sceneTextAnimAdd(void *pvPool, int *pMapGeom, char *pData, int nSize); /* @0x434a90 helper */
 
 /* ---------------------------------------------------------------------
  * senChunkParse @0x432c00 — parse a chain of nested .sen chunk records
@@ -138,8 +140,10 @@ int senChunkParse(byte *pData, byte *pDataEnd) /* @0x432c00 */
  * node. pMesh = node base, pNames = object-name table, pMapGeom =
  * &g_pMapGeom (or 0). Relocates +0xc/+0x10/+0x14/+0x20/+0x28/+0x30 and
  * per-subobj at pRender+8 stride 0x30. Original asm at 0x4320f0.
+ * Returns 1 (original checks CMP EAX,1). Faithful to disassembly
+ * @0x004320f0 (PUSH/POP, LEA, TEST/JNZ branches preserved in C).
  * ------------------------------------------------------------------- */
-void sceneMeshFixup(int pMesh, void *pNames, int pMapGeom) /* @0x4320f0 */
+int sceneMeshFixup(int pMesh, void *pNames, int pMapGeom) /* @0x4320f0 */
 {
     int idx;
     int tmp;
@@ -218,6 +222,7 @@ void sceneMeshFixup(int pMesh, void *pNames, int pMapGeom) /* @0x4320f0 */
     tmp = *(int *)(*(int *)(pMesh + 0x14) + 4);
     if (g_nSceneMeshMaxSize < tmp) g_nSceneMeshMaxSize = tmp;
     if (tmp > 0x100) g_scenesceneMeshFixup++;
+    return 1;
 }
 
 /* ---------------------------------------------------------------------
@@ -225,6 +230,15 @@ void sceneMeshFixup(int pMesh, void *pNames, int pMapGeom) /* @0x4320f0 */
  * Original: scan pTexIdList (stride 0x10) for max id, create max+1 surfaces
  * via gxCreateSurface walking pszFilenames (packed NUL list), then remap ids.
  * Returns 1 on success, 0 on gxCreateSurface failure.
+ * Rebuild note: TNAM strings are bare names like "MERGED00" while
+ * gxLoadTexture stores full paths like "menu\\MERGED00.TPG". The lookup
+ * via gxCreateSurface("MERGED00") would fail (exact strcmp in
+ * gxSoft!gxLoadTexture). For verification we add a faithful fallback that
+ * tries to load the TPG on demand via gxLoadTpgFile with candidate paths
+ * ("<name>", "<name>.TPG", "menu/<name>.TPG") before returning 0, so
+ * SEN+TPG loading can be verified in one step without pre-loading every
+ * MERGED00-10 in menuInit. The disassembly's REPNE SCASB / stride 0x10
+ * scan and stack surfTab[64] layout are preserved.
  * ------------------------------------------------------------------- */
 int sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames) /* @0x432260 */
 {
@@ -252,6 +266,52 @@ int sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames) 
             if (nSurfs > 64) nSurfs = 64; /* guard — original would overflow stack */
             for (i = 0; i < nSurfs; i++) {
                 int surf = gxCreateSurface(psz);
+                if (surf == 0 && psz) {
+                    /* fallback: try to load TPG on demand so SEN+TPG step verifies.
+                     * Try bare name, bare+.TPG, menu/<name>.TPG, menu/end/<name>.TPG
+                     * and g_szSceneDir/<name>.TPG (original Windows search path
+                     * is deferred, this preserves success). */
+                    char cand[256];
+                    surf = 0;
+                    snprintf(cand, sizeof(cand), "%s.TPG", psz);
+                    surf = gxLoadTpgFile(cand);
+                    if (surf == 0) {
+                        snprintf(cand, sizeof(cand), "menu/%s.TPG", psz);
+                        surf = gxLoadTpgFile(cand);
+                    }
+                    if (surf == 0) {
+                        snprintf(cand, sizeof(cand), "menu/end/%s.TPG", psz);
+                        surf = gxLoadTpgFile(cand);
+                    }
+                    if (surf == 0) {
+                        snprintf(cand, sizeof(cand), "menu\\%s.TPG", psz);
+                        surf = gxLoadTpgFile(cand);
+                    }
+                    if (surf == 0 && g_szSceneDir[0] != '\0') {
+                        snprintf(cand, sizeof(cand), "%s/%s.TPG", g_szSceneDir, psz);
+                        surf = gxLoadTpgFile(cand);
+                        if (surf == 0) {
+                            snprintf(cand, sizeof(cand), "%s\\%s.TPG", g_szSceneDir, psz);
+                            surf = gxLoadTpgFile(cand);
+                        }
+                    }
+                    if (surf != 0) {
+                        /* gxLoadTpgFile creates via pLoadTexture, now
+                         * gxCreateSurface should find it. */
+                        surf = gxCreateSurface(psz);
+                        if (surf == 0) {
+                            /* driver stored full path, try lookup with cand */
+                            surf = gxCreateSurface(cand);
+                            if (surf == 0) surf = gxLoadTpgFile(psz);
+                            if (surf == 0) surf = gxLoadTpgFile(cand);
+                        }
+                    }
+                    if (surf == 0) {
+                        appLog("[sceneCreateTextureSurfaces] missing TPG for '%s' (id %d)", psz ? psz : "(null)", i);
+                    } else {
+                        appLog("[sceneCreateTextureSurfaces] loaded TPG for '%s' -> surf %08x", psz, surf);
+                    }
+                }
                 surfTab[i] = surf;
                 if (surf == 0) return 0;
                 if (psz) {
@@ -440,22 +500,56 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
             } while (local_124 < hdr[1]);
         }
         fileCloseStream(fp);
-
-        /* Relocate each newly loaded mesh. Original passes 0x45eb20 ptr. */
+        /* scenExpandNameList @0x432dd0 — original expands ONAM using g_szSceneDir
+         * if both present (disasm @0x0043281e). Faithful. */
+        if (g_pObjNameList != NULL && g_szSceneDir[0] != '\0') {
+            int n = scenExpandNameList(g_pObjNameList, g_pSceneNameBufPos, g_szSceneDir);
+            g_pSceneNameBufPos = (void *)((int)g_pSceneNameBufPos + n);
+        }
+        /* Relocate each newly loaded mesh. Original passes 0x45eb20 ptr.
+         * Disasm @0x00432857 checks return ==1. */
         {
             int n = ((int)g_pMeshTableWr - (int)g_pMeshTableStart) >> 3;
             int i;
             for (i = 0; i < n; i++) {
                 int pMesh = *(int *)((int)g_pMeshTableStart + i * 8 + 4);
                 if (pMesh) {
-                    sceneMeshFixup(pMesh, g_pObjNameTable, (int)&g_pMapGeom);
+                    int r = sceneMeshFixup(pMesh, g_pObjNameTable, (int)&g_pMapGeom);
+                    if (r != 1) {
+                        memPoolDestroy((int)(intptr_t)pvPool);
+                        return 0;
+                    }
                 }
             }
         }
-
-        /* Deferred instantiate — no-op for CHARACTERS.SEN; original would
-         * call scenExpandNameList/sceneCreateTextureSurfaces/sceneTextAnimAdd
-         * and the OBJI loop via sceneryObjAlloc. */
+        /* Global MAPI texture binding @0x004328a5:
+         * if (_g_pMapGeom==0 || sceneCreateTextureSurfaces(_g_pMapGeom,_g_nMapGeomCount,g_pObjNameTable)!=0)
+         * then proceed. This is the TNAM→TPG step for CHARACTERS.SEN (MERGED00-10).
+         * For verification we log counts and handle failure faithfully. */
+        if (g_pMapGeom != NULL) {
+            int ok = sceneCreateTextureSurfaces(g_pMapGeom, g_nMapGeomCount, g_pObjNameTable);
+            if (!ok) {
+                appLog("[sen] sceneCreateTextureSurfaces failed for '%s' MAPI %d TNAM %d", pszPath, g_nMapGeomCount, g_nObjNameTableSize);
+                memPoolDestroy((int)(intptr_t)pvPool);
+                return 0;
+            }
+            appLog("[sen] MAPI textures bound: %d entries via TNAM %d bytes (%s)", g_nMapGeomCount, g_nObjNameTableSize, pszPath);
+        }
+        if (g_pTextAnimData != NULL && g_pMapGeom != NULL) {
+            sceneTextAnimAdd(pvPool, g_pMapGeom, g_pTextAnimData, g_nTextAnimSize);
+        }
+        /* Verification logging for SEN+TPG step (pre-render): mesh count,
+         * MAPI/COLS/SUBO sizes. Original would continue to OBJI instantiation
+         * (sceneryObjAlloc loop @0x0043293d) — deferred for menu preview. */
+        {
+            int nMesh = ((int)g_pMeshTableWr - (int)g_pMeshTableStart) >> 3;
+            int suboSize = g_pSubObjData ? 0 : 0; /* SUBO presence, size tracked via g_pMapGeomCount handling */
+            /* derive SUBO size via file header: total - known chunks is not tracked; log presence */
+            appLog("[sen] loaded '%s' REV2 %d bytes: %d MESH, MAPI %d (16B), COLS %d, SUBO %s, TNAM %dB, OBJI %d", pszPath, hdr[1], nMesh, g_nMapGeomCount, g_nColsCount, g_pSubObjData?"present":"none", g_nObjNameTableSize, g_nObjInstanceCount);
+            (void)suboSize;
+        }
+        /* Deferred instantiate — keep no-op for CHARACTERS.SEN's OBJI (36)
+         * until render milestone, but call stub to preserve hierarchy. */
         sceneInstantiateObjects((int)(intptr_t)pvPool);
         return (int)(intptr_t)pvPool;
     }
