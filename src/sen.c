@@ -229,21 +229,14 @@ int sceneMeshFixup(int pMesh, void *pNames, int pMapGeom) /* @0x4320f0 */
  * sceneCreateTextureSurfaces @0x432260 — bind texture ids to surfaces.
  * Original: scan pTexIdList (stride 0x10) for max id, create max+1 surfaces
  * via gxCreateSurface walking pszFilenames (packed NUL list), then remap ids.
- * Returns 1 on success, 0 on gxCreateSurface failure.
- * Rebuild note: TNAM strings are bare names like "MERGED00" while
- * gxLoadTexture stores full paths like "menu\\MERGED00.TPG". The lookup
- * via gxCreateSurface("MERGED00") would fail (exact strcmp in
- * gxSoft!gxLoadTexture). For verification we add a faithful fallback that
- * tries to load the TPG on demand via gxLoadTpgFile with candidate paths
- * ("<name>", "<name>.TPG", "menu/<name>.TPG") before returning 0, so
- * SEN+TPG loading can be verified in one step without pre-loading every
- * MERGED00-10 in menuInit. The disassembly's REPNE SCASB / stride 0x10
- * scan and stack surfTab[64] layout are preserved.
+ * Returns 1 on success, 0 on gxCreateSurface failure. Faithful to disasm:
+ * REPNE SCASB to walk packed names, stride 0x10 scan, stack surfTab[64] at
+ * [ESP+0x14]. No on-demand TPG fallback — caller must have loaded textures
+ * via gxLoadTexture/gxLoadTpgFile before this call.
  * ------------------------------------------------------------------- */
 int sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames) /* @0x432260 */
 {
     int maxId = -1;
-    int i;
 
     if (nCount > 0) {
         int *p = pTexIdList;
@@ -260,67 +253,23 @@ int sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames) 
         int nSurfs = maxId + 1;
         int surfTab[64];
         char *psz = pszFilenames;
-        int created = 0;
+        int i = 0;
 
         if (nSurfs > 0) {
-            if (nSurfs > 64) nSurfs = 64; /* guard — original would overflow stack */
-            for (i = 0; i < nSurfs; i++) {
+            int *pTab = surfTab;
+            if (nSurfs > 64) nSurfs = 64;
+            do {
                 int surf = gxCreateSurface(psz);
-                if (surf == 0 && psz) {
-                    /* fallback: try to load TPG on demand so SEN+TPG step verifies.
-                     * Try bare name, bare+.TPG, menu/<name>.TPG, menu/end/<name>.TPG
-                     * and g_szSceneDir/<name>.TPG (original Windows search path
-                     * is deferred, this preserves success). */
-                    char cand[256];
-                    surf = 0;
-                    snprintf(cand, sizeof(cand), "%s.TPG", psz);
-                    surf = gxLoadTpgFile(cand);
-                    if (surf == 0) {
-                        snprintf(cand, sizeof(cand), "menu/%s.TPG", psz);
-                        surf = gxLoadTpgFile(cand);
-                    }
-                    if (surf == 0) {
-                        snprintf(cand, sizeof(cand), "menu/end/%s.TPG", psz);
-                        surf = gxLoadTpgFile(cand);
-                    }
-                    if (surf == 0) {
-                        snprintf(cand, sizeof(cand), "menu\\%s.TPG", psz);
-                        surf = gxLoadTpgFile(cand);
-                    }
-                    if (surf == 0 && g_szSceneDir[0] != '\0') {
-                        snprintf(cand, sizeof(cand), "%s/%s.TPG", g_szSceneDir, psz);
-                        surf = gxLoadTpgFile(cand);
-                        if (surf == 0) {
-                            snprintf(cand, sizeof(cand), "%s\\%s.TPG", g_szSceneDir, psz);
-                            surf = gxLoadTpgFile(cand);
-                        }
-                    }
-                    if (surf != 0) {
-                        /* gxLoadTpgFile creates via pLoadTexture, now
-                         * gxCreateSurface should find it. */
-                        surf = gxCreateSurface(psz);
-                        if (surf == 0) {
-                            /* driver stored full path, try lookup with cand */
-                            surf = gxCreateSurface(cand);
-                            if (surf == 0) surf = gxLoadTpgFile(psz);
-                            if (surf == 0) surf = gxLoadTpgFile(cand);
-                        }
-                    }
-                    if (surf == 0) {
-                        appLog("[sceneCreateTextureSurfaces] missing TPG for '%s' (id %d)", psz ? psz : "(null)", i);
-                    } else {
-                        appLog("[sceneCreateTextureSurfaces] loaded TPG for '%s' -> surf %08x", psz, surf);
-                    }
-                }
-                surfTab[i] = surf;
+                *pTab = surf;
                 if (surf == 0) return 0;
+                /* REPNE SCASB: walk to next NUL in packed list */
                 if (psz) {
                     size_t l = strlen(psz);
                     psz += l + 1;
                 }
-                created++;
-            }
-            (void)created;
+                pTab++;
+                i++;
+            } while (i < nSurfs);
         }
 
         if (nCount > 0) {

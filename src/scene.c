@@ -1066,18 +1066,15 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
             if (nPolyA > 0) {
                 for (int i = 0; i < nPolyA; i++) {
                     ushort *poly = *(ushort **)(pPolyA + i*4);
-                    int pTex = td->pC;   /* COLS: 4B color entries, meshDrawPoly uses *4 */
-                    int pPal = td->pTex; /* MAPI: 16B uv entries, meshDrawPoly uses *0x10 */
+                    int pTex = td->pC;
+                    int pPal = td->pTex;
                     if (!poly) continue;
-                    /* Guard: unrelocated small offset or null — skip both draw and sort to avoid gx fault */
-                    if ((unsigned)pTex < 0x10000U || (unsigned)pPal < 0x10000U) continue;
                     if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)pVerts, (int)pNormals, pTex, pPal);
                     else gxSortPushKey(poly, pVerts, pNormals, pTex, pPal);
                 }
             }
             nPolyB = *(int *)(pRender + 0x24);
             int pPolyB = *(int *)(pRender + 0x2c);
-            /* polyB set is variable-length records: base at pPolyB, for each of nPolyB entries skip __ftol vertex block already handled above (nPolyB==0 for characters, so empty) */
             if (nPolyB > 0) {
                 byte *base = (byte *)pPolyB;
                 for (int i = 0; i < nPolyB; i++) {
@@ -1086,7 +1083,6 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
                         ushort *poly = (ushort *)base;
                         int pTex2 = td->pC;
                         int pPal2 = td->pTex;
-                        if ((unsigned)pTex2 < 0x10000U || (unsigned)pPal2 < 0x10000U) continue;
                         if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)pVerts2, (int)pNormals2, pTex2, pPal2);
                         else gxSortPushKey(poly, pVerts2, pNormals2, pTex2, pPal2);
                         base += (poly[3] & 0xff) * (poly[0] & 0xff) + 4; /* stride */

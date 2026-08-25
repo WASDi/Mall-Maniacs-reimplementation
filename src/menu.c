@@ -599,13 +599,45 @@ void menuInit(int nRestartMode)
     gxClearScreen(1, 0);
     gxFlip();
 
-    /* First .tpg load installs the DirectDraw palette (gxLoadTexture
-     * @0x100019b0, first-call branch). MERGED00 shares the intro palette
-     * (249/256 entries), matching menuInit's ordering. */
-    if (gxLoadTpgFile("menu\\MERGED00.TPG") == 0) {
-        appLog("[assets] menu\\MERGED00.TPG missing");
-    } else {
-        appLog("[assets] MERGED00.TPG loaded (palette set)");
+    /* MERGED / END texture loops (menuInit @0x419c20). Original uses
+     * fmtSprintf -> fileReadRaw -> fmtSprintf -> gxLoadTexture(0,1,texName)
+     * -> memPoolFree. File path is "menu\\MERGED%02d.TPG" / "menu\\end\\END%02d.TPG"
+     * but the texture name registered with the driver is bare "MERGED%02d" /
+     * "END%02d" — TNAM entries are bare names, so gxCreateSurface("MERGED00")
+     * must find the bare name. First load (MERGED00) installs the DirectDraw
+     * palette. Faithful loops; no on-demand fallback. */
+    {
+        char filePath[64];
+        char texName[32];
+        int idx = 0;
+        while (1) {
+            snprintf(filePath, sizeof(filePath), "menu\\MERGED%02d.TPG", idx);
+            char *data = fileReadRaw(0, filePath);
+            if (data == NULL) break;
+            snprintf(texName, sizeof(texName), "MERGED%02d", idx);
+            gxLoadTexture(0, 1, texName, data, data + 0x10000);
+            memPoolFree(0, data);
+            idx++;
+            if (idx > 64) break;
+        }
+        if (idx == 0) appLog("[assets] menu\\MERGED00.TPG missing");
+        else appLog("[assets] MERGED00-%02d loaded (%d)", idx - 1, idx);
+    }
+    {
+        char filePath[64];
+        char texName[32];
+        int idx = 0;
+        while (1) {
+            snprintf(filePath, sizeof(filePath), "menu\\end\\END%02d.TPG", idx);
+            char *data = fileReadRaw(0, filePath);
+            if (data == NULL) break;
+            snprintf(texName, sizeof(texName), "END%02d", idx);
+            gxLoadTexture(0, 1, texName, data, data + 0x10000);
+            memPoolFree(0, data);
+            idx++;
+            if (idx > 64) break;
+        }
+        if (idx > 0) appLog("[assets] END00-%02d loaded (%d)", idx - 1, idx);
     }
 
     /* Six intro logos in the original order (menuInit @0x419c20 load block;
