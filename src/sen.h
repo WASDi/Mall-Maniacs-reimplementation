@@ -2,11 +2,11 @@
 #define SEN_H
 
 /* sen.h — SEN scene-file loader cluster (reimplementation of the maniac.exe
- * .SEN reading pipeline). Faithful to the Ghidra decompilation:
+ * .SEN reading pipeline). Faithful to the Ghidra decompilation/disassembly:
  *
- *   sceneLoadSen        @0x432320  open REV2 file, iterate chunks, fixup meshes
- *   senChunkParse       @0x432c00  chunk-tag dispatch for nested KEEP/TEMP data
- *   sceneMeshFixup      @0x4320f0  relocate mesh node pointer fields
+ *   sceneLoadSen               @0x432320  open REV2 file, iterate chunks, fixup meshes
+ *   senChunkParse              @0x432c00  chunk-tag dispatch for nested KEEP/TEMP data
+ *   sceneMeshFixup             @0x4320f0  relocate mesh node pointer fields
  *   sceneCreateTextureSurfaces @0x432260  bind texture ids to surfaces
  *
  * The .SEN format is: 4cc "REV2" + u32 total size, then a chain of chunk
@@ -15,12 +15,9 @@
  * list), TNAM (object name table), SUBO (sub-object data), COLS (collision),
  * MAPI (map geometry), TANI (text anim), KEEP/TEMP (contain nested chunks
  * parsed by senChunkParse), OBJI (object instances). For CHARACTERS.SEN only
- * MESH + EMAN chunks are present, so the scene-graph instantiation path does
- * not run (it is stubbed per Rebuild.md, out of scope for the menu preview).
- *
- * Rendering of the selected character is performed by the original scene
- * system (sceneNodeAllocChild / sceneryObjAlloc / anmLoad), not by this
- * loader cluster. */
+ * MESH + EMAN chunks are present; the full object-instantiation path is
+ * deferred and stubbed as sceneInstantiateObjects in stubs.c (out of scope
+ * for the menu preview per Rebuild.md / AGENTS.md). */
 
 #include <windows.h>
 
@@ -31,22 +28,26 @@
 int  sceneLoadSen(LPCSTR path, int *param_2);
 
 /* senChunkParse @0x432c00 — parse a chain of nested .sen chunk records
- * between pData and pDataEnd. Populates the mesh/object/name tables. */
+ * between pData and pDataEnd. Populates the mesh/object/name tables. Returns 1. */
 int  senChunkParse(byte *pData, byte *pDataEnd);
 
 /* sceneMeshFixup @0x4320f0 — relocate the pointer fields of a loaded mesh
- * node (param_1 = node base, param_2 = object-name table, param_3 =
- * &g_pMapGeom). */
-void sceneMeshFixup(int param_1, char param_2, int param_3);
+ * node. pMesh = node base (relocated MESH bytes = SceneObjTypeDef), pNames =
+ * object-name table, pMapGeom = &g_pMapGeom (NULL or pointer to map-geometry
+ * base; when non-null the +0x20/+0x28 and vertex fixups use it). */
+void sceneMeshFixup(int pMesh, void *pNames, int pMapGeom);
 
 /* sceneCreateTextureSurfaces @0x432260 — bind a list of texture ids to
- * surfaces (via gxCreateSurface). Returns 1 on success. */
+ * surfaces (via gxCreateSurface). pTexIdList is an array of 0x10-byte records
+ * where the first dword is the texture id; pszFilenames is a packed list of
+ * NUL-terminated names (one per unique id up to maxId+1). Returns 1 on success,
+ * 0 on gxCreateSurface failure. */
 int  sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames);
 
 /* --- mesh-table registry (shared with scene.c / scenNameToId) ---
  * g_pMeshTable holds 8-byte entries {char *name, void *pMeshData}; pMeshData is
  * the raw MESH chunk bytes, which are a serialized SceneObjTypeDef. */
-extern void *g_pMeshTable;
-extern int   g_nMeshTableCount;
+extern void *g_pMeshTable;      /* @0x45e930 */
+extern int   g_nMeshTableCount; /* @0x45e994 (count) / @0x45e944 alias in old map */
 
 #endif /* SEN_H */
