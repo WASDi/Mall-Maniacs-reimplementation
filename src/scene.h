@@ -132,7 +132,7 @@ typedef struct __attribute__((packed)) SceneNode {
  * repurposes a SceneNode (0xa8 bytes) as this block — fields at +0x20..+0x30
  * overlap SceneNode.nId/bType/pTypeDef region but sceneRender only reads
  * mode and the viewport fields. For type safety nWidth/nHeight are float. */
-typedef struct SceneCameraBlock {
+typedef struct __attribute__((packed)) SceneCameraBlock {
     short mode;         /* +0  == 2 */
     short unk2;
     int   unk4;

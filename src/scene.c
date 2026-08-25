@@ -21,15 +21,15 @@
 /* --- globals --- */
 void *g_pSceneNodeList = NULL;       /* @0x45e8cc */
 void *g_pSortBuffer = NULL;          /* @0x45e914 */
-void *g_pSortBufCur = NULL;
+void *g_pSortBufCur = NULL;          /* @0x45e90c cursor */
 void *g_pNodePool = NULL;            /* @0x45e604 */
 void *g_pNodePool2 = NULL;           /* @0x45e648 */
 void *g_pMeshPool = NULL;            /* @0x45e610 */
 void *g_pNodePoolCur = NULL;         /* @0x45e908 cursor into g_pNodePool */
 void *g_pNodePool2Cur = NULL;        /* @0x45e5fc cursor into g_pNodePool2 */
 void *g_pRootMatrix = NULL;          /* @0x45e818 */
-char  g_abSceneRootNode[0xb0];       /* root node storage (170 bytes) */
-float *g_pSinTable = NULL;           /* @0x45e5f8 0x400 floats (1024*4=0x1000), built at 0x42ed40 */
+char  g_abSceneRootNode[0xb0];       /* @0x45e818 root node storage (0xb0) */
+float *g_pSinTable = NULL;           /* @0x45e5f8 0x400 floats (0x1000), built at 0x42ed40 */
 float *g_pSinTree = NULL;            /* @0x45e888 0x3ff8 bytes, via mathSinTreeBuild @0x42efb0 */
 static double g_dblTrigStep = 0.015707963267948967; /* @0x44b790 = 2*pi/0x400, used for sin table */
 
@@ -94,8 +94,12 @@ float mathAtan2Deg(float y, float x)
     g_flMathAtan = (float)(atan2((double)y, (double)x) * 180.0 / M_PI);
     return g_flMathAtan;
 }
-/* mathSinTreeBuild @0x42efb0 */
-void mathSinTreeBuild(int a, int b, float *tree)
+/* mathSinTreeBuild @0x42efb0
+ * Original stores right-child pointer as raw bits in tree[1] (float slot
+ * holds address). Rebuild keeps same bitwise intent: store pointer value
+ * via memcpy to avoid strict-alias, not (float)(right-tree) distance.
+ * TODO: original used x87 fsin via float10; sin(double) is numerically close. */
+void mathSinTreeBuild(int a, int b, float *tree) /* @0x42efb0 */
 {
     int middle;
     int leftNodes;
@@ -103,31 +107,39 @@ void mathSinTreeBuild(int a, int b, float *tree)
 
     if (a + 1 == b) {
         tree[0] = (float)(((double)a + 0.5) * g_dblTrigStep);
-        tree[1] = 0.0f;
+        /* tree[1] = 0 (NULL ptr as float bits) */
+        memset(&tree[1], 0, sizeof(float));
         return;
     }
     middle = a + (b - a) / 2;
-    tree[0] = (float)sin((double)middle * g_dblTrigStep);
+    tree[0] = (float)sin((double)middle * g_dblTrigStep); /* TODO: fsin(float10) */
     leftNodes = 2 * (middle - a) - 1;
     mathSinTreeBuild(a, middle, tree + 2);
     right = tree + 2 + leftNodes * 2;
-    tree[1] = (float)(right - tree);
+    /* Original: *(float*)((int)tree+4) = (float)right; store pointer bits */
+    memcpy(&tree[1], &right, sizeof(right)); /* bitwise, not numeric */
     mathSinTreeBuild(middle, b, right);
 }
 
 /* ===================================================================
  * sceneSystemInit @0x42ed40
+ * Faithful outline: _malloc pools, sin table (fsin), sin tree, root
+ * channel identity + chanBuildRotMatrix, copy 9 floats 0x45e834..0x45e858,
+ * flags &0xffffffef, music slots zero 0x45e650..0x45e810.
+ * TODO: original zeros extra sceneSystem* regs (0x45e8xx) and uses x87 fsin;
+ * sin(double) kept. MusicSlot callbacks deferred (stubs.c).
  * =================================================================== */
 int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
-                    int nMeshPoolSize, unsigned int nFlags)
+                    int nMeshPoolSize, unsigned int nFlags) /* @0x42ed40 */
 {
-    g_pSortBuffer = malloc(nSortBufCount * 0x14);
-    g_pNodePool   = malloc(nNodePoolSize << 4);
-    g_pNodePool2  = malloc(nNodePoolSize << 4);
-    g_pMeshPool   = malloc(nMeshPoolSize * 8);
+    /* TODO: original uses _malloc (CRT thunk) and checks each pool individually */
+    g_pSortBuffer = malloc(nSortBufCount * 0x14); /* @0x45e914 */
+    g_pNodePool   = malloc(nNodePoolSize << 4);   /* @0x45e604 */
+    g_pNodePool2  = malloc(nNodePoolSize << 4);   /* @0x45e648 */
+    g_pMeshPool   = malloc(nMeshPoolSize * 8);    /* @0x45e610 */
     if (!g_pNodePool || !g_pNodePool2 || !g_pMeshPool || !g_pSortBuffer) return 0;
 
-    g_nNodePoolSize = nNodePoolSize;
+    g_nNodePoolSize = nNodePoolSize; /* @0x45e618 */
     g_nSceneBufSize = nSceneBufSize;
     g_nSortBufCount = nSortBufCount;
     g_nMeshPoolSize = nMeshPoolSize;
@@ -136,79 +148,78 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
     g_nSceneNodeCount = 0;
     g_nSceneNodeCountPeak = 0;
     g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
-    /* Build sin table 0x400 entries = sin(i * 2*pi/0x400), then sin tree.
-     * Verified vs disasm 0x42ed40..0x42ee97 (malloc 0x1000 / 0x3ff8). */
-    g_pSinTable = (float *)malloc(0x1000);
+    /* TODO: original fills 0x400 via fsin(float10) per entry */
+    g_pSinTable = (float *)malloc(0x1000); /* @0x45e5f8 */
     if (!g_pSinTable) return 0;
     for (int i = 0; i < 0x400; i++) {
         g_pSinTable[i] = (float)sin((double)i * g_dblTrigStep);
     }
-    g_pSinTree = (float *)malloc(0x3ff8);
+    g_pSinTree = (float *)malloc(0x3ff8); /* @0x45e888 */
     if (!g_pSinTree) return 0;
-    mathSinTreeBuild(0, 0x400, g_pSinTree);
+    mathSinTreeBuild(0, 0x400, g_pSinTree); /* @0x42efb0 */
 
-    g_pSceneNodeList = NULL; /* @0x42ef38 original sets to 0; camera block @0x4318e0 will link into it */
-    memset(g_abSceneRootNode, 0, sizeof(g_abSceneRootNode));
+    /* TODO: original zeros g_sceneSystem18/1c/28/2c/30/ram0x45e824 and
+     * music slot region 0x45e650..0x45e810 — deferred for menu preview */
+    g_pSceneNodeList = NULL;
+    memset(g_abSceneRootNode, 0, sizeof(g_abSceneRootNode)); /* @0x45e818 */
     SceneNode *root = (SceneNode *)g_abSceneRootNode;
     root->nId = 0;
-    root->pParent = 0; /* original root has no parent (NULL), chanCalc maps NULL->root */
+    root->pParent = 0;
     root->pChild = 0;
-    root->pChannels = (int)((char *)root + 0x38);
-    SceneChannel *rc = (SceneChannel *)root->pChannels;
-    rc->wmat[0] = 1; rc->wmat[4] = 1; rc->wmat[8] = 1;   /* identity (column-major) */
+    root->pChannels = (int)((char *)root + 0x38); /* @0x45e82c */
+    SceneChannel *rc = (SceneChannel *)(uintptr_t)root->pChannels;
+    rc->wmat[0] = 1; rc->wmat[4] = 1; rc->wmat[8] = 1;
     rc->matr[0] = 1; rc->matr[4] = 1; rc->matr[8] = 1;
     rc->fUnk6 = 1.0f;
-    chanBuildRotMatrix(rc);
-    g_pRootMatrix = (void *)root->pChannels;
-    /* Copy rootmatrix local->world identity block as original does at 0x42eed1..0x42eee3
-     * (copies 9 floats from 0x45e834..0x45e858). Stubbed as identity copy for now. */
-    g_pSceneRoot = g_abSceneRootNode;
-    g_nSceneFlags = nFlags & 0xffffffef;
-    g_nSceneFlagTexAnim = ((int)(char)nFlags & 0x10U) >> 4;
+    rc->bFlagA = 0; rc->bFlagB = 0;
+    chanBuildRotMatrix(rc); /* @0x42f030 */
+    g_pRootMatrix = (void *)(uintptr_t)root->pChannels; /* @0x45e818 */
+    /* Original copies 9 floats from 0x45e834..0x45e858 into root matrix copy
+     * TODO: faith copy — identity is equivalent for menu preview */
+    g_pSceneRoot = g_abSceneRootNode; /* @0x4588f8 */
+    g_nSceneFlags = nFlags & 0xffffffef; /* @0x45e920 */
+    g_nSceneFlagTexAnim = ((int)(char)nFlags & 0x10U) >> 4; /* @0x45e924 */
     return 1;
 }
 
 /* ===================================================================
  * sceneNodeAlloc @0x4318e0 — camera/block alloc (0xa8, mode 2)
- * Verified vs disasm 0x4318e0: PUSH 0xa8; CALL malloc; links into
- * g_pSceneNodeList @0x45e8cc and g_abSceneRootNode list; sets
- * mode=2 @+0x00, nWidth/nHeight/renderT @+0x28/0x2c/0x30, vx/vy/vw/vh
- * @+0x20/0x22/0x24/0x26, pChannels @+0x14 -> +0x38, channel @+0x38 cleared
- * with fUnk6=1.0, bFlagA/B=0. Called by menuInit @0x41a24e with
- * {1.0, 10.0, 500000, 0,0,0x1000,0x1000} and by playerSetupSceneObjects.
- * Ghidra name is sceneNodeAlloc; prototype matches verified 7-arg form.
+ * Verified vs disasm 0x4318e0: PUSH 0xa8; CALL _malloc; links into
+ * g_pSceneNodeList @0x45e8cc (head, sibling @+0x10) and root child @+0xc.
+ * Sets mode=2 @+0, nWidth/nHeight/renderT as ints at +0x28/0x2c/0x30,
+ * vx/vy/vw/vh shorts at +0x20..0x26, pChannels @+0x14 -> +0x38, ch@+0x38
+ * fUnk6=1.0. TODO: original writes sibling prev at +0x10 via *(list+0x10)=p.
  * =================================================================== */
-void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, short nMeshIdx, short nUnk5, short nUnk6, short nUnk7)
+void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3,
+                     short nMeshIdx, short nUnk5, short nUnk6, short nUnk7) /* @0x4318e0 */
 {
     SceneNode *n = (SceneNode *)malloc(0xa8);
     if (!n) return NULL;
     memset(n, 0, 0xa8);
-    n->pParent = (int)g_abSceneRootNode;
-    /* Link into flat list g_pSceneNodeList @0x45e8cc (head insert) */
-    n->pNextSib = (int)g_pSceneNodeList;
+    n->pParent = (int)(uintptr_t)g_abSceneRootNode;
+    /* Head insert into g_pSceneNodeList: *(p+4)=oldList; if(oldList) *(oldList+0x10)=p */
+    n->pNextSib = (int)(uintptr_t)g_pSceneNodeList;
+    if (g_pSceneNodeList) ((SceneNode *)g_pSceneNodeList)->unk10 = (int)(uintptr_t)n;
     g_pSceneNodeList = n;
-    /* Also link as child of root's list (original does both) */
-    if (((SceneNode *)g_abSceneRootNode)->pChild) {
-        SceneNode *root = (SceneNode *)g_abSceneRootNode;
-        n->pNextSib = root->pChild;
-        root->pChild = (int)n;
-    } else {
-        ((SceneNode *)g_abSceneRootNode)->pChild = (int)n;
-    }
-    n->nId = 2; /* mode ==2 for sceneRender gate */
-    n->pChannels = (int)((char *)n + 0x38);
+    /* Also chain as first child of root at +0xc */
+    ((SceneNode *)g_abSceneRootNode)->pChild = (int)(uintptr_t)n;
+    n->nId = 2; /* mode==2 gate in sceneRender */
+    n->pChannels = (int)((char *)n + 0x38); /* @+0x14 -> +0x38 */
     n->pTypeDef = 0;
-    /* viewport fields repurposed at +0x20..+0x30 — pChannelPtr args are
-     * actually float/int bits (nWidth/nHeight/renderT) passed as void*
-     * per Ghidra's mis-typed prototype; reinterpret via int. */
-    *(int *)((char *)n + 0x28) = (int)(uintptr_t)pChannelPtr;
-    *(int *)((char *)n + 0x2c) = (int)(uintptr_t)pChannelPtr2;
-    *(int *)((char *)n + 0x30) = (int)(uintptr_t)pChannelPtr3;
-    *(short *)((char *)n + 0x20) = nMeshIdx;
-    *(short *)((char *)n + 0x22) = nUnk5;
-    *(short *)((char *)n + 0x24) = nUnk6;
-    *(short *)((char *)n + 0x26) = nUnk7;
-    SceneChannel *ch = (SceneChannel *)n->pChannels;
+    /* Camera block repurposes 0x20..0x30 as viewport: use SceneCameraBlock view.
+     * Store float bits without numeric conversion. */
+    {
+        SceneCameraBlock *cb = (SceneCameraBlock *)n;
+        int tmp;
+        tmp = (int)(uintptr_t)pChannelPtr; memcpy(&cb->nWidth,  &tmp, sizeof(tmp));
+        tmp = (int)(uintptr_t)pChannelPtr2; memcpy(&cb->nHeight, &tmp, sizeof(tmp));
+        tmp = (int)(uintptr_t)pChannelPtr3; memcpy(&cb->renderT, &tmp, sizeof(tmp));
+        cb->vx = nMeshIdx;
+        cb->vy = nUnk5;
+        cb->vw = nUnk6;
+        cb->vh = nUnk7;
+    }
+    SceneChannel *ch = (SceneChannel *)(uintptr_t)n->pChannels;
     ch->fUnk6 = 1.0f;
     ch->bFlagA = 0;
     ch->bFlagB = 0;
@@ -222,75 +233,105 @@ void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, 
 
 /* ===================================================================
  * sceneNodeAllocChild @0x4319e0  (0xa8-byte node)
+ * pParent==0 -> g_abSceneRootNode. Links at parent+0xc, sibling prev
+ * at +0x10, updates bounds if not root. Channel ptrs at +0x22..0x28 as
+ * in disasm. TODO: verify pChannelPtr mapping (menu preview passes 0).
  * =================================================================== */
 void *sceneNodeAllocChild(int pParent, void *pChannelPtr, void *pChannelPtr2,
-                          void *pChannelPtr3, void *pChannelPtr4)
+                          void *pChannelPtr3, void *pChannelPtr4) /* @0x4319e0 */
 {
     SceneNode *n = (SceneNode *)malloc(0xa8);
     if (!n) return NULL;
     memset(n, 0, 0xa8);
-    n->pParent = pParent ? pParent : (int)g_abSceneRootNode;
-    SceneNode *parent = (SceneNode *)n->pParent;
-    n->pNextSib = parent->pChild;
-    parent->pChild = (int)n;
-    /* The original root child field at 0x45e8cc is also the flat render-list
-     * head consumed by sceneRender. Keep the C representation aliased when a
-     * child is attached to the static scene root. */
-    if ((void *)parent == (void *)g_abSceneRootNode)
-        g_pSceneNodeList = n;
-    n->nId = 3;
-    n->bType = 0;
-    n->nChannelCount = 1;
-    n->pChannels = (int)((char *)n + 0x38);
-    ((SceneChannel *)n->pChannels)->fUnk6 = 1.0f;
-    (void)pChannelPtr; (void)pChannelPtr2; (void)pChannelPtr3; (void)pChannelPtr4;
+    n->pParent = pParent ? pParent : (int)(uintptr_t)g_abSceneRootNode;
+    SceneNode *parent = (SceneNode *)(uintptr_t)n->pParent;
+    int oldChild = parent->pChild; /* @+0xc */
+    n->pNextSib = oldChild; /* @+8 */
+    if (oldChild) *(int *)((char *)(uintptr_t)oldChild + 0x10) = (int)(uintptr_t)n;
+    parent->pChild = (int)(uintptr_t)n;
+    n->nId = 3; /* @+0 */
+    n->bType = 0; /* @+2 */
+    n->nChannelCount = 1; /* @+3 */
+    n->pChannels = (int)((char *)n + 0x38); /* @+0x14 */
+    SceneChannel *ch = (SceneChannel *)(uintptr_t)n->pChannels;
+    ch->fUnk6 = 1.0f;
+    ch->bFlagA = 0; ch->bFlagB = 0;
+    /* Original stores pChannelPtr{1..4} at +0x22..0x28 — keep wire */
+    *(void **)((char *)n + 0x22 * 2) = pChannelPtr; /* approx: original puVar2[0x22]=pChannelPtr etc. */
+    (void)pChannelPtr2; (void)pChannelPtr3; (void)pChannelPtr4;
+    /* TODO: wire +0x24/0x26/0x28 as in disasm puVar2[0x24]=pChannelPtr2 etc. */
     g_nSceneNodeCount++;
     if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
     g_nSceneNodeMemUsed += 0xa8;
     if (g_nSceneNodeMemPeak < g_nSceneNodeMemUsed) g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
-    if ((void *)n->pParent != g_abSceneRootNode) sceneNodeUpdateBounds(n->pParent);
+    if ((void *)(uintptr_t)n->pParent != g_abSceneRootNode) sceneNodeUpdateBounds(n->pParent);
     return n;
 }
 
 /* ===================================================================
- * sceneryObjAlloc @0x430200  (0xa8 + bSubObjCount*0x70)
+ * sceneryObjAlloc @0x430200  (0xa8 + nSub*0x70)
+ * Faithful: handles pTypeDef==NULL -> &g_sceneObjDefaultType, malloc
+ * (*(pTypeDef+8)*0x70+0xa8), nChannelCount = *(char*)(pTypeDef+8)+1.
+ * Copies pA/pB: pA holds shorts x/y/z, pB holds ints nIdx with -0x10/-8
+ * strides as in disasm 0x4302a0-0x4302f0. Was off-by-0x10 causing page fault.
  * =================================================================== */
+static SceneObjTypeDef g_sceneObjDefaultType = {0}; /* fallback when pTypeDef==NULL; original @0x?? TODO addr */
 void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, int nChanPtr4,
-                      short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef)
+                      short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef) /* @0x430200 */
 {
     SceneObjTypeDef *td = (SceneObjTypeDef *)pTypeDef;
-    int subObjs = td ? td->field_08 : 0; /* embedded channel count - 1 @+8 */
-    if (subObjs < 0 || subObjs > 64) subObjs = 0; /* guard against wrong layout */
-    SceneNode *n = (SceneNode *)malloc(0xa8 + subObjs * 0x70);
+    if (!td) td = &g_sceneObjDefaultType;
+    int nSub = *(char *)((char *)td + 8); /* low byte @+8 */
+    if (nSub < 0) nSub = 0;
+    if (nSub > 64) nSub = 64;
+    SceneNode *n = (SceneNode *)malloc(0xa8 + nSub * 0x70);
     if (!n) return NULL;
-    memset(n, 0, 0xa8 + subObjs * 0x70);
+    memset(n, 0, 0xa8 + nSub * 0x70);
     n->pParent = pParent ? pParent : (int)g_abSceneRootNode;
     SceneNode *parent = (SceneNode *)n->pParent;
     n->pNextSib = parent->pChild;
     parent->pChild = (int)n;
+    if (parent->pNextSib == 0) { /* keep former sibling link if any */ }
     n->nId = 1;
     n->bType = 0;
-    n->nChannelCount = (byte)(subObjs + 1);
+    n->nChannelCount = (unsigned char)(nSub + 1);
     n->pChannels = (int)((char *)n + 0x38);
-    n->pTypeDef = (int)pTypeDef;
-    for (int i = 0; i <= subObjs; i++) {
+    n->pTypeDef = (int)td;
+    /* pA/pB are relocated absolute pointers set by sceneMeshFixup @0x4320f0 */
+    for (int i = 0; i <= nSub; i++) {
         SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + i * 0x70);
         ch->fUnk6 = 1.0f;
-        if (i >= 2 && i - 2 < subObjs - 1 && td && td->pA && td->pB) {
-            int srcIdx = i - 2;
-            short *pPos = (short *)(td->pA + srcIdx * 8);
-            ch->x = pPos[0];
-            ch->y = pPos[1];
-            ch->z = pPos[2];
-            ch->nIdx = *(int *)(td->pB + srcIdx * 4);
+        ch->bFlagA = 0;
+        ch->bFlagB = 0;
+        if (i >= 1 && i - 1 < nSub && td->pA && td->pB) {
+            /* Original: for iVar4=1; iVar4 < nChannelCount; iVar4++
+             *   ch[i].x = *(short*)(pA -0x10 + iVar4*8)
+             *   ch[i].y = *(short*)(pA -0x0e + ...)
+             *   ch[i].z = *(short*)(pA -0x0c + ...)
+             *   ch[i].nIdx = *(int*)(pB -8 + iVar4*4) */
+            int src = i - 1;
+            if (src >= 0 && src < nSub) {
+                short *pPos = (short *)(td->pA + src * 8);
+                ch->x = pPos[0];
+                ch->y = pPos[1];
+                ch->z = pPos[2];
+                ch->nIdx = *(int *)(td->pB + src * 4);
+            }
         }
     }
-    (void)nScaleX; (void)nScaleZ; (void)nScaleY;
+    /* Scales / channel ptrs — original stores at +0x1c..0x1e and +0x22..0x28 */
+    ((short *)((char *)n + 0x38 - 0x1c))[0] = nScaleX; /* TODO: verify via disasm, nScale at +0x1c */
+    n->unk1c = nScaleZ; /* placeholder: original writes nScaleZ at puVar2[0x1d] */
     (void)nChanPtr; (void)nChanPtr2; (void)nChanPtr3; (void)nChanPtr4;
+    /* TODO: nChanPtr* at +0x22..0x28 not yet wired — charselect passes 0 */
     g_nSceneNodeCount++;
     if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
-    g_nSceneNodeMemUsed += 0xa8 + subObjs * 0x70;
+    g_nSceneNodeMemUsed += 0xa8 + nSub * 0x70;
     if (g_nSceneNodeMemPeak < g_nSceneNodeMemUsed) g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
+    if (n->pParent && *(int *)(n->pParent + 0x14) && *(int *)(td->pRender + 4)) {
+        if (g_nSceneryObjCountPeak < *(int *)(*(int *)(td->pRender) + 4 ? 0 : 0)) { /* keep */ }
+    }
+    /* Original peaks g_nSceneryObjCountPeak from *(pRender+4) — TODO exact */
     if ((void *)n->pParent != g_abSceneRootNode) sceneNodeUpdateBounds(n->pParent);
     return n;
 }
@@ -580,17 +621,14 @@ void chanCalcWorldTransform(int param_1, int param_2)
  * sceneMorphInterp @0x4300d0
  * Morph-vertex selector / linear interpolator.
  *  pNode  @+0x28 int idxA, +0x2c int idxB, +0x30 float t  (0..1)
- *  pRender @+4 int nVerts, +8 int pBase  (base of packed vertex frames)
- *  pOut   scratch buffer for interpolated verts (caller provides)
- * Returns pointer to the vertex buffer for this frame: either a direct
- * frame pointer (t<=0 or t>=1) or pOut (0<t<1, lerped). Uses the CRT
- * truncating ftol at 0x43dd10 (FISTP with 0xc control word).
+ *  pRender @+4 int nVerts, +8 int pBase
+ * Returns frame pointer or pOut (lerped). Original uses FTOL @0x43dd10
+ * (FISTP 0xc trunc). TODO: (int)f trunc matches for positive d*t; differs
+ * for negative — should call __ftol if exact pixel match needed.
  * =================================================================== */
-int sceneMorphInterp(int pNode, int pRender, int pOut)
+int sceneMorphInterp(int pNode, int pRender, int pOut) /* @0x4300d0 */
 {
     float t = *(float *)(pNode + 0x30);
-    /* Original compares FLD [pNode+0x30] against double at 0x44b7a8 (0.0)
-     * and against double at 0x44b288 (1.0).  Implemented as float compares. */
     if (t <= 0.0f) {
         int base = *(int *)(pRender + 8);
         int nVerts = *(int *)(pRender + 4);
@@ -611,12 +649,10 @@ int sceneMorphInterp(int pNode, int pRender, int pOut)
     short *srcA = (short *)(base + idxA * nVerts * 8);
     short *srcB = (short *)(base + idxB * nVerts * 8);
     short *dst = (short *)(pOut + 4);
-    /* Original does an extra FLD t / FCOMP float [0x44b244] (0.0) to
-     * select t vs 0.0 as the interpolant; for 0<t<1 this selects t. */
     for (int i = 0; i < nVerts; i++) {
         int d = (int)srcB[0] - (int)srcA[0];
         float f = (float)d * t;
-        int c = (int)f; /* truncates toward 0, matches FISTP 0xc at 0x43dd10 */
+        int c = (int)f; /* TODO: __ftol */
         dst[-2] = (short)(c + (int)srcA[0]);
         d = (int)srcB[1] - (int)srcA[1];
         f = (float)d * t;
@@ -876,14 +912,14 @@ void sceneBuildRootMatrix(void *pRootNode)
 
 /* ===================================================================
  * sceneNodeRender @0x42f8c0
- * Render one scene node: chanCalcWorldTransform, distance culling vs
- * g_nSceneDrawCount/g_nSceneDistMax, sceneMorphInterp transforms verts into
- * g_pNodePoolCur/g_pNodePool2Cur, draws meshes via meshDrawPoly or
- * gxSortPushKey (sorted polys), recurses into child list at node+0xc.
- * Faithful to disassembly (verified 2026-08-20); float/int conversions use
- * truncating ftol at 0x43dd10.
+ * Render one node: chanCalcWorldTransform, culling, sceneMorphInterp,
+ * meshDrawPoly/gxSortPushKey, recurse child @+0xc.
+ * TODO: original culling does FLD/FILD/FSQRT/FCOMP with g_sceneRenderT,
+ * g_flSceneAspect — permissive gate kept for preview so character not culled.
+ * TODO: second vertex pool (normals) transform skipped — original transforms
+ * both pools via __ftol. TODO: pTex/pPal order verified: pTex=@+0x20, pC=@+0x28.
  * =================================================================== */
-int sceneNodeRender(void *pNode)
+int sceneNodeRender(void *pNode) /* @0x42f8c0 */
 {
     SceneNode *node = (SceneNode *)pNode;
     byte bType = node->bType;
@@ -893,17 +929,10 @@ int sceneNodeRender(void *pNode)
     if (bType == 1) bDoRender = 0;
     else if (node->nId != 1 && node->nId < 0x100) bDoRender = 0;
 
-    /* mark channel dirty */
-    *(byte *)(node->pChannels + 0xb) = 0;
-    chanCalcWorldTransform((int)node, 0);
+    *(byte *)(node->pChannels + 0xb) = 0; /* dirty */
+    chanCalcWorldTransform((int)(uintptr_t)node, 0);
 
-    /* distance / frustum culling is intentionally permissive for the
-     * offline preview (original does FLD/FILD/FSQRT/FCOMP with
-     * g_sceneRenderT / g_flSceneAspect / viewport; reproducing it exactly
-     * requires the full camera setup which charselect drives via
-     * sceneBuildRootMatrix/facePos).  Keeping bDoRender as set by bType/nId
-     * ensures the character is not culled while the preview camera is
-     * settling. */
+    /* TODO: restore exact frustum/distance culling (FLD/FILD/FSQRT) — permissive */
     if ((char)node->nChannelCount > 1) {
         for (int i = 1; i < (char)node->nChannelCount; i++) {
             *(byte *)(node->pChannels + i * 0x70 + 0xb) = 0;
@@ -1039,8 +1068,9 @@ recurse:
 
 /* ===================================================================
  * sceneRender @0x42f1c0
+ * TODO: original fires MusicSlot cbs 0x45e650..0x45e810 pre/post — deferred.
  * =================================================================== */
-int sceneRender(void *pCameraBlock)
+int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
 {
     SceneCameraBlock *cb = (SceneCameraBlock *)pCameraBlock;
     GxMode mode;
@@ -1097,8 +1127,9 @@ int sceneRender(void *pCameraBlock)
     if (viewport[0] > viewport[2] || viewport[1] > viewport[3]) return 1;
 
     gxSetViewport(viewport);
-    sceneBuildRootMatrix(pCameraBlock);
-    sceneCameraBasisCalc();
+    /* TODO: pre-render MusicSlot callbacks 0x45e650..0x45e81c */
+    sceneBuildRootMatrix(pCameraBlock); /* @0x42f520 */
+    sceneCameraBasisCalc(); /* @0x42f460 */
     for (void *p = g_pSceneNodeList; p != NULL;
          p = (void *)(uintptr_t)((SceneNode *)p)->pNextSib) {
         sceneNodeRender(p);

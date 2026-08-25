@@ -108,21 +108,32 @@ __attribute__((weak)) int stateLevelSelect(int nType,int nKey,int nKeyType)
     return 0;
 }
 
-/* Minimal player-record shape for the OK transition (original writes the
- * selected char idx to g_playerRecords[0] @0x456360 (offset 0), and
- * g_nLocalPlayerIdx @0x458104). Reuse the real globals if defined
- * elsewhere; otherwise define weak stubs. */
-struct PlayerSlot {
-    int nCharIdx; /* @0x456360 — first dword of player 0 holds selected char idx */
-    unsigned char _pad[0x336 - sizeof(int)];
-};
-extern struct PlayerSlot g_playerRecords[]; /* @0x456360 */
-extern int g_nLocalPlayerIdx;               /* @0x458104 */
+/* Player record — faithful packed 0x374 stride per Ghidra PlayerRecord @0x456210.
+ * 8 records × 0x374 (884B) with alignment 1; g_apPlayers @0x456360 is the
+ * player view at record+0x150. The MOV [0x456360],EAX in stateCharSelectOk
+ * @0x41ef78 and the ADD ECX,0x374 strides in playerSetupCharacters @0x41b76f
+ * @0x41b7b5 prove the stride. Keep the original packed(1) layout so future
+ * MString/int mixing does not introduce MSVC pad. */
+typedef struct __attribute__((packed)) PlayerRecord {
+    unsigned char _pad0[0x150]; /* +0x00 SceneObject part (0x150 bytes) */
+    int nCharIdx;               /* +0x150 @0x456360 g_apPlayers[0] offset 0 — MOV [0x456360],EAX */
+    unsigned char _pad1[0x374 - 0x150 - sizeof(int)]; /* +0x154..0x373 remainder */
+} PlayerRecord; /* 0x374 (884) — Ghidra PlayerRecord */
+typedef struct PlayerSlot { /* alias kept for stale externs */
+    int nCharIdx;
+    unsigned char _pad[0x374 - sizeof(int)];
+} PlayerSlot;
+extern PlayerRecord g_playerRecords[]; /* @0x456210 base, 8×0x374 */
+extern int g_nLocalPlayerIdx;          /* @0x458104 */
 #ifndef PLAYER_RECORDS_DEFINED
 /* Provide weak definitions when gameflow not linked yet. */
-struct PlayerSlot g_playerRecords[4] = {0};
+PlayerRecord g_playerRecords[8] = {0};
 int g_nLocalPlayerIdx = 0;
 #endif
+_Static_assert(sizeof(PlayerRecord) == 0x374, "PlayerRecord must be 0x374");
+_Static_assert(sizeof(PlayerSlot) == 0x374, "PlayerSlot alias must be 0x374");
+_Static_assert(__builtin_offsetof(PlayerRecord, nCharIdx) == 0x150,
+               "nCharIdx must be at +0x150 (g_apPlayers view)");
 
 /* textDrawMixedCase @0x41ffc0 — lower-case a-z and å/ä/ö (0xe5/0xe4/0xf6)
  * in the small 200-font, others in the large 200-font. Advances x per token. */
