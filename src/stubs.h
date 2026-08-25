@@ -11,10 +11,9 @@
  * target/address noted where one exists.
  * ===================================================================== */
 
-/* gameInit @0x409d90 — full game initialization (level config, scene system,
- * sound, networking). Ghidra signature: void(void). Contract:
- * replacement is a logged no-op; it does not initialize state or claim
- * success. TODO: not implemented for the vertical slice. */
+/* gameInit @0x409d90 — now implemented in src/game.c (GX path + guard).
+ * Original full init also handled player records, file XOR, config, etc.
+ * — those sub-blocks are intentionally deferred (see game.c). */
 void gameInit(void);
 
 /* Main-menu row targets (menu.c dispatch table g_kMenuRowTarget, entered

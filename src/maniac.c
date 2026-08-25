@@ -4,7 +4,8 @@
 #include "input.h"
 #include "custom_helpers.h"
 #include "menu.h"
-#include "stubs.h"
+#include "options.h"
+void gameInit(void); /* @0x409d90 — defined in game.c */
 
 /* =====================================================================
  * Mall Maniacs (maniac.exe) replacement — main translation unit. Compiled
@@ -19,7 +20,7 @@
  * ===================================================================== */
 
 HWND      g_hWnd;          /* maniac g_hMainWindow @0x459ce0 */
-static HINSTANCE g_hInstance;     /* maniac g_hAppInstance @0x459cdc */
+HINSTANCE g_hAppInstance;        /* maniac g_hAppInstance @0x459cdc */
 static int       g_bRunning = 1;  /* rebuild loop state; no original global */
 
 /* WindowProc @0x4161b0 — narrowed to close/escape for the slice. The
@@ -95,7 +96,7 @@ static int initWindowAndInput(int nShowCmd)
     wc.cbSize        = sizeof(WNDCLASSEXA);
     wc.style         = CS_HREDRAW | CS_VREDRAW;  /* original style = 3 */
     wc.lpfnWndProc   = WindowProc;
-    wc.hInstance     = g_hInstance;
+    wc.hInstance     = g_hAppInstance;
     wc.hCursor       = LoadCursorA(NULL, (LPCSTR)IDC_ARROW);
     wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     wc.lpszClassName = kClassName;
@@ -109,7 +110,7 @@ static int initWindowAndInput(int nShowCmd)
      * Create a fixed 640x480 window for the slice. */
     g_hWnd = CreateWindowExA(0, kClassName, "Mall Maniacs",
                              0xcf0000, 0, 0, 640, 480,
-                             NULL, NULL, g_hInstance, NULL);
+                             NULL, NULL, g_hAppInstance, NULL);
     if (g_hWnd == NULL) {
         appLog("[init] CreateWindowExA failed: %lu", (unsigned long)GetLastError());
         return 0;
@@ -122,7 +123,8 @@ static int initWindowAndInput(int nShowCmd)
 
 /* WinMain @0x4160a0 — simplified: window, driver, state loop (intro
  * timeline then main menu), clean close. The original calls gameInit @0x409d90
- * which handles gxLoadDriver, gxInit, and menuInit. */
+ * which handles gxLoadDriver + gxInit (menuInit is entered lazily from
+ * gameFrameUpdate @0x41a8c0). */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nShowCmd)
 {
@@ -131,7 +133,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     (void)hPrevInstance;
     (void)lpCmdLine;
 
-    g_hInstance = hInstance;
+    g_hAppInstance = hInstance;
     appLog("[winmain] === start ===");
 
     if (!initWindowAndInput(nShowCmd)) {
@@ -140,12 +142,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
 
     /* gameInit @0x409d90 — original WinMain calls this; it handles
-     * gxLoadDriver, gxInit, and menuInit. */
+     * gxLoadDriver + gxInit (NOT menuInit — menuInit is entered lazily
+     * from gameFrameUpdate/dispatchKeyEvent). */
     gameInit();
-    if (g_pStateFunc == NULL) {
-        appLog("[winmain] gameInit / state setup failed");
-        goto out;
-    }
+    appLog("[winmain] gameInit done (gfxMode=%d)", g_nGfxMode);
+    /* State is not set by gameInit; first frame's gameFrameUpdate will
+     * call menuInit(0) lazily as in the original. */
     appLog("[winmain] running intro timeline (6 logos)");
 
     /* Message loop + frame update — the idle path mirrors the original
@@ -170,7 +172,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     appLog("[winmain] exiting cleanly");
 
-out:
     if (g_hWnd != NULL) {
         HWND hWnd = g_hWnd;
         g_hWnd = NULL;
