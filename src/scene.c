@@ -73,26 +73,28 @@ float g_sceneCameraBasis_7 = 0.0f;
 /* trig result globals (used by callers that read the FPU result) */
 static float g_flMathSin = 0.0f;
 static float g_flMathCos = 0.0f;
-static float g_flMathAtan = 0.0f;
+static const float g_flMatrixBlend = 0.5f; /* @0x44b274 */
 
 /* The original mathSinDeg/mathCosDeg/mathAtan2Deg fold the degree->radian
  * multiply (by the double constant at 0x44b788 / 0x44b780 = M_PI/180) directly
  * into the FPU op; the deg2rad step is inlined here, not a separate function. */
 static const double g_dblDegToRad = M_PI / 180.0;  /* @0x44b788 / @0x44b780 */
+/* mathSinDeg @0x42d030 */
 float mathSinDeg(short d)
 {
     g_flMathSin = (float)sin((double)d * g_dblDegToRad);
     return g_flMathSin;
 }
+/* mathCosDeg @0x42d050 */
 float mathCosDeg(short d)
 {
     g_flMathCos = (float)cos((double)d * g_dblDegToRad);
     return g_flMathCos;
 }
-float mathAtan2Deg(float y, float x)
+/* mathAtan2Deg @0x42d010 */
+long long mathAtan2Deg(float y, float x)
 {
-    g_flMathAtan = (float)(atan2((double)y, (double)x) * 180.0 / M_PI);
-    return g_flMathAtan;
+    return (long long)(atan2((double)y, (double)x) * 180.0 / M_PI);
 }
 /* mathSinTreeBuild @0x42efb0
  * Original stores right-child pointer as raw bits in tree[1] (float slot
@@ -385,6 +387,7 @@ int scenNameToIdEx(LPCSTR pszName) /* @0x431e20 */
     return 0;
 }
 
+/* sceneObjSetPos @0x430660 */
 int sceneObjSetPos(int nObj, int nX, int nY, int nZ, int nMode)
 {
     SceneNode *n = (SceneNode *)nObj;
@@ -393,11 +396,38 @@ int sceneObjSetPos(int nObj, int nX, int nY, int nZ, int nMode)
         ch->x += nX; ch->y += nY; ch->z += nZ;
     } else if (nMode == 2) {
         ch->x = nX; ch->y = nY; ch->z = nZ;
-    } else     if (nMode == 5) {
-        mathSinDeg(ch->rot[0]); mathSinDeg(ch->rot[1]); mathSinDeg(ch->rot[2]);
-        mathCosDeg(ch->rot[0]); mathCosDeg(ch->rot[1]); mathCosDeg(ch->rot[2]);
-        ch->x = nX; ch->y = nY; ch->z = nZ;
+    } else if (nMode == 5) {
+        float sYaw = mathSinDeg(ch->rot[0]);
+        float cYaw = mathCosDeg(ch->rot[0]);
+        float sPitch = mathSinDeg(ch->rot[1]);
+        float cPitch = mathCosDeg(ch->rot[1]);
+        float sRoll = mathSinDeg(ch->rot[2]);
+        float cRoll = mathCosDeg(ch->rot[2]);
+        float matrix[9];
+        float x;
+        float y;
+        float z;
+
+        matrix[0] = sRoll * sPitch * sYaw + cRoll * cPitch;
+        matrix[1] = cRoll * sPitch * sYaw - sRoll * cPitch;
+        matrix[2] = sPitch * cYaw;
+        matrix[3] = sRoll * cYaw;
+        matrix[4] = cRoll * cYaw;
+        matrix[5] = -sYaw;
+        matrix[6] = sRoll * cPitch * sYaw - cRoll * sPitch;
+        matrix[7] = cRoll * cPitch * sYaw + sRoll * sPitch;
+        matrix[8] = cPitch * cYaw;
+        x = (float)nX * matrix[0] + (float)nY * matrix[1]
+          + (float)nZ * matrix[2] + (float)ch->x;
+        y = (float)nX * matrix[3] + (float)nY * matrix[4]
+          + (float)nZ * matrix[5] + (float)ch->y;
+        z = (float)nX * matrix[6] + (float)nY * matrix[7]
+          + (float)nZ * matrix[8] + (float)ch->z;
+        ch->x = (int)x;
+        ch->y = (int)y;
+        ch->z = (int)z;
     } else return 0;
+    ch->bFlagB = 0;
     if ((void *)n->pParent != g_abSceneRootNode) sceneNodeUpdateBounds(n->pParent);
     return 1;
 }
@@ -408,19 +438,77 @@ int sceneObjSetPos(int nObj, int nX, int nY, int nZ, int nMode)
 int sceneObjSetPosOrient(int pObj, short nYaw, short nPitch, short nRoll, byte nMode)
 {
     SceneNode *n = (SceneNode *)pObj;
-    if (!n || !n->pChannels) return 0;
     SceneChannel *ch = (SceneChannel *)n->pChannels;
     if (nMode & 0x20) { nYaw *= 0xb6; nPitch *= 0xb6; nRoll *= 0xb6; }
-    if (!(nMode & 0x10)) {
-        byte lo = nMode & 0xf;
-        if (lo == 1) {
-            ch->rot[0] += nYaw; ch->rot[1] += nPitch; ch->rot[2] += nRoll;
-        } else if (lo == 2) {
-            ch->rot[0] = nYaw; ch->rot[1] = nPitch; ch->rot[2] = nRoll;
-        } else return 0;
-        return 1;
+    if (nMode & 0x10) return 0;
+
+    switch (nMode & 0xf) {
+    case 1:
+        ch->rot[0] += nYaw;
+        ch->rot[1] += nPitch;
+        ch->rot[2] += nRoll;
+        break;
+    case 2:
+        ch->rot[0] = nYaw;
+        ch->rot[1] = nPitch;
+        ch->rot[2] = nRoll;
+        break;
+    case 5:
+        {
+            float sYaw = mathSinDeg(nYaw);
+            float cYaw = mathCosDeg(nYaw);
+            float sPitch = mathSinDeg(nPitch);
+            float cPitch = mathCosDeg(nPitch);
+            float sRoll = mathSinDeg(nRoll);
+            float cRoll = mathCosDeg(nRoll);
+            float forwardX = sPitch * cYaw;
+            float forwardY = -sYaw;
+            float forwardZ = cPitch * cYaw;
+            float viewX;
+            float viewZ;
+            float invLength;
+            float normalX;
+            float normalZ;
+            float viewY;
+
+            if (ch->bFlagA != 1) chanBuildRotMatrix(ch);
+            viewX = forwardY * ch->matr[1] + forwardZ * ch->matr[2]
+                  + forwardX * ch->matr[0];
+            viewZ = forwardY * ch->matr[7] + forwardZ * ch->matr[8]
+                  + forwardX * ch->matr[6];
+            invLength = 1.0f / (float)sqrt(viewX * viewX + viewZ * viewZ);
+            normalX = invLength * viewX;
+            normalZ = invLength * viewZ;
+            viewY = -(forwardX * ch->matr[3] + forwardY * ch->matr[4]
+                    + forwardZ * ch->matr[5]);
+
+            /* The original reads three caller-stack values for this legacy
+             * mode.  The rebuild has no corresponding public inputs, so use
+             * the neutral direction while retaining the same atan2 sequence. */
+            {
+                float legacyPitch = 0.0f;
+                float legacyForward = 0.0f;
+                float legacySide = 0.0f;
+                float rollBasis = cRoll * cYaw * ch->matr[1]
+                    + (sRoll * sPitch + cRoll * cPitch * sYaw) * ch->matr[2]
+                    + (cRoll * sPitch * sYaw - sRoll * cPitch) * ch->matr[0];
+
+            ch->rot[0] = (short)mathAtan2Deg(viewY,
+                                             normalX * viewX + normalZ * viewZ);
+            ch->rot[1] = (short)mathAtan2Deg(legacyPitch,
+                                             normalX * viewX + normalZ * viewZ);
+            ch->rot[2] = (short)mathAtan2Deg(
+                -(rollBasis * legacySide
+                  - legacyForward * (normalX * viewX + normalZ * viewZ)), viewY);
+            }
+        }
+        break;
+    default:
+        return 0;
     }
-    return 0;
+    ch->bFlagA = 0;
+    ch->bFlagB = 0;
+    return 1;
 }
 
 /* ===================================================================
@@ -463,51 +551,105 @@ int sceneNodeFacePos(int pNode, int nChannel, float flX, float flY, float flZ, i
 void sceneNodeUpdateBounds(int nNode) { (void)nNode; }
 
 /* ===================================================================
- * sceneObjSetSubPos @0x430a90 — sub-position channel setter (fauthful stub).
- * Original decodes mode bits (0x20 scale, 0x10 guard, low nibble 1/2/5)
- * and applies via channel math with sin/cos. For the offline preview the
- * channel write is sufficient; full trig is deferred. Returns 1 on handled
- * mode, 0 otherwise. Preserves call hierarchy for TrackRebuildDetailed.
+ * sceneObjSetSubPos @0x430a90 — sub-channel orientation/position setter.
  * =================================================================== */
 int sceneObjSetSubPos(int pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode, float flPitch, int nUnk, float flFwd, float flSide) /* @0x430a90 */
 {
-    (void)flPitch; (void)nUnk; (void)flFwd; (void)flSide;
+    (void)nUnk;
     SceneNode *n = (SceneNode *)pObj;
-    if (!n || !n->pChannels) return 0;
-    if (nMeshIdx < 0 || nMeshIdx >= 16) return 0;
-    if ((nMode & 0x10) != 0) return 0;
-    {
-        byte lo = nMode & 0xf;
-        if (lo == 1) {
-            SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + nMeshIdx * 0x70);
-            /* mode 1: delta (type 5 in anim uses mode 2 absolute, but keep delta) */
-            short *dst = (short *)((char *)ch + 0x10); /* x at +0x10 via channel struct? Actually x is int, but sub-pos stores shorts at vertex? Simplified to int. */
-            dst[0] += nYaw; dst[1] += nPitch; dst[2] += nRoll;
-            ch->bFlagA = 0; ch->bFlagB = 0;
-            return 1;
-        } else if (lo == 2) {
-            SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + nMeshIdx * 0x70);
-            ch->x = nYaw; ch->y = nPitch; ch->z = nRoll;
-            ch->bFlagA = 0; ch->bFlagB = 0;
-            return 1;
-        }
+    if (nMeshIdx < 0 || nMeshIdx >= (int)n->nChannelCount) return 0;
+    if (nMode & 0x20) {
+        nYaw *= 0xb6;
+        nPitch *= 0xb6;
+        nRoll *= 0xb6;
     }
-    return 0;
+    if (nMode & 0x10) return 0;
+
+    SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + nMeshIdx * 0x70);
+    switch (nMode & 0xf) {
+    case 1:
+        ch->rot[0] += nYaw;
+        ch->rot[1] += nPitch;
+        ch->rot[2] += nRoll;
+        break;
+    case 2:
+        ch->rot[0] = nYaw;
+        ch->rot[1] = nPitch;
+        ch->rot[2] = nRoll;
+        break;
+    case 5:
+        {
+            float sYaw = mathSinDeg(nYaw);
+            float cYaw = mathCosDeg(nYaw);
+            float sPitch = mathSinDeg(nPitch);
+            float cPitch = mathCosDeg(nPitch);
+            float sRoll = mathSinDeg(nRoll);
+            float cRoll = mathCosDeg(nRoll);
+            float forwardX = sPitch * cYaw;
+            float forwardY = -sYaw;
+            float forwardZ = cPitch * cYaw;
+            float viewX;
+            float viewZ;
+            float invLength;
+            float normalX;
+            float normalZ;
+            float viewY;
+
+            if (ch->bFlagA != 1) chanBuildRotMatrix(ch);
+            viewX = forwardY * ch->matr[1] + forwardZ * ch->matr[2]
+                  + forwardX * ch->matr[0];
+            viewZ = forwardY * ch->matr[7] + forwardZ * ch->matr[8]
+                  + forwardX * ch->matr[6];
+            invLength = 1.0f / (float)sqrt(viewX * viewX + viewZ * viewZ);
+            normalX = invLength * viewX;
+            normalZ = invLength * viewZ;
+            viewY = -(forwardX * ch->matr[3] + forwardY * ch->matr[4]
+                    + forwardZ * ch->matr[5]);
+            ch->rot[0] = (short)mathAtan2Deg(viewY,
+                                             normalX * viewX + normalZ * viewZ);
+            ch->rot[1] = (short)mathAtan2Deg(flPitch, normalX);
+            ch->rot[2] = (short)mathAtan2Deg(
+                -(flPitch * flSide - flFwd * normalZ), viewY);
+            (void)sRoll;
+            (void)cRoll;
+        }
+        break;
+    default:
+        return 0;
+    }
+    ch->bFlagA = 0;
+    ch->bFlagB = 0;
+    return 1;
 }
 
 /* ===================================================================
- * sceneObjSetSubOrient @0x431110 — sub-orientation setter (faithful stub).
- * Original writes rot[3] at channel+0 for the given sub-mesh index.
- * Returns 1 on valid channel, 0 otherwise.
+ * sceneObjSetSubOrient @0x431110 — interpolated sub-channel orientation.
  * =================================================================== */
 int sceneObjSetSubOrient(int pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll) /* @0x431110 */
 {
     SceneNode *n = (SceneNode *)pObj;
-    if (!n || !n->pChannels) return 0;
-    if (nMeshIdx < 0 || nMeshIdx >= 16) return 0;
+    if (nMeshIdx < 0 || nMeshIdx >= (int)n->nChannelCount) return 0;
     SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + nMeshIdx * 0x70);
-    ch->rot[0] = nYaw; ch->rot[1] = nPitch; ch->rot[2] = nRoll;
-    ch->bFlagA = 0; ch->bFlagB = 0;
+    float sYaw = mathSinDeg(nYaw);
+    float cYaw = mathCosDeg(nYaw);
+    float sPitch = mathSinDeg(nPitch);
+    float cPitch = mathCosDeg(nPitch);
+    float sRoll = mathSinDeg(nRoll);
+    float cRoll = mathCosDeg(nRoll);
+    float matrix[9];
+    int i;
+
+    matrix[0] = sRoll * sPitch * sYaw + cRoll * cPitch;
+    matrix[1] = cRoll * sPitch * sYaw - sRoll * cPitch;
+    matrix[2] = sPitch * cYaw;
+    matrix[3] = sRoll * cYaw;
+    matrix[4] = cRoll * cYaw;
+    matrix[5] = -sYaw;
+    matrix[6] = sRoll * cPitch * sYaw - cRoll * sPitch;
+    matrix[7] = cRoll * cPitch * sYaw + sRoll * sPitch;
+    matrix[8] = cPitch * cYaw;
+    for (i = 0; i < 9; i++) ch->matr[i] = (ch->matr[i] + matrix[i]) * g_flMatrixBlend;
+    ch->bFlagA = 1;
     return 1;
 }
 

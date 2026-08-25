@@ -118,7 +118,7 @@ void gameInit(void) /* @0x409d90 */
      * setting g_nGfxMode. The rebuild keeps the fallback without the
      * config lookup (deferred). Order matches original: GXGLIDE first. */
     {
-        int ok = gxLoadDriver("DRIVERS\\GXGLIDE.DLL");
+        int ok = 0; // gxLoadDriver("DRIVERS\\GXGLIDE.DLL"); Rebuild only supports gxSoft.dll !!!
         if (ok) {
             g_nGfxMode = 1;
         } else {
