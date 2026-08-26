@@ -37,16 +37,16 @@ typedef struct SceneObjTypeDef {
     int field_00;        /* +0x00  (hdr0, low byte = bSubObjCount for sceneryObjAlloc) */
     int nSubObjs;        /* +0x04  count for sceneMeshFixup loop */
     int field_08;        /* +0x08  if >0 then pA/pB are relocated; low byte+1 = nChannelCount */
-    int pA;              /* +0x0c  relocated if field_08>0 */
-    int pB;              /* +0x10  relocated if field_08>0 */
-    int pRender;         /* +0x14  relocated -> SceneObjRenderInfo */
+    void *pA;            /* +0x0c  relocated if field_08>0 (short[4] pos array) */
+    void *pB;            /* +0x10  relocated if field_08>0 (int idx array) */
+    struct SceneObjRenderInfo *pRender; /* +0x14  relocated -> SceneObjRenderInfo */
     int field_18;        /* +0x18 */
     int nTex;            /* +0x1c  texture count for sceneCreateTextureSurfaces */
-    int pTex;            /* +0x20  relocated (or via g_pMapGeom) */
+    void *pTex;          /* +0x20  relocated (or via g_pMapGeom) */
     int field_24;        /* +0x24 */
-    int pC;              /* +0x28  relocated (or via g_pMapGeom+8) */
+    void *pC;            /* +0x28  relocated (or via g_pMapGeom+8) */
     int field_2c;        /* +0x2c */
-    int pD;              /* +0x30  relocated */
+    void *pD;            /* +0x30  relocated */
 } SceneObjTypeDef;
 
 /* --- render-info sub-struct pointed to by SceneObjTypeDef.pRender (+0x14).
@@ -57,19 +57,25 @@ typedef struct SceneObjTypeDef {
  *  nVerts/pVerts at +0x04/+0x08 (sceneMorphInterp), nPolyA/pPolyA at
  *  +0x14/+0x18, nGroups/pGroups at +0x1c/+0x20, nPolyB at +0x24,
  *  pPolyB at +0x2c. */
+typedef struct SceneGroupInfo {
+    int nVerts;          /* +0x00 vertices in group */
+    int _pad04;          /* +0x04 */
+    int nChanIdx;        /* +0x08 channel index for group */
+} SceneGroupInfo;        /* 0x0c */
+
 typedef struct SceneObjRenderInfo {
     int field_00;        /* +0x00 */
     int nVerts;          /* +0x04 vertex count (sceneMorphInterp) */
-    int pVerts;          /* +0x08 offset to vertex frames (x,y,z,w) */
+    void *pVerts;        /* +0x08 pointer to vertex frames (x,y,z,w) */
     int field_0c;        /* +0x0c */
     int field_10;        /* +0x10 */
     int nPolyA;          /* +0x14 poly group A count */
-    int pPolyA;          /* +0x18 poly group A ptr (relocated) */
+    void *pPolyA;        /* +0x18 poly group A ptr (relocated) */
     int nGroups;         /* +0x1c group count for sceneNodeRender loop */
-    int pGroups;         /* +0x20 pointer to group array (relocated) */
+    SceneGroupInfo *pGroups; /* +0x20 pointer to group array (relocated) */
     int nPolyB;          /* +0x24 poly group B count */
     int field_28;        /* +0x28 */
-    int pPolyB;          /* +0x2c poly group B ptr (relocated) */
+    void *pPolyB;        /* +0x2c poly group B ptr (relocated) */
 } SceneObjRenderInfo;
 
 /* --- channel record: 0x70 bytes. Layout verified from disassembly of
@@ -97,6 +103,14 @@ typedef struct __attribute__((packed)) SceneChannel {
     float wx, wy, wz;      /* +0x64 world translation */
 } SceneChannel;            /* 0x70 */
 
+/* --- morph output buffer used as pOut in sceneMorphInterp @0x4300d0.
+ * The original writes interpolated vertices starting at +4 (header dword
+ * skipped).  The first dword is unused padding at the call site (g_pMeshPool). */
+typedef struct SceneMorphOut {
+    int _pad0;                  /* +0 header (unused) */
+    short verts[1];             /* +4 variable-length short[4] per vertex */
+} SceneMorphOut;
+
 /* --- scene node: 0xa8 bytes (+ bSubObjCount*0x70). Layout from
  * sceneNodeRender / chanCalcWorldTransform assembly:
  *   +0  nId    (word)  render gate: ==1 or >=0x100 to draw td
@@ -104,24 +118,25 @@ typedef struct __attribute__((packed)) SceneChannel {
  *   +c  pChild (int)   first child (recursion)
  *   +14 pChannels (int) pointer to embedded SceneChannel at +0x38
  *   +20 pTypeDef (int)  SceneObjTypeDef* (relocated)
- * The 0x70-byte channel is embedded at +0x38. */
+ * The 0x70-byte channel is embedded at +0x38.  Fields at +0x28/0x2c/0x30
+ * are morph lerp indices + factor (sceneMorphInterp). */
 typedef struct __attribute__((packed)) SceneNode {
     unsigned short nId;         /* +0 */
     unsigned char  bType;       /* +2 */
     unsigned char  nChannelCount; /* +3 channel count */
-    int  pParent;               /* +4 */
-    int  pNextSib;              /* +8 */
-    int  pChild;                /* +0xc  first child (recursion) */
-    int  unk10;                 /* +0x10 */
-    int  pChannels;             /* +0x14 -> node + 0x38 */
-    int  unk18;                 /* +0x18 */
-    int  unk1c;                 /* +0x1c (per-node render distance bound) */
-    int  pTypeDef;              /* +0x20 SceneObjTypeDef* (mesh) */
-    int  unk24;                 /* +0x24 */
-    int  unk28;                 /* +0x28 */
-    int  unk2c;                 /* +0x2c */
-    int  unk30;                 /* +0x30 */
-    int  unk34;                 /* +0x34 */
+    struct SceneNode *pParent;  /* +4 */
+    struct SceneNode *pNextSib; /* +8 */
+    struct SceneNode *pChild;   /* +0xc  first child (recursion) */
+    struct SceneNode *pPrevLink;/* +0x10 prev sibling link (for unlink) */
+    SceneChannel *pChannels;    /* +0x14 -> node + 0x38 */
+    int  nBoundingRadiusA;      /* +0x18 bounding radius part A (sceneNodeUpdateBounds) */
+    int  nBoundingRadiusB;      /* +0x1c bounding radius part B (distance gate) */
+    SceneObjTypeDef *pTypeDef;  /* +0x20 SceneObjTypeDef* (mesh) */
+    int  nCacheFlag;            /* +0x24 ==1 triggers sceneCacheLocalVerts */
+    int  nMorphIdxA;            /* +0x28 morph source frame index */
+    int  nMorphIdxB;            /* +0x2c morph dest frame index */
+    float flMorphT;             /* +0x30 morph lerp factor 0..1 */
+    int  nField_34;             /* +0x34 */
     SceneChannel ch;            /* +0x38 (0x70) embedded channel */
 } SceneNode;                    /* 0xa8 */
 
@@ -201,25 +216,25 @@ extern float g_sceneCameraBasis_7;
 /* --- prototypes --- */
 int  sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount, int nMeshPoolSize, unsigned int nFlags);
 void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, short nMeshIdx, short nUnk5, short nUnk6, short nUnk7); /* @0x4318e0 */
-void *sceneNodeAllocChild(int pParent, void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, void *pChannelPtr4);
-void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, int nChanPtr4,
+void *sceneNodeAllocChild(SceneNode *pParent, void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, void *pChannelPtr4);
+void *sceneryObjAlloc(SceneNode *pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, int nChanPtr4,
                       short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef);
 int  scenNameToId(LPCSTR pszName);
 int  scenNameToIdEx(LPCSTR pszName); /* @0x431e20 */
-int  sceneObjSetPos(int nObj, int nX, int nY, int nZ, int nMode);
-int  sceneObjSetPosOrient(int pObj, short nYaw, short nPitch, short nRoll, byte nMode);
-int  sceneObjSetSubPos(int pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode, float flPitch, int nUnk, float flFwd, float flSide); /* @0x430a90 */
-int  sceneObjSetSubOrient(int pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll); /* @0x431110 */
-int  sceneNodeGetPosWorld(int nNode, float *pOutXYZ, int nMode);
-int  sceneNodeFacePos(int pNode, int nChannel, float flX, float flY, float flZ, int nMode);
-void sceneNodeFree(void *pNode, int nFreeChildren);
-void sceneNodeUpdateBounds(int nNode);
+int  sceneObjSetPos(SceneNode *pObj, int nX, int nY, int nZ, int nMode); /* @0x430660 */
+int  sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll, byte nMode); /* @0x4307d0 */
+int  sceneObjSetSubPos(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode, float flPitch, int nUnk, float flFwd, float flSide); /* @0x430a90 */
+int  sceneObjSetSubOrient(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll); /* @0x431110 */
+int  sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode); /* @0x430e80 */
+int  sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float flZ, int nMode); /* @0x431030 */
+void sceneNodeFree(SceneNode *pNode, int nFreeChildren); /* @0x430460 */
+void sceneNodeUpdateBounds(SceneNode *pNode); /* @0x4303c0 */
 int  sceneRender(void *pCameraBlock);
-void sceneBuildRootMatrix(void *pRootNode);
+void sceneBuildRootMatrix(SceneNode *pRootNode); /* @0x42f520 */
 void sceneCameraBasisCalc(void);
-int  sceneNodeRender(void *pNode);
-int  sceneMorphInterp(int param_1, int param_2, int param_3);
-void chanCalcWorldTransform(int param_1, int param_2);
+int  sceneNodeRender(SceneNode *pNode); /* @0x42f8c0 */
+void *sceneMorphInterp(SceneNode *pNode, SceneObjRenderInfo *pRender, void *pOut); /* @0x4300d0 */
+void chanCalcWorldTransform(SceneNode *pNode, int nChannel); /* @0x42f6e0 */
 void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, int pPalColors);
 void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
                      void *pColor, int nUnk, int bInterpColor, int bInterpUV); /* @0x42d070 */
@@ -228,6 +243,6 @@ void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
 void gxSortPushKey(void *pMesh, void *pVerts, void *pNormals, int pTex, int pPalette);
 void mat3x3Mul(float *a, float *b, float *out);
 void chanBuildRotMatrix(SceneChannel *ch);
-int  sceneCacheLocalVerts(int pNode);
+int  sceneCacheLocalVerts(SceneNode *pNode); /* @0x42ffa0 */
 
 #endif /* SCENE_H */

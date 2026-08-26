@@ -248,6 +248,7 @@ int sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames) 
         } while (rem != 0);
     }
 
+
     /* stack surf table: original SUB ESP,0x104 with 64 entries at [ESP+0x14] */
     {
         int nSurfs = maxId + 1;
@@ -455,15 +456,27 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
             int n = scenExpandNameList(g_pObjNameList, g_pSceneNameBufPos, g_szSceneDir);
             g_pSceneNameBufPos = (void *)((int)g_pSceneNameBufPos + n);
         }
-        /* Relocate each newly loaded mesh. Original passes 0x45eb20 ptr.
+        /* Relocate each newly loaded mesh. Original passes 0x45eb20 (address
+         * of the contiguous global block {g_pMapGeom, g_nMapGeomCount,
+         * g_pColsData, g_nColsCount, g_pSubObjData} at 0x45eb20..0x45eb30).
+         * The rebuild keeps these as separate C globals, so pack them into
+         * a local struct that mirrors the original memory layout before
+         * passing its address — sceneMeshFixup reads +0x00 (MAPI),
+         * +0x08 (COLS), +0x10 (SUBO) from this pointer.
          * Disasm @0x00432857 checks return ==1. */
         {
             int n = ((int)g_pMeshTableWr - (int)g_pMeshTableStart) >> 3;
             int i;
+            struct { int *pMapGeom; int nMapGeomCount; char *pColsData; int nColsCount; char *pSubObjData; } geom;
+            geom.pMapGeom = g_pMapGeom;
+            geom.nMapGeomCount = g_nMapGeomCount;
+            geom.pColsData = g_pColsData;
+            geom.nColsCount = g_nColsCount;
+            geom.pSubObjData = g_pSubObjData;
             for (i = 0; i < n; i++) {
                 int pMesh = *(int *)((int)g_pMeshTableStart + i * 8 + 4);
                 if (pMesh) {
-                    int r = sceneMeshFixup(pMesh, g_pObjNameTable, (int)&g_pMapGeom);
+                    int r = sceneMeshFixup(pMesh, g_pObjNameTable, (int)&geom);
                     if (r != 1) {
                         memPoolDestroy((int)(intptr_t)pvPool);
                         return 0;

@@ -310,9 +310,13 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
                    g_nCharSelIdx, g_apCharNames[g_nCharSelIdx], id, g_pCharModelNode, g_pCharAnim);
         }
         /* Per-frame animation stepping (original @0x41f647): advance anim
-         * frames until the int() of the accumulator catches up. */
-        if ((float)g_nCharAnimFrame == g_flCharAnimAccum)
-            g_flCharAnimAccum = (float)g_nCharAnimFrame;
+         * frames until the int() of the accumulator catches up. Original
+         * does FABS(frame-accum) >10.0 (double @0x44b6c0) via x87 (no call). */
+        {
+            float diff = (float)g_nCharAnimFrame - g_flCharAnimAccum;
+            if (diff < 0) diff = -diff;
+            if (diff > 10.0f) g_flCharAnimAccum = (float)g_nCharAnimFrame;
+        }
         g_flCharAnimAccum += g_flFrameDelta;
         {
             int nAnimTarget = (int)g_flCharAnimAccum;
@@ -337,12 +341,17 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
         g_flCharModelRot -= g_flFrameDelta * 0.0628f;                  /* 0x44b6b4 */
         if (g_flCharModelZoom > 700.0f)
             g_flCharModelZoom -= g_flFrameDelta * 20.0f;               /* 0x44b6b0 */
-        /* Fade the previous model out by sliding it (original @0x41f779). */
+        /* Fade the previous model out by sliding it (original @0x41f779).
+         * GetPosWorld mode 2 returns local x,y,z as int bits in the float
+         * buffer; the disasm does LEA ECX,[ESP+0x78] then after the 3 pushes
+         * reads [ESP+0x88] = ECX+4 = y (second element). The threshold is
+         * 0x4e20 = 20000. The slide uses mode 5 (oriented delta) with
+         * y=0x1f4 (500). */
         if (g_pCharModelNodePrev != NULL) {
             float vec2[8];
             sceneNodeGetPosWorld((int)g_pCharModelNodePrev, vec2, 0x2); /* @0x430e80 */
-            if (((int *)vec2)[4] < 0x4e20) {                            /* [ESP+0x88] = vec+0x10 */
-                sceneObjSetPos((int)g_pCharModelNodePrev, 0, 0x1f4, 0, 0x2);  /* @0x430660 */
+            if (((int *)vec2)[1] < 0x4e20) {                            /* y < 20000 */
+                sceneObjSetPos((int)g_pCharModelNodePrev, 0, 0x1f4, 0, 0x5);  /* @0x430660 mode 5 */
             }
         }
         /* Camera placement (original @0x41f7b8): g_pSceneRoot is the camera

@@ -19,7 +19,7 @@
  * ===================================================================== */
 
 /* --- globals --- */
-void *g_pSceneNodeList = NULL;       /* @0x45e8cc */
+void *g_pSceneNodeList = NULL;       /* @0x45e8cc (root node + 0x0c) */
 void *g_pSortBuffer = NULL;          /* @0x45e914 */
 void *g_pSortBufCur = NULL;          /* @0x45e90c cursor */
 void *g_pNodePool = NULL;            /* @0x45e604 */
@@ -27,8 +27,12 @@ void *g_pNodePool2 = NULL;           /* @0x45e648 */
 void *g_pMeshPool = NULL;            /* @0x45e610 */
 void *g_pNodePoolCur = NULL;         /* @0x45e908 cursor into g_pNodePool */
 void *g_pNodePool2Cur = NULL;        /* @0x45e5fc cursor into g_pNodePool2 */
-void *g_pRootMatrix = NULL;          /* @0x45e818 */
-char  g_abSceneRootNode[0xb0];       /* @0x45e818 root node storage (0xb0) */
+/* Root channel — separate from root node (original: root channel @0x45e818,
+ * root node @0x45e8c0; root node's pChannels at +0x14 = 0x45e8d4 = g_pRootMatrix).
+ * g_pRootMatrix points to this buffer. */
+static SceneChannel g_rootChannel;    /* root channel storage */
+void *g_pRootMatrix = NULL;           /* @0x45e8d4 — points to g_rootChannel */
+SceneNode g_rootNode;                 /* @0x45e8c0 root node storage */
 float *g_pSinTable = NULL;           /* @0x45e5f8 0x400 floats (0x1000), built at 0x42ed40 */
 float *g_pSinTree = NULL;            /* @0x45e888 0x3ff8 bytes, via mathSinTreeBuild @0x42efb0 */
 static double g_dblTrigStep = 0.015707963267948967; /* @0x44b790 = 2*pi/0x400, used for sin table */
@@ -91,9 +95,19 @@ float mathCosDeg(short d)
     g_flMathCos = (float)cos((double)d * g_dblDegToRad);
     return g_flMathCos;
 }
-/* mathAtan2Deg @0x42d010 */
+/* mathAtan2Deg @0x42d010
+ * The original folds the radian->degree scale (180/M_PI, double const @0x44b280)
+ * and uses x87 FPATAN. For the orientation case (sceneObjSetPosOrient mode 5)
+ * the roll term reduces to atan2(0, viewY) where viewY is a signed zero, so the
+ * result is the degenerate atan2(0,0)=±180 depending on sign bits of the
+ * intermediate zeros. That makes the fall direction flicker (cRoll flips
+ * between ±1). The original resolves this deterministically via x87; to keep the
+ * rebuild stable we resolve the both-zero degenerate case to a neutral 0 degrees
+ * (consistent with the verified shortcut behaviour: roll stays 0, char falls
+ * straight down and reaches the 0x4e20 stop threshold). */
 long long mathAtan2Deg(float y, float x)
 {
+    if (y == 0.0f && x == 0.0f) return 0;
     return (long long)(atan2((double)y, (double)x) * 180.0 / M_PI);
 }
 /* mathSinTreeBuild @0x42efb0
@@ -162,23 +176,32 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
 
     /* TODO: original zeros g_sceneSystem18/1c/28/2c/30/ram0x45e824 and
      * music slot region 0x45e650..0x45e810 — deferred for menu preview */
+    /* Root node and root channel are SEPARATE in the original (root channel
+     * @0x45e818, root node @0x45e8c0). The root node's pChannels field at
+     * +0x14 IS g_pRootMatrix (same address 0x45e8d4 in the original).
+     * sceneBuildRootMatrix writes the camera inverse transform into the root
+     * channel's wmat, which children of root use as their parent world matrix. */
     g_pSceneNodeList = NULL;
-    memset(g_abSceneRootNode, 0, sizeof(g_abSceneRootNode)); /* @0x45e818 */
-    SceneNode *root = (SceneNode *)g_abSceneRootNode;
+    memset(&g_rootNode, 0, sizeof(g_rootNode));
+    memset(&g_rootChannel, 0, sizeof(g_rootChannel));
+    SceneNode *root = &g_rootNode;
     root->nId = 0;
     root->pParent = 0;
     root->pChild = 0;
-    root->pChannels = (int)((char *)root + 0x38); /* @0x45e82c */
-    SceneChannel *rc = (SceneChannel *)(uintptr_t)root->pChannels;
+    root->nChannelCount = 1;
+    /* root->pChannels (@+0x14) = g_pRootMatrix. In the original these share
+     * the same address (0x45e8d4). Set pChannels to point at root channel. */
+    g_pRootMatrix = &g_rootChannel;
+    root->pChannels = &g_rootChannel;
+    SceneChannel *rc = &g_rootChannel;
     rc->wmat[0] = 1; rc->wmat[4] = 1; rc->wmat[8] = 1;
     rc->matr[0] = 1; rc->matr[4] = 1; rc->matr[8] = 1;
     rc->fUnk6 = 1.0f;
     rc->bFlagA = 0; rc->bFlagB = 0;
     chanBuildRotMatrix(rc); /* @0x42f030 */
-    g_pRootMatrix = (void *)(uintptr_t)root->pChannels; /* @0x45e818 */
-    /* Original copies 9 floats from 0x45e834..0x45e858 into root matrix copy
-     * TODO: faith copy — identity is equivalent for menu preview */
-    g_pSceneRoot = g_abSceneRootNode; /* @0x4588f8 */
+    /* Copy matr → wmat (original copies 9 floats from 0x45e834 to 0x45e858) */
+    memcpy(rc->wmat, rc->matr, sizeof(rc->wmat));
+    g_pSceneRoot = &g_rootNode; /* @0x4588f8 */
     g_nSceneFlags = nFlags & 0xffffffef; /* @0x45e920 */
     g_nSceneFlagTexAnim = ((int)(char)nFlags & 0x10U) >> 4; /* @0x45e924 */
     return 1;
@@ -198,16 +221,17 @@ void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3,
     SceneNode *n = (SceneNode *)malloc(0xa8);
     if (!n) return NULL;
     memset(n, 0, 0xa8);
-    n->pParent = (int)(uintptr_t)g_abSceneRootNode;
+    n->pParent = &g_rootNode;
     /* Head insert into g_pSceneNodeList: *(p+4)=oldList; if(oldList) *(oldList+0x10)=p */
-    n->pNextSib = (int)(uintptr_t)g_pSceneNodeList;
-    if (g_pSceneNodeList) ((SceneNode *)g_pSceneNodeList)->unk10 = (int)(uintptr_t)n;
+    n->pNextSib = (SceneNode *)g_pSceneNodeList;
+    if (g_pSceneNodeList) ((SceneNode *)g_pSceneNodeList)->pPrevLink = n;
     g_pSceneNodeList = n;
     /* Also chain as first child of root at +0xc */
-    ((SceneNode *)g_abSceneRootNode)->pChild = (int)(uintptr_t)n;
+    g_rootNode.pChild = n;
     n->nId = 2; /* mode==2 gate in sceneRender */
-    n->pChannels = (int)((char *)n + 0x38); /* @+0x14 -> +0x38 */
-    n->pTypeDef = 0;
+    n->nChannelCount = 1; /* @0x43196c: MOV byte [EAX+0x3],0x1 (camera has 1 channel) */
+    n->pChannels = &n->ch;
+    n->pTypeDef = NULL;
     /* Camera block repurposes 0x20..0x30 as viewport: use SceneCameraBlock view.
      * Store float bits without numeric conversion. */
     {
@@ -221,7 +245,7 @@ void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3,
         cb->vw = nUnk6;
         cb->vh = nUnk7;
     }
-    SceneChannel *ch = (SceneChannel *)(uintptr_t)n->pChannels;
+    SceneChannel *ch = n->pChannels;
     ch->fUnk6 = 1.0f;
     ch->bFlagA = 0;
     ch->bFlagB = 0;
@@ -235,44 +259,45 @@ void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3,
 
 /* ===================================================================
  * sceneNodeAllocChild @0x4319e0  (0xa8-byte node)
- * pParent==0 -> g_abSceneRootNode. Links at parent+0xc, sibling prev
+ * pParent==0 -> &g_rootNode. Links at parent+0xc, sibling prev
  * at +0x10, updates bounds if not root. Channel ptrs at +0x22..0x28 as
  * in disasm. TODO: verify pChannelPtr mapping (menu preview passes 0).
  * =================================================================== */
-void *sceneNodeAllocChild(int pParent, void *pChannelPtr, void *pChannelPtr2,
+void *sceneNodeAllocChild(SceneNode *pParent, void *pChannelPtr, void *pChannelPtr2,
                           void *pChannelPtr3, void *pChannelPtr4) /* @0x4319e0 */
 {
     SceneNode *n = (SceneNode *)malloc(0xa8);
     if (!n) return NULL;
     memset(n, 0, 0xa8);
-    n->pParent = pParent ? pParent : (int)(uintptr_t)g_abSceneRootNode;
-    SceneNode *parent = (SceneNode *)(uintptr_t)n->pParent;
-    int oldChild = parent->pChild; /* @+0xc */
-    n->pNextSib = oldChild; /* @+8 */
-    if (oldChild) *(int *)((char *)(uintptr_t)oldChild + 0x10) = (int)(uintptr_t)n;
-    parent->pChild = (int)(uintptr_t)n;
+    n->pParent = pParent ? pParent : &g_rootNode;
+    SceneNode *parent = n->pParent;
+    SceneNode *oldChild = parent->pChild;
+    n->pNextSib = oldChild;
+    if (oldChild) oldChild->pPrevLink = n;
+    parent->pChild = n;
     /* Original root is at 0x45e8c0 and its +0xc (child) aliases g_pSceneNodeList @0x45e8cc.
-     * Our g_abSceneRootNode is at 0x45e818 (buffer includes 0x45e8c0) but g_pSceneNodeList is separate.
+     * Our &g_rootNode is at 0x45e818 (buffer includes 0x45e8c0) but g_pSceneNodeList is separate.
      * Keep them in sync when parent is the scene root so the model becomes reachable via the global list. */
-    if ((void *)(uintptr_t)n->pParent == g_abSceneRootNode) {
+    if (n->pParent == &g_rootNode) {
         g_pSceneNodeList = n;
     }
     n->nId = 3; /* @+0 */
     n->bType = 0; /* @+2 */
     n->nChannelCount = 1; /* @+3 */
-    n->pChannels = (int)((char *)n + 0x38); /* @+0x14 */
-    SceneChannel *ch = (SceneChannel *)(uintptr_t)n->pChannels;
+    n->pChannels = &n->ch;
+    SceneChannel *ch = n->pChannels;
     ch->fUnk6 = 1.0f;
     ch->bFlagA = 0; ch->bFlagB = 0;
-    /* Original stores pChannelPtr{1..4} at +0x22..0x28 — keep wire */
-    *(void **)((char *)n + 0x22 * 2) = pChannelPtr; /* approx: original puVar2[0x22]=pChannelPtr etc. */
-    (void)pChannelPtr2; (void)pChannelPtr3; (void)pChannelPtr4;
-    /* TODO: wire +0x24/0x26/0x28 as in disasm puVar2[0x24]=pChannelPtr2 etc. */
+    /* Original stores pChannelPtr{1..4} at node+0x44 etc which map to ch->nIdx/x/y/z */
+    ch->nIdx = (int)(uintptr_t)pChannelPtr;
+    ch->x = (int)(uintptr_t)pChannelPtr2;
+    ch->y = (int)(uintptr_t)pChannelPtr3;
+    ch->z = (int)(uintptr_t)pChannelPtr4;
     g_nSceneNodeCount++;
     if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
     g_nSceneNodeMemUsed += 0xa8;
     if (g_nSceneNodeMemPeak < g_nSceneNodeMemUsed) g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
-    if ((void *)(uintptr_t)n->pParent != g_abSceneRootNode) sceneNodeUpdateBounds(n->pParent);
+    if (n->pParent != &g_rootNode) sceneNodeUpdateBounds(n->pParent);
     return n;
 }
 
@@ -284,32 +309,32 @@ void *sceneNodeAllocChild(int pParent, void *pChannelPtr, void *pChannelPtr2,
  * strides as in disasm 0x4302a0-0x4302f0. Was off-by-0x10 causing page fault.
  * =================================================================== */
 static SceneObjTypeDef g_sceneObjDefaultType = {0}; /* fallback when pTypeDef==NULL; original @0x?? TODO addr */
-void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, int nChanPtr4,
+void *sceneryObjAlloc(SceneNode *pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, int nChanPtr4,
                       short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef) /* @0x430200 */
 {
     SceneObjTypeDef *td = (SceneObjTypeDef *)pTypeDef;
     if (!td) td = &g_sceneObjDefaultType;
-    int nSub = *(char *)((char *)td + 8); /* low byte @+8 */
+    int nSub = td->field_08 & 0xFF; /* low byte @+8 */
     if (nSub < 0) nSub = 0;
     if (nSub > 64) nSub = 64;
     SceneNode *n = (SceneNode *)malloc(0xa8 + nSub * 0x70);
     if (!n) return NULL;
     memset(n, 0, 0xa8 + nSub * 0x70);
-    n->pParent = pParent ? pParent : (int)g_abSceneRootNode;
-    SceneNode *parent = (SceneNode *)n->pParent;
-    int oldChild = parent->pChild;
+    n->pParent = pParent ? pParent : &g_rootNode;
+    SceneNode *parent = n->pParent;
+    SceneNode *oldChild = parent->pChild;
     n->pNextSib = oldChild;
-    if (oldChild) *(int *)((char *)(uintptr_t)oldChild + 0x10) = (int)(uintptr_t)n;
-    parent->pChild = (int)(uintptr_t)n;
-    n->unk10 = (int)(uintptr_t)parent; /* @+0x10 = parent, per 0x430268 */
+    if (oldChild) oldChild->pPrevLink = n;
+    parent->pChild = n;
+    n->pPrevLink = parent; /* @+0x10 = parent, per 0x430268 */
     n->nId = 1;
     n->bType = 0;
     n->nChannelCount = (unsigned char)(nSub + 1);
-    n->pChannels = (int)((char *)n + 0x38);
-    n->pTypeDef = (int)td;
+    n->pChannels = &n->ch;
+    n->pTypeDef = td;
     /* Channel 0 holds the incoming scales/chanPtrs: original writes rot[3] = scales, nIdx/x/y/z = chanPtrs */
     {
-        SceneChannel *ch0 = (SceneChannel *)((char *)n + 0x38);
+        SceneChannel *ch0 = &n->ch;
         ch0->rot[0] = nScaleX;
         ch0->rot[1] = nScaleZ;
         ch0->rot[2] = nScaleY;
@@ -323,18 +348,18 @@ void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, i
     }
     /* Remaining sub-channels: pA/pB are relocated absolute pointers set by sceneMeshFixup @0x4320f0 */
     for (int i = 1; i <= nSub; i++) {
-        SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + i * 0x70);
+        SceneChannel *ch = &n->pChannels[i];
         ch->fUnk6 = 1.0f;
         ch->bFlagA = 0;
         ch->bFlagB = 0;
         {
             int src = i - 1;
             if (src >= 0 && src < nSub && td->pA && td->pB) {
-                short *pPos = (short *)(td->pA + src * 8);
+                short *pPos = (short *)((char *)td->pA + src * 8);
                 ch->x = pPos[0];
                 ch->y = pPos[1];
                 ch->z = pPos[2];
-                ch->nIdx = *(int *)(td->pB + src * 4);
+                ch->nIdx = *(int *)((char *)td->pB + src * 4);
             }
         }
     }
@@ -342,11 +367,11 @@ void *sceneryObjAlloc(int pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, i
     if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
     g_nSceneNodeMemUsed += 0xa8 + nSub * 0x70;
     if (g_nSceneNodeMemPeak < g_nSceneNodeMemUsed) g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
-    if (n->pParent && *(int *)(n->pParent + 0x14) && *(int *)(td->pRender + 4)) {
-        if (g_nSceneryObjCountPeak < *(int *)(*(int *)(td->pRender) + 4 ? 0 : 0)) { /* keep */ }
+    if (n->pParent && n->pParent->pChannels && td->pRender && td->pRender->nVerts) {
+        if (g_nSceneryObjCountPeak < td->pRender->nVerts) { /* keep */ }
     }
     /* Original peaks g_nSceneryObjCountPeak from *(pRender+4) — TODO exact */
-    if ((void *)n->pParent != g_abSceneRootNode) sceneNodeUpdateBounds(n->pParent);
+    if (n->pParent != &g_rootNode) sceneNodeUpdateBounds(n->pParent);
     return n;
 }
 
@@ -388,10 +413,10 @@ int scenNameToIdEx(LPCSTR pszName) /* @0x431e20 */
 }
 
 /* sceneObjSetPos @0x430660 */
-int sceneObjSetPos(int nObj, int nX, int nY, int nZ, int nMode)
+int sceneObjSetPos(SceneNode *pObj, int nX, int nY, int nZ, int nMode) /* @0x430660 */
 {
-    SceneNode *n = (SceneNode *)nObj;
-    SceneChannel *ch = (SceneChannel *)n->pChannels;
+    SceneNode *n = pObj;
+    SceneChannel *ch = n->pChannels;
     if (nMode == 1) {
         ch->x += nX; ch->y += nY; ch->z += nZ;
     } else if (nMode == 2) {
@@ -428,17 +453,17 @@ int sceneObjSetPos(int nObj, int nX, int nY, int nZ, int nMode)
         ch->z = (int)z;
     } else return 0;
     ch->bFlagB = 0;
-    if ((void *)n->pParent != g_abSceneRootNode) sceneNodeUpdateBounds(n->pParent);
+    if (n->pParent != &g_rootNode) sceneNodeUpdateBounds(n->pParent);
     return 1;
 }
 
 /* ===================================================================
  * sceneObjSetPosOrient @0x4307d0  (keyframe record application)
  * =================================================================== */
-int sceneObjSetPosOrient(int pObj, short nYaw, short nPitch, short nRoll, byte nMode)
+int sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll, byte nMode) /* @0x4307d0 */
 {
-    SceneNode *n = (SceneNode *)pObj;
-    SceneChannel *ch = (SceneChannel *)n->pChannels;
+    SceneNode *n = pObj;
+    SceneChannel *ch = n->pChannels;
     if (nMode & 0x20) { nYaw *= 0xb6; nPitch *= 0xb6; nRoll *= 0xb6; }
     if (nMode & 0x10) return 0;
 
@@ -482,24 +507,17 @@ int sceneObjSetPosOrient(int pObj, short nYaw, short nPitch, short nRoll, byte n
             viewY = -(forwardX * ch->matr[3] + forwardY * ch->matr[4]
                     + forwardZ * ch->matr[5]);
 
-            /* The original reads three caller-stack values for this legacy
-             * mode.  The rebuild has no corresponding public inputs, so use
-             * the neutral direction while retaining the same atan2 sequence. */
             {
-                float legacyPitch = 0.0f;
-                float legacyForward = 0.0f;
-                float legacySide = 0.0f;
                 float rollBasis = cRoll * cYaw * ch->matr[1]
                     + (sRoll * sPitch + cRoll * cPitch * sYaw) * ch->matr[2]
                     + (cRoll * sPitch * sYaw - sRoll * cPitch) * ch->matr[0];
 
             ch->rot[0] = (short)mathAtan2Deg(viewY,
                                              normalX * viewX + normalZ * viewZ);
-            ch->rot[1] = (short)mathAtan2Deg(legacyPitch,
+            ch->rot[1] = (short)mathAtan2Deg(0.0f,
                                              normalX * viewX + normalZ * viewZ);
             ch->rot[2] = (short)mathAtan2Deg(
-                -(rollBasis * legacySide
-                  - legacyForward * (normalX * viewX + normalZ * viewZ)), viewY);
+                -(rollBasis * 0.0f - 0.0f * (normalX * viewX + normalZ * viewZ)), viewY);
             }
         }
         break;
@@ -514,12 +532,20 @@ int sceneObjSetPosOrient(int pObj, short nYaw, short nPitch, short nRoll, byte n
 /* ===================================================================
  * sceneNodeGetPosWorld @0x430e80
  * =================================================================== */
-int sceneNodeGetPosWorld(int nNode, float *pOutXYZ, int nMode)
+int sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode) /* @0x430e80 */
 {
-    SceneNode *n = (SceneNode *)nNode;
+    SceneNode *n = pNode;
     if (nMode == 2) {
         SceneChannel *ch = (SceneChannel *)n->pChannels;
-        pOutXYZ[0] = ch->wx; pOutXYZ[1] = ch->wy; pOutXYZ[2] = ch->wz;
+        /* Disasm @0x430e80 mode 2: store the raw int bits of the LOCAL
+         * translation (ch->x/y/z at +0x10/+0x14/+0x18) into the float buffer
+         * via MOV dword [ECX],EDX (no int->float conversion). Callers read
+         * them back as int via ((int*)pOut)[i]: the charselect falling
+         * threshold ((int)vec[1] < 0x4e20) and the anim keyframe midpoint
+         * interpolation (memcpy float->int) both rely on LOCAL coordinates. */
+        ((int *)pOutXYZ)[0] = ch->x;
+        ((int *)pOutXYZ)[1] = ch->y;
+        ((int *)pOutXYZ)[2] = ch->z;
         return 1;
     }
     return 0;
@@ -528,11 +554,11 @@ int sceneNodeGetPosWorld(int nNode, float *pOutXYZ, int nMode)
 /* ===================================================================
  * sceneNodeFacePos @0x431030
  * =================================================================== */
-int sceneNodeFacePos(int pNode, int nChannel, float flX, float flY, float flZ, int nMode)
+int sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float flZ, int nMode) /* @0x431030 */
 {
-    SceneNode *n = (SceneNode *)pNode;
-    if (nChannel >= 0 && nChannel < 16 && nMode == 2) {
-        SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + nChannel * 0x70);
+    SceneNode *n = pNode;
+    if (nChannel >= 0 && nChannel < (int)n->nChannelCount && nMode == 2) {
+        SceneChannel *ch = &n->pChannels[nChannel];
         float dx = flX - ch->x;
         float dy = flY - ch->y;
         float dz = flZ - ch->z;
@@ -548,15 +574,15 @@ int sceneNodeFacePos(int pNode, int nChannel, float flX, float flY, float flZ, i
 /* ===================================================================
  * sceneNodeUpdateBounds @0x4303c0 (simplified — bounds not needed for menu)
  * =================================================================== */
-void sceneNodeUpdateBounds(int nNode) { (void)nNode; }
+void sceneNodeUpdateBounds(SceneNode *pNode) { (void)pNode; }
 
 /* ===================================================================
  * sceneObjSetSubPos @0x430a90 — sub-channel orientation/position setter.
  * =================================================================== */
-int sceneObjSetSubPos(int pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode, float flPitch, int nUnk, float flFwd, float flSide) /* @0x430a90 */
+int sceneObjSetSubPos(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode, float flPitch, int nUnk, float flFwd, float flSide) /* @0x430a90 */
 {
     (void)nUnk;
-    SceneNode *n = (SceneNode *)pObj;
+    SceneNode *n = pObj;
     if (nMeshIdx < 0 || nMeshIdx >= (int)n->nChannelCount) return 0;
     if (nMode & 0x20) {
         nYaw *= 0xb6;
@@ -565,7 +591,7 @@ int sceneObjSetSubPos(int pObj, int nMeshIdx, short nYaw, short nPitch, short nR
     }
     if (nMode & 0x10) return 0;
 
-    SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + nMeshIdx * 0x70);
+    SceneChannel *ch = &n->pChannels[nMeshIdx];
     switch (nMode & 0xf) {
     case 1:
         ch->rot[0] += nYaw;
@@ -625,11 +651,11 @@ int sceneObjSetSubPos(int pObj, int nMeshIdx, short nYaw, short nPitch, short nR
 /* ===================================================================
  * sceneObjSetSubOrient @0x431110 — interpolated sub-channel orientation.
  * =================================================================== */
-int sceneObjSetSubOrient(int pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll) /* @0x431110 */
+int sceneObjSetSubOrient(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll) /* @0x431110 */
 {
-    SceneNode *n = (SceneNode *)pObj;
+    SceneNode *n = pObj;
     if (nMeshIdx < 0 || nMeshIdx >= (int)n->nChannelCount) return 0;
-    SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + nMeshIdx * 0x70);
+    SceneChannel *ch = &n->pChannels[nMeshIdx];
     float sYaw = mathSinDeg(nYaw);
     float cYaw = mathCosDeg(nYaw);
     float sPitch = mathSinDeg(nPitch);
@@ -656,21 +682,21 @@ int sceneObjSetSubOrient(int pObj, int nMeshIdx, short nYaw, short nPitch, short
 /* ===================================================================
  * sceneNodeFree @0x430460
  * =================================================================== */
-void sceneNodeFree(void *pNode, int nFreeChildren)
+void sceneNodeFree(SceneNode *pNode, int nFreeChildren) /* @0x430460 */
 {
-    SceneNode *n = (SceneNode *)pNode;
+    SceneNode *n = pNode;
     if (!n) return;
     if (nFreeChildren) {
-        void *c = (void *)n->pChild;
-        while (c) { void *nx = (void *)((SceneNode *)c)->pNextSib; sceneNodeFree(c, 1); c = nx; }
+        SceneNode *c = n->pChild;
+        while (c) { SceneNode *nx = c->pNextSib; sceneNodeFree(c, 1); c = nx; }
     }
     if (n->pParent) {
-        SceneNode *p = (SceneNode *)n->pParent;
-        if (p->pChild == (int)n) p->pChild = n->pNextSib;
+        SceneNode *p = n->pParent;
+        if (p->pChild == n) p->pChild = n->pNextSib;
         else {
-            void *c = (void *)p->pChild;
-            while (c && ((SceneNode *)c)->pNextSib != (int)n) c = (void *)((SceneNode *)c)->pNextSib;
-            if (c) ((SceneNode *)c)->pNextSib = n->pNextSib;
+            SceneNode *c = p->pChild;
+            while (c && c->pNextSib != n) c = c->pNextSib;
+            if (c) c->pNextSib = n->pNextSib;
         }
     }
     g_nSceneNodeCount--;
@@ -726,33 +752,27 @@ void chanBuildRotMatrix(SceneChannel *ch)
 
 /* ===================================================================
  * chanCalcWorldTransform @0x42f6e0
+ * General path handles root node correctly: root->pChannels points to the
+ * root channel (g_rootChannel), and sceneBuildRootMatrix sets the root
+ * channel's bFlagB=1 so recursion terminates at the root.
  * =================================================================== */
-void chanCalcWorldTransform(int param_1, int param_2)
+void chanCalcWorldTransform(SceneNode *pNode, int nChannel) /* @0x42f6e0 */
 {
-    SceneNode *n = (SceneNode *)param_1;
-    if (!n) n = (SceneNode *)g_abSceneRootNode;
-    if ((void *)n == g_abSceneRootNode && param_2 == 0) {
-        /* Root node's world transform is identity; avoid infinite self-parent recursion
-         * (original 0x42f520 sets root's wmat to identity and marks bFlagB without recursion). */
-        SceneChannel *rch = (SceneChannel *)((char *)n->pChannels + param_2 * 0x70);
-        if (rch->bFlagB) return;
-        if (!rch->bFlagA) chanBuildRotMatrix(rch);
-        rch->bFlagB = 1;
-        return;
-    }
-    SceneChannel *ch = (SceneChannel *)((char *)n->pChannels + param_2 * 0x70);
+    SceneNode *n = pNode;
+    if (!n) n = &g_rootNode;
+    SceneChannel *ch = &n->pChannels[nChannel];
     if (ch->bFlagB) return;                          /* already computed */
     if (!ch->bFlagA) chanBuildRotMatrix(ch);
     int idx = ch->nIdx;
     SceneChannel *parentWorld;
-    if (param_2 == 0) {
-        SceneNode *p = (SceneNode *)n->pParent;
-        if (!p) p = (SceneNode *)g_abSceneRootNode;
-        chanCalcWorldTransform((int)p, idx);
-        parentWorld = (SceneChannel *)((char *)p->pChannels + idx * 0x70);
+    if (nChannel == 0) {
+        SceneNode *p = n->pParent;
+        if (!p) p = &g_rootNode;
+        chanCalcWorldTransform(p, idx);
+        parentWorld = &p->pChannels[idx];
     } else {
-        chanCalcWorldTransform((int)n, idx);
-        parentWorld = (SceneChannel *)((char *)n->pChannels + idx * 0x70);
+        chanCalcWorldTransform(n, idx);
+        parentWorld = &n->pChannels[idx];
     }
     /* mat3x3Mul on packed members would be -Waddress-of-packed-member
      * (matr @0x1c, wmat @0x40 are inside packed SceneChannel). Copy via
@@ -774,35 +794,30 @@ void chanCalcWorldTransform(int param_1, int param_2)
 /* ===================================================================
  * sceneMorphInterp @0x4300d0
  * Morph-vertex selector / linear interpolator.
- *  pNode  @+0x28 int idxA, +0x2c int idxB, +0x30 float t  (0..1)
- *  pRender @+4 int nVerts, +8 int pBase
  * Returns frame pointer or pOut (lerped). Original uses FTOL @0x43dd10
  * (FISTP 0xc trunc). TODO: (int)f trunc matches for positive d*t; differs
  * for negative — should call __ftol if exact pixel match needed.
  * =================================================================== */
-int sceneMorphInterp(int pNode, int pRender, int pOut) /* @0x4300d0 */
+void *sceneMorphInterp(SceneNode *pNode, SceneObjRenderInfo *pRender, void *pOut) /* @0x4300d0 */
 {
-    float t = *(float *)(pNode + 0x30);
+    float t = pNode->flMorphT;
+    uintptr_t base = (uintptr_t)pRender->pVerts;
+    int nVerts = pRender->nVerts;
     if (t <= 0.0f) {
-        int base = *(int *)(pRender + 8);
-        int nVerts = *(int *)(pRender + 4);
-        int idxA = *(int *)(pNode + 0x28);
-        return base + idxA * nVerts * 8;
+        int idxA = pNode->nMorphIdxA;
+        return (void *)(base + (uintptr_t)idxA * (uintptr_t)nVerts * 8);
     }
     if (t >= 1.0f) {
-        int base = *(int *)(pRender + 8);
-        int nVerts = *(int *)(pRender + 4);
-        int idxB = *(int *)(pNode + 0x2c);
-        return base + idxB * nVerts * 8;
+        int idxB = pNode->nMorphIdxB;
+        return (void *)(base + (uintptr_t)idxB * (uintptr_t)nVerts * 8);
     }
-    int nVerts = *(int *)(pRender + 4);
     if (nVerts <= 0) return pOut;
-    int base = *(int *)(pRender + 8);
-    int idxA = *(int *)(pNode + 0x28);
-    int idxB = *(int *)(pNode + 0x2c);
-    short *srcA = (short *)(base + idxA * nVerts * 8);
-    short *srcB = (short *)(base + idxB * nVerts * 8);
-    short *dst = (short *)(pOut + 4);
+    int idxA = pNode->nMorphIdxA;
+    int idxB = pNode->nMorphIdxB;
+    short *srcA = (short *)(base + (uintptr_t)idxA * (uintptr_t)nVerts * 8);
+    short *srcB = (short *)(base + (uintptr_t)idxB * (uintptr_t)nVerts * 8);
+    SceneMorphOut *out = (SceneMorphOut *)pOut;
+    short *dst = out->verts;
     for (int i = 0; i < nVerts; i++) {
         int d = (int)srcB[0] - (int)srcA[0];
         float f = (float)d * t;
@@ -932,7 +947,7 @@ void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, i
             else pColorPtr = NULL;
             int offset = (byte)*pIdxList * 0x10;
             if (*(int *)(pNormals + offset + 8) > 1) gxDrawTriangle((void *)(pVerts + offset), (int)pColorPtr);
-            pIdxList = (ushort *)((byte *)pIdxList + bStride);
+            pIdxList = pIdxList + bStride;
             nCount--;
         } while (nCount != 0);
         return;
@@ -944,7 +959,7 @@ void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, i
             void *pv0 = (void *)((uint)(byte)*pIdxList * 0x10 + pVerts);
             void *pv1 = (void *)((uint)*(byte *)((int)pIdxList + 1) * 0x10 + pVerts);
             if ((1 < *(int *)((int)pv0 + 8)) && (1 < *(int *)((int)pv1 + 8))) gxDrawLine(pv0, pv1, (int)pColorPtr);
-            pIdxList = (ushort *)((byte *)pIdxList + bStride);
+            pIdxList = pIdxList + bStride;
             nCount--;
         } while (nCount != 0);
         return;
@@ -973,12 +988,14 @@ void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, i
 tri_draw:
                 if ((d1 < 0) || (d2 < 0)) {
 tri_clip:
-                    meshDrawTriClip((byte *)pIdxList, pVerts, pNormals, pColorPtr, pvVar11, (int)nUnk, (int)bColor, (int)local8);
+                    if (pvVar11 || pColorPtr)
+                        meshDrawTriClip((byte *)pIdxList, pVerts, pNormals, pColorPtr, pvVar11, (int)nUnk, (int)bColor, (int)local8);
                 } else {
-                    gxDrawTriUV((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (int)pColorPtr, pvVar11);
+                    if (pvVar11 || pColorPtr)
+                        gxDrawTriUV((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (int)pColorPtr, pvVar11);
                 }
             }
-            pIdxList = (ushort *)((byte *)pIdxList + bStride);
+            pIdxList = pIdxList + bStride;
             nCount--;
             if (nCount == 0) return;
         } while (1);
@@ -1011,7 +1028,7 @@ quad_clip:
                     gxDrawQuad((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (void *)(pVerts + o3), (int)pColorPtr, pvVar11);
                 }
             }
-            pIdxList = (ushort *)((byte *)pIdxList + bStride);
+            pIdxList = pIdxList + bStride;
             nCount--;
         } while (nCount != 0);
     }
@@ -1033,12 +1050,12 @@ void gxSortPushKey(void *pMesh, void *pVerts, void *pNormals, int pTex, int pPal
  * =================================================================== */
 void sceneCameraBasisCalc(void)
 {
-    float *rm = (float *)g_pRootMatrix;
-    for (int i = 0; i < 9; i++) g_camMat[i] = rm[0x40 / 4 + i];  /* view 3x3 */
+    SceneChannel *rm = (SceneChannel *)g_pRootMatrix;
+    for (int i = 0; i < 9; i++) g_camMat[i] = rm->wmat[i];  /* view 3x3 */
     /* camera basis angles from the view matrix (verified vs disasm 0x42f460) */
-    float f1 = -rm[0x44 / 4];
-    float f2 = -rm[0x50 / 4];
-    float a  = (float)atan2((double)-rm[0x5c / 4], (double)sqrt(f1 * f1 + f2 * f2));
+    float f1 = -rm->wmat[1];
+    float f2 = -rm->wmat[4];
+    float a  = (float)atan2((double)-rm->wmat[7], (double)sqrt(f1 * f1 + f2 * f2));
     float b  = (float)atan2((double)f1, (double)-f2);
     float sA = (float)sin((double)a);
     float cA = (float)cos((double)a);
@@ -1057,39 +1074,39 @@ void sceneCameraBasisCalc(void)
 /* ===================================================================
  * sceneBuildRootMatrix @0x42f520
  * =================================================================== */
-void sceneBuildRootMatrix(void *pRootNode)
+void sceneBuildRootMatrix(SceneNode *pRootNode) /* @0x42f520 */
 {
-    float *rm = (float *)g_pRootMatrix;
-    SceneNode *root = (SceneNode *)pRootNode;
+    SceneChannel *rm = (SceneChannel *)g_pRootMatrix;
+    SceneNode *root = pRootNode;
     /* set flag byte at RM+0xb (verified vs disasm 0x42f520) */
-    ((char *)rm)[0xb] = 1;
+    rm->bFlagB = 1;
     /* clear world-dirty (bFlagB) for this node and all ancestor channels */
     {
         SceneNode *n = root;
         int c = 0;
-        while ((void *)n != (void *)g_abSceneRootNode) {
-            SceneChannel *chc = (SceneChannel *)((char *)n->pChannels + c * 0x70);
+        while (n != &g_rootNode) {
+            SceneChannel *chc = &n->pChannels[c];
             chc->bFlagB = 0;
             c = chc->nIdx;
-            n = (SceneNode *)n->pParent;
+            n = n->pParent;
         }
     }
     /* identity 3x3 (column-major) + zero translation (verified) */
-    rm[0x40/4] = 1; rm[0x44/4] = 0; rm[0x48/4] = 0;
-    rm[0x4c/4] = 0; rm[0x50/4] = 1; rm[0x54/4] = 0;
-    rm[0x58/4] = 0; rm[0x5c/4] = 0; rm[0x60/4] = 1;
-    rm[0x64/4] = 0; rm[0x68/4] = 0; rm[0x6c/4] = 0;
-    SceneChannel *ch = (SceneChannel *)root->pChannels;
-    chanCalcWorldTransform((int)root, 0);
+    rm->wmat[0] = 1; rm->wmat[1] = 0; rm->wmat[2] = 0;
+    rm->wmat[3] = 0; rm->wmat[4] = 1; rm->wmat[5] = 0;
+    rm->wmat[6] = 0; rm->wmat[7] = 0; rm->wmat[8] = 1;
+    rm->wx = 0; rm->wy = 0; rm->wz = 0;
+    SceneChannel *ch = root->pChannels;
+    chanCalcWorldTransform(root, 0);
     g_camPos[0] = ch->wx; g_camPos[1] = ch->wy; g_camPos[2] = ch->wz;
     /* copy ch->wmat TRANSPOSED into rm (verified: rm = transpose(wmat)) */
-    rm[0x40/4] = ch->wmat[0]; rm[0x44/4] = ch->wmat[3]; rm[0x48/4] = ch->wmat[6];
-    rm[0x4c/4] = ch->wmat[1]; rm[0x50/4] = ch->wmat[4]; rm[0x54/4] = ch->wmat[7];
-    rm[0x58/4] = ch->wmat[2]; rm[0x5c/4] = ch->wmat[5]; rm[0x60/4] = ch->wmat[8];
+    rm->wmat[0] = ch->wmat[0]; rm->wmat[1] = ch->wmat[3]; rm->wmat[2] = ch->wmat[6];
+    rm->wmat[3] = ch->wmat[1]; rm->wmat[4] = ch->wmat[4]; rm->wmat[5] = ch->wmat[7];
+    rm->wmat[6] = ch->wmat[2]; rm->wmat[7] = ch->wmat[5]; rm->wmat[8] = ch->wmat[8];
     float px = -ch->wx, py = -ch->wy, pz = -ch->wz;
-    rm[0x64/4] = px * rm[0x40/4] + py * rm[0x44/4] + pz * rm[0x48/4];
-    rm[0x68/4] = px * rm[0x4c/4] + py * rm[0x50/4] + pz * rm[0x54/4];
-    rm[0x6c/4] = px * rm[0x58/4] + py * rm[0x5c/4] + pz * rm[0x60/4];
+    rm->wx = px * rm->wmat[0] + py * rm->wmat[1] + pz * rm->wmat[2];
+    rm->wy = px * rm->wmat[3] + py * rm->wmat[4] + pz * rm->wmat[5];
+    rm->wz = px * rm->wmat[6] + py * rm->wmat[7] + pz * rm->wmat[8];
 }
 
 /* ===================================================================
@@ -1101,9 +1118,9 @@ void sceneBuildRootMatrix(void *pRootNode)
  * TODO: second vertex pool (normals) transform skipped — original transforms
  * both pools via __ftol. TODO: pTex/pPal order verified: pTex=@+0x20, pC=@+0x28.
  * =================================================================== */
-int sceneNodeRender(void *pNode) /* @0x42f8c0 */
+int sceneNodeRender(SceneNode *pNode) /* @0x42f8c0 */
 {
-    SceneNode *node = (SceneNode *)pNode;
+    SceneNode *node = pNode;
     byte bType = node->bType;
     if (bType == 2) return 1;
 
@@ -1111,18 +1128,18 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
     if (bType == 1) bDoRender = 0;
     else if (node->nId != 1 && node->nId < 0x100) bDoRender = 0;
 
-    *(byte *)(node->pChannels + 0xb) = 0; /* dirty */
-    chanCalcWorldTransform((int)(uintptr_t)node, 0);
+    node->pChannels[0].bFlagB = 0; /* dirty */
+    chanCalcWorldTransform(node, 0);
 
     /* TODO: restore exact frustum/distance culling (FLD/FILD/FSQRT) — permissive */
     if ((char)node->nChannelCount > 1) {
         for (int i = 1; i < (char)node->nChannelCount; i++) {
-            *(byte *)(node->pChannels + i * 0x70 + 0xb) = 0;
+            node->pChannels[i].bFlagB = 0;
         }
     }
-    if ((*(int *)((int)node + 0x24) == 1) &&
+    if ((node->nCacheFlag == 1) &&
         ((char)node->nChannelCount > 1) && (node->nId == 1)) {
-        sceneCacheLocalVerts((int)node);
+        sceneCacheLocalVerts(node);
     }
     if (!bDoRender) goto recurse;
 
@@ -1137,32 +1154,36 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
     if (node->nId != 1) goto recurse;
 
     {
-        SceneObjTypeDef *td = (SceneObjTypeDef *)node->pTypeDef;
+        SceneObjTypeDef *td = node->pTypeDef;
         if (!td) goto recurse;
-        int pRender = td->pRender;
-        if (!pRender) goto recurse;
-        SceneObjRenderInfo *ri = (SceneObjRenderInfo *)pRender;
-        int vbuf = sceneMorphInterp((int)node, pRender, (int)g_pMeshPool);
+        SceneObjRenderInfo *ri = td->pRender;
+        if (!ri) goto recurse;
+        void *vbuf = sceneMorphInterp(node, ri, g_pMeshPool);
         void *pVerts = g_pNodePoolCur;
         void *pNormals = g_pNodePool2Cur;
         short *src = (short *)vbuf;
 
         /* first vertex block: nGroups at +0x1c, groups at +0x20 */
         if (ri->nGroups > 0) {
-            int groupOff = 0;
             for (int g = 0; g < ri->nGroups; g++) {
-                int pGroup = ri->pGroups;
-                int chanIdx = *(int *)(pGroup + groupOff + 8);
-                int nVertsInGroup = *(int *)(pGroup + groupOff);
-                chanCalcWorldTransform((int)node, chanIdx);
-                SceneChannel *ch = (SceneChannel *)(node->pChannels + chanIdx * 0x70);
+                SceneGroupInfo *grp = &ri->pGroups[g];
+                int chanIdx = grp->nChanIdx;
+                int nVertsInGroup = grp->nVerts;
+                chanCalcWorldTransform(node, chanIdx);
+                SceneChannel *ch = &node->pChannels[chanIdx];
                 for (int v = 0; v < nVertsInGroup; v++) {
                     short sx = src[0], sy = src[1], sz = src[2];
                     float fx = (float)sx, fy = (float)sy, fz = (float)sz;
+                    /* World transform: vertex (x,y,z) * channel.wmat + channel.wx/wy/wz.
+                     * Verified vs disasm 0x42fae4..0x42fb4f. */
                     float wx = fx * ch->wmat[0] + fy * ch->wmat[1] + fz * ch->wmat[2] + ch->wx;
                     float wy = fx * ch->wmat[3] + fy * ch->wmat[4] + fz * ch->wmat[5] + ch->wy;
                     float wz = fx * ch->wmat[6] + fy * ch->wmat[7] + fz * ch->wmat[8] + ch->wz;
-                    /* Perspective projection (verified vs disasm 0x42fb82..0x42fc19):
+                    /* Perspective projection (verified vs disasm 0x42fb82..0x42fbec):
+                     * ORIGINAL stores world coords (ftol(wx),ftol(wy),ftol(wz)) to
+                     * g_pNodePoolCur (param 2 "pNormals" in meshDrawPoly = depth
+                     * check source) and projected screen coords to g_pNodePool2Cur
+                     * (param 3 "pVerts" in meshDrawPoly = gxDrawTriUV source).
                      * scale = halfWidth / ((aspect + worldZ) * nWidth)
                      * screenX = ftol(scale * worldX + centerX)
                      * screenY = ftol(Yscale * scale * worldY + centerY)
@@ -1174,9 +1195,11 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
                     int screenX = (int)(scale * wx + (float)g_centerX);
                     int screenY = (int)(g_flSceneYScale * scale * wy + (float)g_centerY);
                     int depth = (int)(az * 16.0f);
+                    /* pVerts pool (g_pNodePoolCur) = world coordinates (depth test) */
                     int *dstV = (int *)g_pNodePoolCur;
+                    dstV[0] = (int)wx; dstV[1] = (int)wy; dstV[2] = (int)wz;
+                    /* pNormals pool (g_pNodePool2Cur) = projected screen coordinates (rendered) */
                     int *dstN = (int *)g_pNodePool2Cur;
-                    dstV[0] = screenX; dstV[1] = screenY; dstV[2] = depth;
                     dstN[0] = screenX; dstN[1] = screenY; dstN[2] = depth;
                     *(byte *)((int)dstN + 0xc) = *(byte *)(vbuf + 6);
                     *(byte *)((int)dstN + 0xd) = *(byte *)(vbuf + 7);
@@ -1185,7 +1208,6 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
                     g_pNodePool2Cur = (void *)((int)g_pNodePool2Cur + 0x10);
                     src += 4;
                 }
-                groupOff += 0xc;
             }
         }
 
@@ -1193,39 +1215,37 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
         {
             void *pVerts2 = g_pNodePoolCur;
             void *pNormals2 = g_pNodePool2Cur;
-            int nPolyB = *(int *)(pRender + 0x24);
+            int nPolyB = ri->nPolyB;
             if (nPolyB > 0) {
-                int polyOff = 0;
                 for (int i = 0; i < nPolyB; i++) {
                     /* disasm reads ushort counts etc and transforms similar way */
                     /* simplified: skip detailed normal transform, advance cursors */
-                    (void)polyOff;
                 }
             }
             /* draw polys — faithful to 0x42f8c0: pTex=COLS (*pTex 4B), pPal=MAPI (*pTex 16B), guard only small */
-            int nPolyA = *(int *)(pRender + 0x14);
-            int pPolyA = *(int *)(pRender + 0x18);
+            int nPolyA = ri->nPolyA;
+            void *pPolyA = ri->pPolyA;
             if (nPolyA > 0) {
                 for (int i = 0; i < nPolyA; i++) {
-                    ushort *poly = *(ushort **)(pPolyA + i*4);
-                    int pTex = td->pC;
-                    int pPal = td->pTex;
+                    ushort *poly = ((ushort **)pPolyA)[i];
+                    int pTex = (int)(uintptr_t)td->pC;
+                    int pPal = (int)(uintptr_t)td->pTex;
                     if (!poly) continue;
-                    if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)pVerts, (int)pNormals, pTex, pPal);
+                    if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)(uintptr_t)pVerts, (int)(uintptr_t)pNormals, pTex, pPal);
                     else gxSortPushKey(poly, pVerts, pNormals, pTex, pPal);
                 }
             }
-            nPolyB = *(int *)(pRender + 0x24);
-            int pPolyB = *(int *)(pRender + 0x2c);
+            nPolyB = ri->nPolyB;
+            void *pPolyB = ri->pPolyB;
             if (nPolyB > 0) {
                 byte *base = (byte *)pPolyB;
                 for (int i = 0; i < nPolyB; i++) {
                     byte n = *base; base += 6;
                     for (int k = 0; k < (n & 0xff); k++) {
                         ushort *poly = (ushort *)base;
-                        int pTex2 = td->pC;
-                        int pPal2 = td->pTex;
-                        if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)pVerts2, (int)pNormals2, pTex2, pPal2);
+                        int pTex2 = (int)(uintptr_t)td->pC;
+                        int pPal2 = (int)(uintptr_t)td->pTex;
+                        if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)(uintptr_t)pVerts2, (int)(uintptr_t)pNormals2, pTex2, pPal2);
                         else gxSortPushKey(poly, pVerts2, pNormals2, pTex2, pPal2);
                         base += (poly[3] & 0xff) * (poly[0] & 0xff) + 4; /* stride */
                     }
@@ -1236,10 +1256,11 @@ int sceneNodeRender(void *pNode) /* @0x42f8c0 */
 
 recurse:
     {
-        void *child = (void *)node->pChild;
+        SceneNode *child = node->pChild;
         while (child) {
+            SceneNode *next = child->pNextSib;
             sceneNodeRender(child);
-            child = (void *)((SceneNode *)child)->pNextSib;
+            child = next;
         }
     }
     return 1;
@@ -1338,4 +1359,4 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     return 1;
 }
 
-int sceneCacheLocalVerts(int pNode) { (void)pNode; return 0; }
+int sceneCacheLocalVerts(SceneNode *pNode) /* @0x42ffa0 */ { (void)pNode; return 0; }

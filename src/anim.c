@@ -534,9 +534,9 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
                 float out[3];
                 int curX, curY, curZ;
                 sceneNodeGetPosWorld(mesh, out, 2);
-                curX = (int)out[0];
-                curY = (int)out[1];
-                curZ = (int)out[2];
+                memcpy(&curX, &out[0], sizeof(int));
+                memcpy(&curY, &out[1], sizeof(int));
+                memcpy(&curZ, &out[2], sizeof(int));
                 {
                     int tx = *(int *)(rec + 8);
                     int ty = *(int *)(rec + 0xc);
@@ -567,7 +567,7 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
                 short sx = *(short *)(rec + 2);
                 short sy = *(short *)(rec + 4);
                 short sz = *(short *)(rec + 6);
-                sceneObjSetSubOrient((int)(intptr_t)pAnm->pObj, (int)ch, sx, sy, sz);
+                sceneObjSetSubPos((int)(intptr_t)pAnm->pObj, (int)ch, sx, sy, sz, 2, 0.0f, 0, 0.0f, 0.0f);
             }
             rec += 8;
             break;
@@ -577,9 +577,9 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
                 float out[3];
                 int curX, curY, curZ;
                 sceneNodeGetPosWorld((int)(intptr_t)pAnm->pObj, out, 2);
-                curX = (int)out[0];
-                curY = (int)out[1];
-                curZ = (int)out[2];
+                memcpy(&curX, &out[0], sizeof(int));
+                memcpy(&curY, &out[1], sizeof(int));
+                memcpy(&curZ, &out[2], sizeof(int));
                 {
                     int tx = *(int *)(rec + 4);
                     int ty = *(int *)(rec + 8);
@@ -777,9 +777,12 @@ void sceneObjectAnimStepInterp(int *pObjList, byte bLoop) /* @0x4347c0 */
             int mesh = *(int *)(rec + 4);
             if (mesh != 0) {
                 float out[3];
+                int curX, curY, curZ;
                 sceneNodeGetPosWorld(mesh, out, 2);
+                memcpy(&curX, &out[0], sizeof(int));
+                memcpy(&curY, &out[1], sizeof(int));
+                memcpy(&curZ, &out[2], sizeof(int));
                 {
-                    int curX = (int)out[0], curY = (int)out[1], curZ = (int)out[2];
                     int tx = *(int *)(rec + 8);
                     int ty = *(int *)(rec + 0xc);
                     int tz = *(int *)(rec + 0x10);
@@ -825,7 +828,9 @@ void sceneObjectAnimStepInterp(int *pObjList, byte bLoop) /* @0x4347c0 */
                     float out[3];
                     int curX, curY, curZ;
                     sceneNodeGetPosWorld(pObjList[k], out, 2);
-                    curX = (int)out[0]; curY = (int)out[1]; curZ = (int)out[2];
+                    memcpy(&curX, &out[0], sizeof(int));
+                    memcpy(&curY, &out[1], sizeof(int));
+                    memcpy(&curZ, &out[2], sizeof(int));
                     {
                         int tx = *(int *)(rec + 4);
                         int ty = *(int *)(rec + 8);
