@@ -157,8 +157,8 @@ static SndMixRegion s_mixRegion;
 
 static SndVoiceSet s_voiceSet;        /* maniac 0x45f0e0 */
 
-static const char s_szWavExt[] = ".WAV";  /* @0x4511b4 */
-static const char s_szGlob[]   = "\\*";   /* @0x4511bc tail */
+static const char g_szWavExt[] = ".WAV";  /* @0x4511b4 */
+static const char g_szDirGlob[]   = "\\*";   /* @0x4511bc tail */
 
 /* =====================================================================
  * Math helpers
@@ -409,7 +409,7 @@ int sndLoadBankFromDir(int nBank, char *pszDir)
            (search[strlen(search) - 1] == '\\' || search[strlen(search) - 1] == '/')) {
         search[strlen(search) - 1] = '\0';
     }
-    strcat(search, s_szGlob);
+    strcat(search, g_szDirGlob);
 
     hFind = FindFirstFileA(search, &fd);
     if (hFind == INVALID_HANDLE_VALUE) return 0;
@@ -437,7 +437,7 @@ int sndLoadBankFromDir(int nBank, char *pszDir)
                     for (i = 1; i < 4; i++) {
                         char c = ext[i];
                         if (c >= 'a' && c <= 'z') c = (char)(c - 0x20);
-                        if (c != s_szWavExt[i]) { isWav = 0; break; }
+                        if (c != g_szWavExt[i]) { isWav = 0; break; }
                     }
                 }
             }

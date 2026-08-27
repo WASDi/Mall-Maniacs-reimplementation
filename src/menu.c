@@ -89,21 +89,21 @@ void   *g_hMenuTexSign200; /* @0x45a6e4 menu\sign200.tpg */
 void   *g_hMenuTexSign300; /* @0x45a6e8 menu\sign300.tpg */
 
 /* Decor + fling vertex region. The original layout places the 16x16 decor
- * grid at g_nMenuDecorY @0x45c3a4 and the 15x15 fling vertex grid at
+ * grid at g_menuDecorVerts @0x45c3a0 and the 15x15 fling vertex grid at
  * g_anMenuDecorQuadVerts @0x45c4b0; the two regions overlap so the fling
  * quads' edge vertices read animated decor cells. The buffer below anchors
  * at 0x45c3a0 so both grids share memory exactly as in the original:
  *   decor cell (col,row) GxVert at offset        col*0x10 + row*0x100
  *   fling  cell (col,row) GxVert at offset 0x110 + col*0x10 + row*0x100
  * (0x110 = 0x45c4b0 - 0x45c3a0). */
-unsigned char g_nMenuDecorY[0x1010];             /* @0x45c3a0-0x45d3af */
+unsigned char g_menuDecorVerts[0x1010];          /* @0x45c3a0-0x45d3af */
 
 /* Fling UV grid (g_anMenuFlingQuads @0x45a778): 15x15 GxColorUv records,
  * cell (col,row) at byte offset col*0x1c + row*0x1a4. Stored as a byte
  * buffer because the row stride is not a clean C 2-D array. */
 unsigned char g_anMenuFlingQuads[15 * 0x1a4];    /* @0x45a778-0x45bffb */
 
-/* Decor cell accessor (g_nMenuDecorY @0x45c3a4 layout): cell (col,row)
+/* Decor cell accessor (g_menuDecorVerts @0x45c3a0 layout): cell (col,row)
  * GxVert at offset col*0x10 + row*0x100. Inlined at call sites to match the
  * original's direct buffer indexing. */
 
@@ -117,10 +117,10 @@ unsigned char g_anMenuFlingQuads[15 * 0x1a4];    /* @0x45a778-0x45bffb */
  * tables. The original data lives in .rdata/.data at the noted addresses. */
 const char * const g_kIntroTga[6] = {
     "menu\\intro_addgames.tga",    /* @0x450794 */
-    "menu\\intro_och.tga",         /* @0x45078c */
-    "menu\\intro_uds.tga",         /* @0x450780 */
-    "menu\\intro_samarbete.tga",   /* @0x450774 */
-    "menu\\intro_mcd.tga",         /* @0x450768 */
+    "menu\\intro_och.tga",         /* @0x450780 */
+    "menu\\intro_uds.tga",         /* @0x45076c */
+    "menu\\intro_samarbete.tga",   /* @0x450750 */
+    "menu\\intro_mcd.tga",         /* @0x45073c */
     "menu\\intro_presenterar.tga"  /* @0x450720 */
 };
 void *g_hIntroTex[6];          /* @0x45a618-0x45a62c */
@@ -834,11 +834,11 @@ void menuInit(int nRestartMode)
     /* Decor grid init (menuInit @0x41a189-0x41a218): 16x16 cells at the
      * (col*660/15)<<8 / (row*500/15)<<8 grid positions, z = 500000, white.
      * gameFrameUpdate later animates the grid; the fling vertex grid shares
-     * this memory (see the g_nMenuDecorY comment above). */
+     * this memory (see the g_menuDecorVerts comment above). */
     for (col = 0; col < 16; col++) {
         int x = (col * 0x294 / 15) << 8;   /* col*44 */
         for (row = 0; row < 16; row++) {
-            GxVert *cell = (GxVert *)(g_nMenuDecorY + col * 0x10 + row * 0x100);
+            GxVert *cell = (GxVert *)(g_menuDecorVerts + col * 0x10 + row * 0x100);
             int y = (row * 0x1f4 / 15) << 8;  /* floor(row*500/15) */
             cell->x = x;
             cell->y = y;
@@ -940,7 +940,7 @@ void gameFrameUpdate(void)
 
                 for (col = 0; col < 16; col++) {
                     colBase = col * 0x294 / 15;  /* col*660/15 = col*44 */
-                    cell = (GxVert *)(g_nMenuDecorY + col * 0x10 + 0);
+                    cell = (GxVert *)(g_menuDecorVerts + col * 0x10 + 0);
                     for (row = 0; row < 16; row++) {
                         rowBase = row * 0x1f4 / 15;  /* floor(row*500/15) */
                         s = sinf(((float)row - fVar9) *
@@ -963,7 +963,7 @@ void gameFrameUpdate(void)
                  * p-0x10, p, p-1, 0x204, uv) in GxVert pointer units. */
                 for (col = 0; col < 15; col++) {
                     cu = (GxColorUv *)(g_anMenuFlingQuads + col * 0x1c + 0);
-                    p = (GxVert *)(g_nMenuDecorY + 0x110 + col * 0x10 + 0);
+                    p = (GxVert *)(g_menuDecorVerts + 0x110 + col * 0x10 + 0);
                     for (row = 0; row < 15; row++) {
                         gxDrawPolygon(p - 0x11, p - 0x10, p, p - 1, 0x204, cu);
                         cu = (GxColorUv *)((char *)cu + 0x1a4);

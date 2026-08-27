@@ -29,11 +29,11 @@ static char   g_meshNameBuf[8192];             /* backing for mesh-name strings 
 static char  *g_pMeshNameStr = g_meshNameBuf;  /* @0x45eab4 running name cursor */
 static unsigned char g_meshTableMem[256 * 8];  /* 8B entries {name*,data*} */
 void  *g_pMeshTable   = g_meshTableMem;       /* @0x45e930 */
-int   g_nMeshTableCount = 0;                  /* @0x45e994 (@0x45e944 alias) */
+int   g_nMeshTableCount = 0;                  /* @0x45e994 */
 static void  *g_pMeshTableWr;                 /* @0x45e948 write cursor */
 static void  *g_pMeshTableStart;              /* @0x45eab8 first new entry this load */
-static char   g_sceneNameBuf[16384];          /* @0x45e94c buffer */
-static char  *g_pSceneNameBufPos = g_sceneNameBuf; /* @0x45e94c pos */
+static char   g_sceneNameBuf[16384];          /* rebuild storage for the original scene name arena */
+static char  *g_pSceneNameBufPos = g_sceneNameBuf; /* @0x45e94c write cursor into the scene name arena */
 static char  *g_pObjNameList = NULL;          /* @0x45e934 */
 char  *g_pObjNameTable = NULL;         /* @0x45e990 */
 int    g_nObjNameTableSize = 0;        /* @0x45eaa8 */

@@ -24,7 +24,7 @@ typedef unsigned int   uint;
 
 /* --- shared mesh registry (defined in sen.c) --- */
 extern void *g_pMeshTable;     /* @0x45e930 8-byte entries {char*name, void*meshData} */
-extern int   g_nMeshTableCount;/* @0x45e944 */
+extern int   g_nMeshTableCount;/* @0x45e994 */
 
 /* --- SceneObjTypeDef: a MESH chunk (serialized in a .sen). sceneMeshFixup
  * relocates the pointer fields at +0xc,+0x10,+0x14,+0x20,+0x28,+0x30 (these
@@ -180,8 +180,8 @@ extern void *g_pNodePool2;         /* @0x45e648 */
 extern void *g_pMeshPool;          /* @0x45e610 */
 extern void *g_pNodePoolCur;       /* @0x45e908 cursor into g_pNodePool */
 extern void *g_pNodePool2Cur;      /* @0x45e5fc cursor into g_pNodePool2 */
-extern void *g_pRootMatrix;        /* @0x45e818 camera/world matrix */
-extern char  g_abSceneRootNode[0xb0]; /* root node storage */
+extern void *g_pRootMatrix;        /* @0x45e8d4 camera/world matrix (points at g_rootChannel, orig 0x45e818) */
+extern SceneNode g_rootNode;       /* @0x45e8c0 root node storage */
 extern float *g_pSinTable;           /* @0x45e5f8 sin table 0x400 */
 extern float *g_pSinTree;            /* @0x45e888 sin tree 0x3ff8 */
 extern int   g_nSceneNodeCount;
@@ -192,18 +192,13 @@ extern int   g_nSceneNodeMemPeak;
 extern float g_nSceneWidth;  /* @0x45e900 float */
 extern float g_nSceneHeight; /* @0x45e614 float */
 extern float g_flSceneAspect;
-extern float g_sceneRenderT;
 extern int   g_nSceneHalfWidth;   /* @0x450f70 */
 extern int   g_centerX;           /* @0x450f74 */
 extern int   g_centerY;           /* @0x450f78 */
-extern float g_flSceneRenderT2;   /* @0x450f7c */
+extern float g_sceneRenderT;      /* @0x450f7c */
 extern float g_flSceneYScale;     /* @0x450f80 */
 extern int   g_nSceneDistMax;
 extern int   g_nSceneDrawCount;
-extern float g_gxClipTest;
-extern float g_gxClipTest_2;
-extern float g_gxClipTest_3;
-extern float g_gxClipTest_4;
 extern int   g_nNodePoolSize;
 extern int   g_nSceneBufSize;
 extern int   g_nSortBufCount;

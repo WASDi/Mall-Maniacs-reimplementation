@@ -48,7 +48,7 @@ int  sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames)
  * g_pMeshTable holds 8-byte entries {char *name, void *pMeshData}; pMeshData is
  * the raw MESH chunk bytes, which are a serialized SceneObjTypeDef. */
 extern void *g_pMeshTable;      /* @0x45e930 */
-extern int   g_nMeshTableCount; /* @0x45e994 (count) / @0x45e944 alias in old map */
+extern int   g_nMeshTableCount; /* @0x45e994 */
 extern char g_szSceneDir[];     /* @0x45e950 scene base dir (set by scenSetDir) */
 extern char *g_pObjNameTable;   /* @0x45e990 TNAM packed names */
 extern int g_nObjNameTableSize; /* @0x45eaa8 */

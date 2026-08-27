@@ -48,18 +48,13 @@ int   g_nSceneNodeMemPeak = 0;
 float g_nSceneWidth = 0.0f;   /* @0x45e900 float, disasm moves via int */
 float g_nSceneHeight = 0.0f;  /* @0x45e614 float */
 float g_flSceneAspect = 1.0f; /* @0x45e8fc */
-float g_sceneRenderT = 0.0f;
 int   g_nSceneHalfWidth = 0;      /* @0x450f70 */
 int   g_centerX = 0;              /* @0x450f74 */
 int   g_centerY = 0;              /* @0x450f78 */
-float g_flSceneRenderT2 = 0.0f;   /* @0x450f7c stored as int bits, FILD in culling */
+float g_sceneRenderT = 0.0f;      /* @0x450f7c camera-block renderT float bits; original culling re-reads it as int (FILD) */
 float g_flSceneYScale = 0.0f;     /* @0x450f80 */
 int   g_nSceneDistMax = 0x7fffffff;
 int   g_nSceneDrawCount = 0;
-float g_gxClipTest = 0.0f;
-float g_gxClipTest_2 = 0.0f;
-float g_gxClipTest_3 = 0.0f;
-float g_gxClipTest_4 = 0.0f;
 int   g_nNodePoolSize = 0;
 int   g_nSceneBufSize = 0;
 int   g_nSortBufCount = 0;
@@ -77,7 +72,7 @@ float g_sceneCameraBasis_7 = 0.0f;
 /* trig result globals (used by callers that read the FPU result) */
 static float g_flMathSin = 0.0f;
 static float g_flMathCos = 0.0f;
-static const float g_flMatrixBlend = 0.5f; /* @0x44b274 */
+static const float g_flHalf = 0.5f; /* @0x44b274 shared 0.5f literal (also used by aiSteerToTarget, menus, ...) */
 
 /* The engine stores all rotation angles as int16 "binary degrees":
  * 65536 = 360 degrees. mathSinDeg/mathCosDeg (@0x42d030/@0x42d050) take the
@@ -720,7 +715,7 @@ int sceneObjSetSubOrient(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch
     matrix[6] = sRoll * cPitch * sYaw - cRoll * sPitch;
     matrix[7] = cRoll * cPitch * sYaw + sRoll * sPitch;
     matrix[8] = cPitch * cYaw;
-    for (i = 0; i < 9; i++) ch->matr[i] = (ch->matr[i] + matrix[i]) * g_flMatrixBlend;
+    for (i = 0; i < 9; i++) ch->matr[i] = (ch->matr[i] + matrix[i]) * g_flHalf;
     ch->bFlagA = 1;
     return 1;
 }
@@ -1338,7 +1333,6 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     g_nSceneHeight = cb->nHeight;
     g_flSceneAspect = cb->nHeight / cb->nWidth;
     g_sceneRenderT = cb->renderT;
-    g_flSceneRenderT2 = cb->renderT;
     g_pSortBufCur = g_pSortBuffer;
     g_pNodePoolCur = g_pNodePool;
     g_pNodePool2Cur = g_pNodePool2;
@@ -1348,15 +1342,11 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     width = mode.width;
     height = mode.height;
     if (width == 0) return 1;
-    g_gxClipTest_4 = ((float)height * (4.0f / 3.0f)) / (float)width;
 
     x1 = (int)cb->vw * width;
     x0 = (int)cb->vx * width;
     y1 = (int)cb->vh * height;
     y0 = (int)cb->vy * height;
-    g_gxClipTest = (float)(((x1 >> 4) - (x0 >> 4)) >> 1);
-    g_gxClipTest_2 = (float)((int)g_gxClipTest + (x0 >> 4));
-    g_gxClipTest_3 = (float)((((y1 >> 4) - (y0 >> 4)) >> 1) + (y0 >> 4));
     g_nSceneHalfWidth = ((x1 >> 4) - (x0 >> 4)) >> 1;
     g_centerX = g_nSceneHalfWidth + (x0 >> 4);
     g_centerY = ((y1 >> 4) + (y0 >> 4)) >> 1;
