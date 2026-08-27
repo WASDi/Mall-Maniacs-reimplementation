@@ -4,7 +4,7 @@
 #include <windows.h>
 
 /* =====================================================================
- * Declared interfaces for unfinished behavior (Rebuild.md §19).
+ * Declared interfaces for unfinished behavior.
  * Each is a TODO stub: logs and performs a documented no-op or safe
  * placeholder transition so the vertical slice proceeds; callers keep their
  * contract unchanged when the stub body is later replaced. Original

@@ -10,7 +10,7 @@
 /* =====================================================================
  * Custom helpers — rebuild-only functions/symbols that have NO counterpart
  * in Ghidra's maniac.exe. Kept in custom_helpers.c so each subsystem file
- * contains only Ghidra-mapped code (per Rebuild.md: custom code is clearly
+ * contains only Ghidra-mapped code (custom code is clearly
  * labeled; original addresses noted where one is mirrored, and marked
  * "no direct original address" otherwise).
  * ===================================================================== */

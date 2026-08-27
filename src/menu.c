@@ -26,7 +26,7 @@ extern HWND g_hWnd;
 
 /* =====================================================================
  * Menu subsystem — reimplementation of the intro + main-menu state
- * machine. Compiled to maniac_rebuild.exe per Rebuild.md.
+ * machine. Compiled to maniac_rebuild.exe.
  *
  *   menuInit        @0x419c20  palette + intro logos + menu fonts + state
  *   introUpdate     @0x41ae50  6-logo intro timeline (fade-to-black gaps)

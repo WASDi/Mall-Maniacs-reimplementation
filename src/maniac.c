@@ -9,7 +9,7 @@ void gameInit(void); /* @0x409d90 — defined in game.c */
 
 /* =====================================================================
  * Mall Maniacs (maniac.exe) replacement — main translation unit. Compiled
- * to maniac_rebuild.exe per Rebuild.md milestones.
+ * to maniac_rebuild.exe.
  *
  * Reimplements a narrow slice of the original:
  *   - WinMain @0x4160a0           (simplified: no DirectInput, no net loop)

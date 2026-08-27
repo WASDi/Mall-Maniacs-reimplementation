@@ -45,6 +45,4 @@ in the subsystem notes.
 
 Source reconstruction starts with the offline GUI and software GX driver;
 networking, DirectInput, DirectSound, and other nonessential systems remain
-deferred. Next: implement one real menu row-target state, then extend input and
-gameplay incrementally (see [16-rebuild.md](16-rebuild.md) and
-[Rebuild.md](../Rebuild.md)).
+deferred.

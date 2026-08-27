@@ -17,7 +17,7 @@
  * parsed by senChunkParse), OBJI (object instances). For CHARACTERS.SEN only
  * MESH + EMAN chunks are present; the full object-instantiation path is
  * deferred and stubbed as sceneInstantiateObjects in stubs.c (out of scope
- * for the menu preview per Rebuild.md / AGENTS.md). */
+ * for the menu preview per AGENTS.md). */
 
 #include <windows.h>
 

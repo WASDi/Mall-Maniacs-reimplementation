@@ -8,7 +8,7 @@
  * The original functions thunk to the statically-linked MSVC CRT
  * (fileOpen @0x43e68a = fopen, fileRead @0x43e306 = fread, fileSeek
  * @0x43e5a0 = fseek, fileTell @0x43e41d = ftell, fileClose @0x43e289 =
- * fclose); per Rebuild.md the CRT equivalents are used directly. */
+ * fclose). */
 
 int  fileOpenMode(LPCSTR path, int mode); /* @0x408cd0 mode 1 -> "wb" else "rb"; -1 on fail */
 void fileCloseStream(FILE *fp);                /* @0x408d00 */

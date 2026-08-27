@@ -9,7 +9,7 @@
  * maniac-side gx* wrappers that the GUI vertical slice needs. Driver is the
  * original DRIVERS\GXSOFT.DLL (software rasterizer), loaded directly (the
  * original gxLoadDriver @0x432ea0 reads the driver path + options from the
- * registry; that configuration path is deferred per Rebuild.md). */
+ * registry. */
 
 /* gxDLLInit / gxDLLExit use the compiler's default C convention. */
 typedef int  (*pfn_gxDLLInit)(GxDriverApi *api);

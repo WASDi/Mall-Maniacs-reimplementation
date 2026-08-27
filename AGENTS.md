@@ -12,8 +12,7 @@
 Reimplement the Ghidra view of `maniac.exe` as source in `src/maniac.c` and
 per-subsystem files. The result must build as
 `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` and provide an offline
-GUI and single-player functionality. Work in small chunks, following the next
-milestone in `docs/16-rebuild.md`.
+GUI and single-player functionality.
 
 ## Implementation
 - Do not reimplement system libraries, runtime code, import stubs, or compiler glue.
