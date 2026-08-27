@@ -507,17 +507,33 @@ int sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll,
             viewY = -(forwardX * ch->matr[3] + forwardY * ch->matr[4]
                     + forwardZ * ch->matr[5]);
 
+            /* Full look-at Euler decomposition (original @0x430854..0x430a3e,
+             * verified instruction-by-instruction). rollBasis/basisZ/basisY are
+             * the roll-frame vector dotted against matrix rows 0/2/1:
+             * row0 = matr[0..2], row1 = matr[3..5], row2 = matr[6..8].
+             * rot0 = atan2(viewY, len)            (pitch of the view dir)
+             * rot1 = atan2(normalX, normalZ)      (yaw/heading of the view dir)
+             * rot2 = atan2(-(normalZ*rollBasis - normalX*basisZ),
+             *              basisY*len + (normalX*rollBasis + normalZ*basisZ)*viewY) */
             {
+                float dot = normalX * viewX + normalZ * viewZ;
+                float rollVec = sRoll * sPitch + cRoll * cPitch * sYaw;
+                float rollVec2 = cRoll * sPitch * sYaw - sRoll * cPitch;
                 float rollBasis = cRoll * cYaw * ch->matr[1]
-                    + (sRoll * sPitch + cRoll * cPitch * sYaw) * ch->matr[2]
-                    + (cRoll * sPitch * sYaw - sRoll * cPitch) * ch->matr[0];
+                    + rollVec * ch->matr[2]
+                    + rollVec2 * ch->matr[0];
+                float basisZ = cRoll * cYaw * ch->matr[7]
+                    + rollVec * ch->matr[8]
+                    + rollVec2 * ch->matr[6];
+                float basisY = cRoll * cYaw * ch->matr[4]
+                    + rollVec * ch->matr[5]
+                    + rollVec2 * ch->matr[3];
 
-            ch->rot[0] = (short)mathAtan2Deg(viewY,
-                                             normalX * viewX + normalZ * viewZ);
-            ch->rot[1] = (short)mathAtan2Deg(0.0f,
-                                             normalX * viewX + normalZ * viewZ);
+            ch->rot[0] = (short)mathAtan2Deg(viewY, dot);
+            ch->rot[1] = (short)mathAtan2Deg(normalX, normalZ);
             ch->rot[2] = (short)mathAtan2Deg(
-                -(rollBasis * 0.0f - 0.0f * (normalX * viewX + normalZ * viewZ)), viewY);
+                -(normalZ * rollBasis - normalX * basisZ),
+                basisY * dot + (normalX * rollBasis + normalZ * basisZ) * viewY);
             }
         }
         break;
