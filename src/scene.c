@@ -79,36 +79,32 @@ static float g_flMathSin = 0.0f;
 static float g_flMathCos = 0.0f;
 static const float g_flMatrixBlend = 0.5f; /* @0x44b274 */
 
-/* The original mathSinDeg/mathCosDeg/mathAtan2Deg fold the degree->radian
- * multiply (by the double constant at 0x44b788 / 0x44b780 = M_PI/180) directly
- * into the FPU op; the deg2rad step is inlined here, not a separate function. */
-static const double g_dblDegToRad = M_PI / 180.0;  /* @0x44b788 / @0x44b780 */
+/* The engine stores all rotation angles as int16 "binary degrees":
+ * 65536 = 360 degrees. mathSinDeg/mathCosDeg (@0x42d030/@0x42d050) take the
+ * int16 angle, FILD it and multiply by the double constant @0x44b788
+ * (= 2*pi/65536, exact stored value below) before FSIN/FCOS.
+ * mathAtan2Deg (@0x42d010) FPATANs and multiplies by @0x44b780
+ * (= 65536/(2*pi), exact stored value below) before ftol. */
+static const double g_dblBdgToRad = 9.58737992553711e-05;      /* @0x44b788 */
+static const double g_dblRadToBdg = 10430.378349108529;        /* @0x44b780 */
 /* mathSinDeg @0x42d030 */
 float mathSinDeg(short d)
 {
-    g_flMathSin = (float)sin((double)d * g_dblDegToRad);
+    g_flMathSin = (float)sin((double)d * g_dblBdgToRad);
     return g_flMathSin;
 }
 /* mathCosDeg @0x42d050 */
 float mathCosDeg(short d)
 {
-    g_flMathCos = (float)cos((double)d * g_dblDegToRad);
+    g_flMathCos = (float)cos((double)d * g_dblBdgToRad);
     return g_flMathCos;
 }
-/* mathAtan2Deg @0x42d010
- * The original folds the radian->degree scale (180/M_PI, double const @0x44b280)
- * and uses x87 FPATAN. For the orientation case (sceneObjSetPosOrient mode 5)
- * the roll term reduces to atan2(0, viewY) where viewY is a signed zero, so the
- * result is the degenerate atan2(0,0)=±180 depending on sign bits of the
- * intermediate zeros. That makes the fall direction flicker (cRoll flips
- * between ±1). The original resolves this deterministically via x87; to keep the
- * rebuild stable we resolve the both-zero degenerate case to a neutral 0 degrees
- * (consistent with the verified shortcut behaviour: roll stays 0, char falls
- * straight down and reaches the 0x4e20 stop threshold). */
-long long mathAtan2Deg(float y, float x)
+/* mathAtan2Deg @0x42d010 — FLD y, FLD x, FPATAN (atan(y/x)), FMUL @0x44b780,
+ * JMP __ftol: returns the angle in binary degrees as a truncating int.
+ * x87 FPATAN(+0,+0) = 0 deterministically, so no special case is needed. */
+int mathAtan2Deg(float y, float x)
 {
-    if (y == 0.0f && x == 0.0f) return 0;
-    return (long long)(atan2((double)y, (double)x) * 180.0 / M_PI);
+    return (int)(atan2((double)y, (double)x) * g_dblRadToBdg);
 }
 /* mathSinTreeBuild @0x42efb0
  * Original stores right-child pointer as raw bits in tree[1] (float slot
@@ -497,10 +493,18 @@ int sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll,
             float viewY;
 
             if (ch->bFlagA != 1) chanBuildRotMatrix(ch);
-            viewX = forwardY * ch->matr[1] + forwardZ * ch->matr[2]
-                  + forwardX * ch->matr[0];
-            viewZ = forwardY * ch->matr[7] + forwardZ * ch->matr[8]
-                  + forwardX * ch->matr[6];
+            /* [VERIFIED 2026-08-27] operand pairing from disasm:
+             * viewX = fX*m0 + fY*m1 + fZ*m2  (0x4308d7 fwdX*matr[0]@0x1c,
+             *             0x4308db fwdZ*matr[2]@0x24, 0x4308e7 fwdY*matr[1]@0x20)
+             * viewZ = fX*m6 + fY*m7 + fZ*m8  (0x4308f0..0x430907)
+             * viewY = -(fX*m3 + fY*m4 + fZ*m5) (0x430929..0x430944, FCHS)
+             * viewX/viewZ/viewY are the true row products of matr (row-major
+             * rotation), so a heading delta composes: viewX = sin(dθ)*cosθ +
+             * cos(dθ)*sinθ = sin(θ+dθ) -> rot1 accumulates across frames. */
+            viewX = forwardX * ch->matr[0] + forwardY * ch->matr[1]
+                  + forwardZ * ch->matr[2];
+            viewZ = forwardX * ch->matr[6] + forwardY * ch->matr[7]
+                  + forwardZ * ch->matr[8];
             invLength = 1.0f / (float)sqrt(viewX * viewX + viewZ * viewZ);
             normalX = invLength * viewX;
             normalZ = invLength * viewZ;
@@ -508,26 +512,34 @@ int sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll,
                     + forwardZ * ch->matr[5]);
 
             /* Full look-at Euler decomposition (original @0x430854..0x430a3e,
-             * verified instruction-by-instruction). rollBasis/basisZ/basisY are
-             * the roll-frame vector dotted against matrix rows 0/2/1:
-             * row0 = matr[0..2], row1 = matr[3..5], row2 = matr[6..8].
-             * rot0 = atan2(viewY, len)            (pitch of the view dir)
+             * verified instruction-by-instruction incl. FPU stack order).
+             * With rollVec2=R1, rollVec=R2, cRoll*cYaw=R3 the original pairs:
+             *   rollBasis = R1*matr[0] + R2*matr[2] + R3*matr[1]
+             *             (0x430992 FLD ST2=mul matr[0]@0x1c; 0x430997 FLD ST1=
+             *              matr[2]@0x24; 0x43099e FLD ST2=matr[1]@0x20 — note
+             *              the m2/m1 swap vs matrix index order!)
+             *   basisZ    = R1*matr[6] + R2*matr[8] + R3*matr[7] (0x4309a9..ba)
+             *   basisY    = R1*matr[4] + R3*matr[3] + R2*matr[5] (0x4309c0..d9)
+             * rot0 = atan2(viewY, dot)            (pitch of the view dir)
              * rot1 = atan2(normalX, normalZ)      (yaw/heading of the view dir)
-             * rot2 = atan2(-(normalZ*rollBasis - normalX*basisZ),
-             *              basisY*len + (normalX*rollBasis + normalZ*basisZ)*viewY) */
+             * rot2 = atan2(normalX*basisZ - normalZ*rollBasis,
+             *              basisY*dot + (normalZ*basisZ + normalX*rollBasis)*viewY)
+             * With this pairing and yaw=roll=0 inputs, rollBasis==matr[1]==0
+             * for yaw-only states, so rot2 stays 0 and (rot0,rot1) converge to
+             * a stable fixed point (original shows upright character). */
             {
                 float dot = normalX * viewX + normalZ * viewZ;
                 float rollVec = sRoll * sPitch + cRoll * cPitch * sYaw;
                 float rollVec2 = cRoll * sPitch * sYaw - sRoll * cPitch;
-                float rollBasis = cRoll * cYaw * ch->matr[1]
+                float rollBasis = rollVec2 * ch->matr[0]
                     + rollVec * ch->matr[2]
-                    + rollVec2 * ch->matr[0];
-                float basisZ = cRoll * cYaw * ch->matr[7]
+                    + cRoll * cYaw * ch->matr[1];
+                float basisZ = rollVec2 * ch->matr[6]
                     + rollVec * ch->matr[8]
-                    + rollVec2 * ch->matr[6];
-                float basisY = cRoll * cYaw * ch->matr[4]
-                    + rollVec * ch->matr[5]
-                    + rollVec2 * ch->matr[3];
+                    + cRoll * cYaw * ch->matr[7];
+                float basisY = rollVec2 * ch->matr[3]
+                    + cRoll * cYaw * ch->matr[4]
+                    + rollVec * ch->matr[5];
 
             ch->rot[0] = (short)mathAtan2Deg(viewY, dot);
             ch->rot[1] = (short)mathAtan2Deg(normalX, normalZ);
@@ -578,10 +590,17 @@ int sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float
         float dx = flX - ch->x;
         float dy = flY - ch->y;
         float dz = flZ - ch->z;
-        float d = (float)sqrt(dx * dx + dz * dz);
-        /* Original uses x87 FPATAN (radians), not a degrees helper. */
-        ch->rot[1] = (short)(int)(atan2f(dx, dz) * (180.0f / (float)M_PI));
-        ch->rot[0] = (short)(int)(atan2f(-dy, d) * (180.0f / (float)M_PI));
+        float dHoriz = (float)sqrt(dx * dx + dz * dz);
+        float d3 = (float)sqrt(dy * dy + dHoriz * dHoriz);
+        /* Original @0x4310a7..0x4310e6: FPATAN on (dx/d, dz/d) resp.
+         * (-dy/d3, d/d3) followed by FMUL @0x44b780 (65536/(2*pi)) + ftol —
+         * the same binary-degree conversion as mathAtan2Deg. rot[2] forced
+         * to 0 (0x431081), bFlagA/bFlagB cleared (0x4310f7/0x431104). */
+        ch->rot[1] = (short)mathAtan2Deg(dx, dz);
+        ch->rot[0] = (short)mathAtan2Deg(-dy, d3);
+        ch->rot[2] = 0;
+        ch->bFlagA = 0;
+        ch->bFlagB = 0;
         return 1;
     }
     return 0;
@@ -594,10 +613,10 @@ void sceneNodeUpdateBounds(SceneNode *pNode) { (void)pNode; }
 
 /* ===================================================================
  * sceneObjSetSubPos @0x430a90 — sub-channel orientation/position setter.
+ * Original has exactly 6 params (prologue reads entry ESP+0x08..0x18).
  * =================================================================== */
-int sceneObjSetSubPos(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode, float flPitch, int nUnk, float flFwd, float flSide) /* @0x430a90 */
+int sceneObjSetSubPos(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode) /* @0x430a90 */
 {
-    (void)nUnk;
     SceneNode *n = pObj;
     if (nMeshIdx < 0 || nMeshIdx >= (int)n->nChannelCount) return 0;
     if (nMode & 0x20) {
@@ -620,6 +639,13 @@ int sceneObjSetSubPos(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, s
         ch->rot[2] = nRoll;
         break;
     case 5:
+        /* [VERIFIED 2026-08-27] identical math to sceneObjSetPosOrient mode 5
+         * (@0x430b7c..0x430d1c): fwd=(sP*cY,-sY,cP*cY); viewX=fX*m0+fY*m1+fZ*m2
+         * (0x430bb1..0x430bc8); viewZ=fX*m6+fY*m7+fZ*m8; viewY=-(fX*m3+fY*m4+
+         * fZ*m5) (0x430c03..0x430c1e); rot0=atan2(viewY,dot) (0x430cd5);
+         * rot1=atan2(normalX,normalZ) (0x430ce7); rollBasis=R1*m0+R2*m2+R3*m1
+         * (0x430c6c..0x430c7d); basisZ/basisY/V same as sibling; rot2=atan2(
+         * -(nZ*rollBasis-nX*basisZ), V) via FCHS + arg overwrite (0x430d0b..d1c). */
         {
             float sYaw = mathSinDeg(nYaw);
             float cYaw = mathCosDeg(nYaw);
@@ -630,30 +656,34 @@ int sceneObjSetSubPos(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, s
             float forwardX = sPitch * cYaw;
             float forwardY = -sYaw;
             float forwardZ = cPitch * cYaw;
-            float viewX;
-            float viewZ;
-            float invLength;
-            float normalX;
-            float normalZ;
-            float viewY;
+            if (ch->bFlagA != 1) chanBuildRotMatrix(ch); /* @0x430ba6..0x430bae */
+            float viewX = forwardX * ch->matr[0] + forwardY * ch->matr[1]
+                        + forwardZ * ch->matr[2];
+            float viewZ = forwardX * ch->matr[6] + forwardY * ch->matr[7]
+                        + forwardZ * ch->matr[8];
+            float invLength = 1.0f / (float)sqrt(viewX * viewX + viewZ * viewZ);
+            float normalX = invLength * viewX;
+            float normalZ = invLength * viewZ;
+            float viewY = -(forwardX * ch->matr[3] + forwardY * ch->matr[4]
+                          + forwardZ * ch->matr[5]);
+            float dot = normalX * viewX + normalZ * viewZ;
+            float rollVec = sRoll * sPitch + cRoll * cPitch * sYaw;
+            float rollVec2 = cRoll * sPitch * sYaw - sRoll * cPitch;
+            float rollBasis = rollVec2 * ch->matr[0]
+                + rollVec * ch->matr[2]
+                + cRoll * cYaw * ch->matr[1];
+            float basisZ = rollVec2 * ch->matr[6]
+                + rollVec * ch->matr[8]
+                + cRoll * cYaw * ch->matr[7];
+            float basisY = rollVec2 * ch->matr[3]
+                + cRoll * cYaw * ch->matr[4]
+                + rollVec * ch->matr[5];
 
-            if (ch->bFlagA != 1) chanBuildRotMatrix(ch);
-            viewX = forwardY * ch->matr[1] + forwardZ * ch->matr[2]
-                  + forwardX * ch->matr[0];
-            viewZ = forwardY * ch->matr[7] + forwardZ * ch->matr[8]
-                  + forwardX * ch->matr[6];
-            invLength = 1.0f / (float)sqrt(viewX * viewX + viewZ * viewZ);
-            normalX = invLength * viewX;
-            normalZ = invLength * viewZ;
-            viewY = -(forwardX * ch->matr[3] + forwardY * ch->matr[4]
-                    + forwardZ * ch->matr[5]);
-            ch->rot[0] = (short)mathAtan2Deg(viewY,
-                                             normalX * viewX + normalZ * viewZ);
-            ch->rot[1] = (short)mathAtan2Deg(flPitch, normalX);
+            ch->rot[0] = (short)mathAtan2Deg(viewY, dot);
+            ch->rot[1] = (short)mathAtan2Deg(normalX, normalZ);
             ch->rot[2] = (short)mathAtan2Deg(
-                -(flPitch * flSide - flFwd * normalZ), viewY);
-            (void)sRoll;
-            (void)cRoll;
+                -(normalZ * rollBasis - normalX * basisZ),
+                basisY * dot + (normalX * rollBasis + normalZ * basisZ) * viewY);
         }
         break;
     default:
@@ -1330,7 +1360,11 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     g_nSceneHalfWidth = ((x1 >> 4) - (x0 >> 4)) >> 1;
     g_centerX = g_nSceneHalfWidth + (x0 >> 4);
     g_centerY = ((y1 >> 4) + (y0 >> 4)) >> 1;
-    g_flSceneYScale = (float)height * 0.5f / (float)width;
+    /* [VERIFIED 2026-08-27] original @0x42f27f..0x42f290: FILD height,
+     * FMUL double [0x44b798] (= 1.333333 decimal literal, NOT exactly 4/3),
+     * FIDIV width, FSTP [0x450f80]. The 0.5 factor previously used here made
+     * the character ~0.375x original height. */
+    g_flSceneYScale = (float)height * 1.333333 / (float)width;
 
     viewport[0] = x0 >> 12;
     viewport[1] = y0 >> 12;
@@ -1375,4 +1409,56 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     return 1;
 }
 
-int sceneCacheLocalVerts(SceneNode *pNode) /* @0x42ffa0 */ { (void)pNode; return 0; }
+/* ===================================================================
+ * sceneCacheLocalVerts @0x42ffa0  (one-shot limb-position initializer)
+ * Runs from sceneNodeRender when nCacheFlag==1 && nChannelCount>1 &&
+ * nId==1 (the animated character models). Verified vs disasm 0x42ffa0:
+ *   count  = td->field_08          ([td+8])
+ *   table  = td->pA                ([td+0xc], frames of count verts, 8B each)
+ *   vertA  = table + node->nMorphIdxA * count * 8   ([node+0x28])
+ *   vertB  = table + node->nMorphIdxB * count * 8   ([node+0x2c])
+ *   f      = clamp(node->flMorphT, 0, 1)
+ *          (t<0 -> 0.0 const @0x44b244; t>=1.0 double @0x44b288 -> 1.0
+ *           const @0x44b260; else t)
+ * For i in [0, count): channel[i+1].x/y/z (the int pos @+0x10, reached as
+ * pChannels + 0x80 + i*0x70) = (short)vertB - (short)vertA, scaled by f,
+ * plus vertA, via __ftol (truncating). NOTE: EBX/EBP are NOT advanced in
+ * the original loop — every channel receives vert[0] of the frames.
+ * Clears nCacheFlag (+0x24) afterwards; early-out with count<1.
+ * =================================================================== */
+int sceneCacheLocalVerts(SceneNode *pNode) /* @0x42ffa0 */
+{
+    SceneObjTypeDef *td = pNode->pTypeDef;
+    int nCount = td->field_08;
+    float t = pNode->flMorphT;
+    float f;
+    if (t < 0.0f) f = 0.0f;                 /* const 0x44b244 */
+    else if (t < 1.0) f = t;                /* cmp vs 1.0 double 0x44b288 */
+    else f = 1.0f;                          /* const 0x44b260 */
+    if (nCount < 1) {
+        pNode->nCacheFlag = 0;
+        return 0;
+    }
+    {
+        const short *pVertA = (const short *)((char *)td->pA
+            + pNode->nMorphIdxA * nCount * 8);
+        const short *pVertB = (const short *)((char *)td->pA
+            + pNode->nMorphIdxB * nCount * 8);
+        SceneChannel *pch = pNode->pChannels;
+        /* same vert[0] written to all channels (verified: EBX/EBP fixed) */
+        int vx = (int)((float)(pVertB[0] - pVertA[0]) * f + (float)pVertA[0]);
+        int vy = (int)((float)(pVertB[1] - pVertA[1]) * f + (float)pVertA[1]);
+        int vz = (int)((float)(pVertB[2] - pVertA[2]) * f + (float)pVertA[2]);
+        appLog("[cachelocal] node=%u count=%d idxA=%d idxB=%d f=%.3f v=(%d,%d,%d)",
+               pNode->nId, nCount, pNode->nMorphIdxA, pNode->nMorphIdxB,
+               f, vx, vy, vz); /* TEMP DEBUG */
+        for (int i = 0; i < nCount; i++) {
+            SceneChannel *dst = &pch[i + 1];
+            dst->x = vx;
+            dst->y = vy;
+            dst->z = vz;
+        }
+    }
+    pNode->nCacheFlag = 0;
+    return 0;
+}

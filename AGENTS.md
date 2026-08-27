@@ -27,7 +27,8 @@ milestone in `docs/16-rebuild.md`.
 - Reproduce initialization and state-machine behavior subsystem by subsystem, while
   prioritizing dependencies of the next visible single-player feature.
 - Build with `make`, which writes to `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe`.
-  Read `XDOTOOL_NAVIGATION.md` for triggering keyboard events and navigating the in-game menu.
+  Read `XDOTOOL_NAVIGATION.md` for triggering keyboard events and navigating the in-game menu,
+  including reaching the character selection menu.
 
 ## Working practices
 - Use the Ghidra MCP bridge (`ghidra_*`) for decompilation, cross-references, naming,

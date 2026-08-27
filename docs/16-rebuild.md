@@ -509,3 +509,34 @@ introducing `unexpected` calls. Verified with `make` and
 `TrackRebuildDetailed` (live `maniac.exe`): `anmLoad 8/8`, `anmFree 2/2`,
 `anmCalcSize 2/2`, `anmLoadFile 3/3`, `anmSet* 1/1·2/2·0/0`, `eventAnim* 4/4·0/0·4/4`,
 `sceneObject* 4/4·4/4`.
+
+## Character-select orientation + projection fidelity — 2026-08-27
+
+Three operand-pairing/formula bugs fixed, each verified instruction-by-instruction
+against the raw disassembly (decompiler FPU-stack output was misleading in all
+three):
+
+- `sceneObjSetPosOrient @0x4307d0` mode 5: viewX must be the true row-0 product
+  `fX*m0+fY*m1+fZ*m2` (0x4308d7: fwdZ pairs matr[2], fwdY pairs matr[1]). The
+  swapped pairing made `viewX = sin(dθ)*cosθ` so rot1 recomputed ≈ the per-frame
+  delta forever — heading never accumulated and the character showed its back
+  (fixed camera-relative facing). With the fix, rot1 composes (`θ+dθ` per frame,
+  −653bd ≈ the 0.0628 rad/frame orbit rate) and the model faces its direction of
+  travel like the original. rollBasis `R1*m0+R2*m2+R3*m1` (m2/m1 swap,
+  0x430992..a3) was already fixed earlier; that removed the pitch/roll wobble.
+- `sceneRender` YScale @0x42f27f..0x42f290: `height * [0x44b798] / width` where
+  `[0x44b798]` is the double `1.333333` (decimal literal, not exactly 4/3). The
+  rebuild used `height*0.5/width`, rendering the character at ~0.375x original
+  height. Fixed in `src/scene.c` (`g_flSceneYScale`).
+- `sceneObjSetSubPos @0x430a90` mode 5: rebuilt from scratch — original takes
+  exactly 6 params (rebuild had 4 invented extras, now removed from signature,
+  header and both anim.c callers), and the rot stores are the full
+  rollBasis/basisZ/basisY decomposition identical to the sibling (placeholder
+  atan2 args replaced). chanBuildRotMatrix gate @0x430ba6 kept.
+
+Plate comments for 0x4307d0/0x430a90 updated with final semantics; program saved.
+A/B screenshots (`/tmp/reb2_seq*.png` vs `/tmp/orig2_seq*.png`): orbit cycle
+back(eagle jacket)/side/front, height and heading now match. TEMP DEBUG prints
+(`[charselect]` in charselect.c, `[cachelocal]` in scene.c sceneCacheLocalVerts)
+still present pending in-game verification; `sceneCacheLocalVerts` confirmed
+inert for charselect models (nCacheFlag never set to 1 anywhere in the original).

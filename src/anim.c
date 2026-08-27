@@ -454,11 +454,7 @@ int eventAnimStep(AnmFile *pAnm, byte bLoop) /* @0x434090 */
                 short sx = *(short *)(rec + 2);
                 short sy = *(short *)(rec + 4);
                 short sz = *(short *)(rec + 6);
-                /* original passes extra floats (unaff) for sceneObjSetSubPos — pass 0.
-                 * Verified @0x430a90: mode 2 never reads flPitch/nUnk/flFwd/flSide
-                 * (only mode 5 does), so 0 is behaviorally identical to the
-                 * original's stack garbage. */
-                sceneObjSetSubPos(pAnm->pObj, ch, sx, sy, sz, 2, 0.0f, 0, 0.0f, 0.0f);
+                sceneObjSetSubPos(pAnm->pObj, ch, sx, sy, sz, 2);
             }
             rec += 8;
             break;
@@ -696,8 +692,7 @@ int sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop) /* @0x434540 */
                     short sx = *(short *)(rec + 2);
                     short sy = *(short *)(rec + 4);
                     short sz = *(short *)(rec + 6);
-                    /* extra floats pass 0 — see eventAnimStep op5 note */
-                    sceneObjSetSubPos(pList->apObjs[k], ch, sx, sy, sz, 2, 0.0f, 0, 0.0f, 0.0f);
+                    sceneObjSetSubPos(pList->apObjs[k], ch, sx, sy, sz, 2);
                     k++;
                 }
             }
