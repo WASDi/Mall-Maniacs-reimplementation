@@ -751,8 +751,8 @@ void menuInit(int nRestartMode)
         if (pCam) g_pSceneRoot = pCam;
         appLog("[menu] sceneNodeAlloc @0x4318e0 done (cam=%p root=%p)", pCam, g_pSceneRoot);
         if (g_pSceneRoot) {
-            sceneObjSetPos((int)g_pSceneRoot, 0, -0x640, -2000, 2);
-            sceneNodeFacePos((int)g_pSceneRoot, 0, -2100.0f, 0.0f, 1000.0f, 2);
+            sceneObjSetPos(g_pSceneRoot, 0, -0x640, -2000, 2);
+            sceneNodeFacePos(g_pSceneRoot, 0, -2100.0f, 0.0f, 1000.0f, 2);
         }
     }
 

@@ -29,6 +29,13 @@
 typedef unsigned char byte;
 #endif
 
+/* SceneNode is defined in scene.h (scene.h includes this header, so only a
+ * forward declaration is possible here). The original stores scene-node
+ * pointers in the anim state (AnmFile.pObj/pMasterNode) and in the record
+ * stream (opcode 3/4 mesh field), verified vs disassembly of eventAnimStep
+ * @0x434090 (0x43410c: obj dword pushed straight to sceneObjSetPos). */
+typedef struct SceneNode SceneNode;
+
 /* --- AnmFile: 0x38 header (offsets verified vs 0x433a90/0x434090/0x434290) --- */
 typedef struct AnmFile {
     int   nFrame;          /* +0x00 current frame index */
@@ -37,8 +44,8 @@ typedef struct AnmFile {
     void *pCurTrack;       /* +0x0c current track pointer (advances +8 per frame) */
     int   nLoopStart;      /* +0x10 loop start (always 0 in loader) */
     void *pPool;           /* +0x14 owning memPool handle (g_pAnmCacheList) */
-    void *pObj;            /* +0x18 primary scene object (for op 3/4/5/6) */
-    void *pMasterNode;     /* +0x1c snap target for pos/facing (may be 0) */
+    SceneNode *pObj;       /* +0x18 primary scene object (for op 3/4/5/6) */
+    SceneNode *pMasterNode;/* +0x1c snap target for pos/facing (may be 0) */
     int   nPosX, nPosY, nPosZ;   /* +0x20 pos target (op1) */
     int   nFaceX, nFaceY, nFaceZ;/* +0x2c facing target (op2) */
 } AnmFile; /* 0x38 */
@@ -72,8 +79,8 @@ unsigned int   dataReadU32(byte *pData);                /* @0x433f10 */
 void anmCalcSize(void *pPool, byte *pData, AnmFile **ppOut, void **ppTrackData, void **ppRecordData); /* @0x433f40 */
 
 /* loader — validates "ANM" + version 1|2, builds track/record tables via scenNameToIdEx, returns AnmFile* */
-AnmFile *anmLoad(byte *pData, void *pMasterNode, void *pObj); /* @0x433a90 */
-AnmFile *anmLoadFile(LPCSTR pszPath, void *pMasterNode, void *pObj); /* @0x433a50 */
+AnmFile *anmLoad(byte *pData, SceneNode *pMasterNode, SceneNode *pObj); /* @0x433a90 */
+AnmFile *anmLoadFile(LPCSTR pszPath, SceneNode *pMasterNode, SceneNode *pObj); /* @0x433a50 */
 void anmFree(AnmFile *pAnm);                                   /* @0x434050 */
 
 /* holder helpers */
@@ -86,7 +93,36 @@ void    anmSetMeshSlot(AnmSet *pSet, void *pMesh, int nSlot); /* @0x434530 */
 void eventAnimReset(AnmFile *pAnm);                            /* @0x434270 */
 int  eventAnimStep(AnmFile *pAnm, byte bLoop);                 /* @0x434090 */
 void eventAnimApply(AnmFile *pAnm, byte bLoop);                /* @0x434290 (void in Ghidra, takes AnmFile*) */
-int  sceneObjectAnimStep(int *pObjList, byte bLoop);           /* @0x434540 pObjList = int[5] ids + int[?] state at +0x14 */
-void sceneObjectAnimStepInterp(int *pObjList, byte bLoop);     /* @0x4347c0 interpolation variant */
+
+/* --- Multi-object anim state (sceneObjectAnimStep @0x434540). Mirrors the
+ * AnmFile header layout; slots +0x10/+0x14/+0x18 are unused by the list
+ * variant. Lives inside the player record, state pointer held at list+0x14.
+ * Field roles verified vs disasm 0x434540: EBP+0x00 frame, +0x04 frameCount,
+ * +0x08 loop reset target for +0x0c (pCurTrack, advances +8 per frame),
+ * +0x1c pMasterNode, +0x20 pos target, +0x2c facing target. --- */
+typedef struct SceneObjAnimState {
+    int        nFrame;       /* +0x00 current frame index */
+    int        nFrameCount;  /* +0x04 total frames */
+    void      *pLoopBase;    /* +0x08 track-table base (pCurTrack reset target) */
+    AnmTrack  *pCurTrack;    /* +0x0c current track pointer (advances +8/frame) */
+    int        nUnk10;       /* +0x10 unused by the steppers */
+    int        nUnk14;       /* +0x14 unused */
+    int        nUnk18;       /* +0x18 unused */
+    SceneNode *pMasterNode;  /* +0x1c pos/facing snap target (may be 0) */
+    int        nPosX, nPosY, nPosZ;     /* +0x20 pos target (op 1) */
+    int        nFaceX, nFaceY, nFaceZ;  /* +0x2c facing target (op 2) */
+} SceneObjAnimState; /* 0x38 */
+
+/* Object list consumed by sceneObjectAnimStep/sceneObjectAnimStepInterp:
+ * up to five scene nodes, 0-terminated, followed by the state pointer at
+ * +0x14 (Ghidra view was int*; the entries are SceneNode* per the
+ * sceneObjSetPos calls at 0x4345eb/0x43465a). Stored in the player record. */
+typedef struct SceneObjAnimList {
+    SceneNode         *apObjs[5]; /* +0x00 0-terminated object list */
+    SceneObjAnimState *pState;    /* +0x14 animation state */
+} SceneObjAnimList; /* 0x18 */
+
+int  sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop);            /* @0x434540 */
+void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop);      /* @0x4347c0 interpolation variant */
 
 #endif /* ANIM_H */

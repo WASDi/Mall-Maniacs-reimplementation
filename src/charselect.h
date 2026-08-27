@@ -4,6 +4,7 @@
 #include <windows.h>
 #include "gx.h"
 #include "font.h"
+#include "scene.h"   /* SceneNode (g_pCharModelNode etc are scene nodes) + AnmFile via anim.h */
 
 /* Character-select state (stateCharacterSelect @0x41efa0, reached from
  * modeInitVarujakten @0x41bf60, modeInitMatkrig @0x41bf90,
@@ -30,12 +31,12 @@ extern float g_flCharModelZoom;  /* @0x45d48c preview zoom */
 extern float g_flCharAnimTime;   /* @0x45d410 anim time (frameDelta*0.3) */
 extern int   g_nCharAnimFrame;   /* @0x45d498 anim frame counter */
 extern float g_flCharAnimAccum;  /* @0x45d49c anim accumulator */
-extern void *g_pCharModelNode;   /* @0x45a6c4 current preview node (stub) */
-extern void *g_pCharModelNodePrev; /* @0x45a6c8 previous node (stub) */
-extern void *g_pCharAnim;        /* @0x45a6d8 current anim (stub) */
-extern void *g_pCharAnimPrev;    /* @0x45a6dc previous anim (stub) */
+extern SceneNode *g_pCharModelNode;   /* @0x45a6c4 current preview node */
+extern SceneNode *g_pCharModelNodePrev; /* @0x45a6c8 previous node */
+extern AnmFile *g_pCharAnim;        /* @0x45a6d8 current anim */
+extern AnmFile *g_pCharAnimPrev;    /* @0x45a6dc previous anim */
 extern int   g_nCharModelSwapFlag; /* @0x45d494 swap flag */
-extern void *g_pSceneRoot;       /* @0x4588f8 scene root (stub when null) */
+extern SceneNode *g_pSceneRoot;       /* @0x4588f8 scene root (also declared in scene.h) */
 extern void *g_pCharSelAnimData;  /* @0x45a6d0 anim-data block (fileReadRaw of anim\s_run.anm) */
 extern void *g_anMenuCharTex[10];/* @0x45a660 per-char portrait textures */
 extern void *g_hMenuTexTom;      /* @0x45a688 QUESTION fallback tex */

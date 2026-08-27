@@ -153,7 +153,7 @@ void anmCalcSize(void *pPool, byte *pData, AnmFile **ppOut, void **ppTrackData, 
  *   - per-track {nRecs, pRecs} + expanded records (resolve ids via tables)
  * Frees temp tables, fills AnmFile header, bumps g_nAnmCacheCount.
  * ------------------------------------------------------------------- */
-AnmFile *anmLoad(byte *pData, void *pMasterNode, void *pObj) /* @0x433a90 */
+AnmFile *anmLoad(byte *pData, SceneNode *pMasterNode, SceneNode *pObj) /* @0x433a90 */
 {
     int i;
     unsigned short nMesh, nChan, nTracks;
@@ -329,7 +329,7 @@ AnmFile *anmLoad(byte *pData, void *pMasterNode, void *pObj) /* @0x433a90 */
 }
 
 /* anmLoadFile @0x433a50 — fileReadRaw wrapper */
-AnmFile *anmLoadFile(LPCSTR pszPath, void *pMasterNode, void *pObj) /* @0x433a50 */
+AnmFile *anmLoadFile(LPCSTR pszPath, SceneNode *pMasterNode, SceneNode *pObj) /* @0x433a50 */
 {
     byte *pData = (byte *)fileReadRaw(0, pszPath);
     AnmFile *pAnm;
@@ -427,12 +427,12 @@ int eventAnimStep(AnmFile *pAnm, byte bLoop) /* @0x434090 */
             rec += 0x10;
             break;
         case 3: {
-            int mesh = *(int *)(rec + 4);
+            SceneNode *mesh = *(SceneNode **)(rec + 4);
             int ax = *(int *)(rec + 8);
             int ay = -*(int *)(rec + 0xc);
             int az = -*(int *)(rec + 0x10);
             if (pAnm->pObj) {
-                sceneObjSetPos((int)(intptr_t)pAnm->pObj, ax, ay, az, 2);
+                sceneObjSetPos(pAnm->pObj, ax, ay, az, 2);
             } else if (mesh != 0) {
                 sceneObjSetPos(mesh, ax, ay, az, 2);
             }
@@ -440,22 +440,25 @@ int eventAnimStep(AnmFile *pAnm, byte bLoop) /* @0x434090 */
             break;
         }
         case 4: {
-            void *obj = pAnm->pObj ? pAnm->pObj : (void *)(intptr_t)*(int *)(rec + 4);
+            SceneNode *obj = pAnm->pObj ? pAnm->pObj : *(SceneNode **)(rec + 4);
             short yaw = *(short *)(rec + 8);
             short pitch = *(short *)(rec + 10);
             short roll = *(short *)(rec + 0xc);
-            sceneObjSetPosOrient((int)(intptr_t)obj, yaw, (short)-pitch, (short)-roll, 2);
+            sceneObjSetPosOrient(obj, yaw, (short)-pitch, (short)-roll, 2);
             rec += 0x10;
             break;
         }
         case 5: {
             if (pAnm->pObj) {
-                byte ch = rec[1];
+                int ch = (signed char)rec[1];
                 short sx = *(short *)(rec + 2);
                 short sy = *(short *)(rec + 4);
                 short sz = *(short *)(rec + 6);
-                /* original passes extra floats (unaff) for sceneObjSetSubPos — pass 0 */
-                sceneObjSetSubPos((int)(intptr_t)pAnm->pObj, (int)ch, sx, sy, sz, 2, 0.0f, 0, 0.0f, 0.0f);
+                /* original passes extra floats (unaff) for sceneObjSetSubPos — pass 0.
+                 * Verified @0x430a90: mode 2 never reads flPitch/nUnk/flFwd/flSide
+                 * (only mode 5 does), so 0 is behaviorally identical to the
+                 * original's stack garbage. */
+                sceneObjSetSubPos(pAnm->pObj, ch, sx, sy, sz, 2, 0.0f, 0, 0.0f, 0.0f);
             }
             rec += 8;
             break;
@@ -465,7 +468,7 @@ int eventAnimStep(AnmFile *pAnm, byte bLoop) /* @0x434090 */
                 int ax = *(int *)(rec + 4);
                 int ay = -*(int *)(rec + 8);
                 int az = -*(int *)(rec + 0xc);
-                sceneObjSetPos((int)(intptr_t)pAnm->pObj, ax, ay, az, 2);
+                sceneObjSetPos(pAnm->pObj, ax, ay, az, 2);
             }
             rec += 0x10;
             break;
@@ -476,8 +479,8 @@ int eventAnimStep(AnmFile *pAnm, byte bLoop) /* @0x434090 */
         }
     }
     if (pAnm->pMasterNode) {
-        sceneObjSetPos((int)(intptr_t)pAnm->pMasterNode, pAnm->nPosX, pAnm->nPosY, pAnm->nPosZ, 2);
-        sceneNodeFacePos((int)(intptr_t)pAnm->pMasterNode, 0,
+        sceneObjSetPos(pAnm->pMasterNode, pAnm->nPosX, pAnm->nPosY, pAnm->nPosZ, 2);
+        sceneNodeFacePos(pAnm->pMasterNode, 0,
                          (float)pAnm->nFaceX, (float)pAnm->nFaceY, (float)pAnm->nFaceZ, 2);
     }
     pAnm->nFrame++;
@@ -529,7 +532,7 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
             rec += 0x10;
             break;
         case 3: {
-            int mesh = *(int *)(rec + 4);
+            SceneNode *mesh = *(SceneNode **)(rec + 4);
             if (mesh != 0) {
                 float out[3];
                 int curX, curY, curZ;
@@ -541,9 +544,13 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
                     int tx = *(int *)(rec + 8);
                     int ty = *(int *)(rec + 0xc);
                     int tz = *(int *)(rec + 0x10);
+                    /* Asymmetric midpoint per disasm 0x434326-0x434383: X uses
+                     * curX + (tx-curX)/2 but Y/Z use (ty+curY)/2 - curY (then
+                     * negated). The forms truncate differently for odd sums —
+                     * do NOT "symmetrize". */
                     int nx = curX + (tx - curX) / 2;
-                    int ny = curY + (ty - curY) / 2;
-                    int nz = curZ + (tz - curZ) / 2;
+                    int ny = (ty + curY) / 2 - curY;
+                    int nz = (tz + curZ) / 2 - curZ;
                     sceneObjSetPos(mesh, nx, -ny, -nz, 2);
                 }
             }
@@ -551,7 +558,7 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
             break;
         }
         case 4: {
-            int mesh = *(int *)(rec + 4);
+            SceneNode *mesh = *(SceneNode **)(rec + 4);
             if (mesh != 0) {
                 short sx = *(short *)(rec + 8);
                 short sy = *(short *)(rec + 10);
@@ -563,11 +570,13 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
         }
         case 5: {
             if (pAnm->pObj) {
-                byte ch = rec[1];
+                int ch = (signed char)rec[1];
                 short sx = *(short *)(rec + 2);
                 short sy = *(short *)(rec + 4);
                 short sz = *(short *)(rec + 6);
-                sceneObjSetSubPos((int)(intptr_t)pAnm->pObj, (int)ch, sx, sy, sz, 2, 0.0f, 0, 0.0f, 0.0f);
+                /* Original calls sceneObjSetSubOrient here (CALL 0x431110 at
+                 * 0x4343da), not sceneObjSetSubPos as in eventAnimStep. */
+                sceneObjSetSubOrient(pAnm->pObj, ch, sx, sy, sz);
             }
             rec += 8;
             break;
@@ -576,7 +585,7 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
             if (pAnm->pObj) {
                 float out[3];
                 int curX, curY, curZ;
-                sceneNodeGetPosWorld((int)(intptr_t)pAnm->pObj, out, 2);
+                sceneNodeGetPosWorld(pAnm->pObj, out, 2);
                 memcpy(&curX, &out[0], sizeof(int));
                 memcpy(&curY, &out[1], sizeof(int));
                 memcpy(&curZ, &out[2], sizeof(int));
@@ -584,10 +593,11 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
                     int tx = *(int *)(rec + 4);
                     int ty = *(int *)(rec + 8);
                     int tz = *(int *)(rec + 0xc);
+                    /* Same asymmetric midpoint as op3 (disasm 0x4343ee-0x434446). */
                     int nx = curX + (tx - curX) / 2;
-                    int ny = curY + (ty - curY) / 2;
-                    int nz = curZ + (tz - curZ) / 2;
-                    sceneObjSetPos((int)(intptr_t)pAnm->pObj, nx, -ny, -nz, 2);
+                    int ny = (ty + curY) / 2 - curY;
+                    int nz = (tz + curZ) / 2 - curZ;
+                    sceneObjSetPos(pAnm->pObj, nx, -ny, -nz, 2);
                 }
             }
             rec += 0x10;
@@ -599,182 +609,178 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
         }
     }
     if (pAnm->pMasterNode) {
-        sceneObjSetPos((int)(intptr_t)pAnm->pMasterNode, pAnm->nPosX, pAnm->nPosY, pAnm->nPosZ, 2);
-        sceneNodeFacePos((int)(intptr_t)pAnm->pMasterNode, 0,
+        sceneObjSetPos(pAnm->pMasterNode, pAnm->nPosX, pAnm->nPosY, pAnm->nPosZ, 2);
+        sceneNodeFacePos(pAnm->pMasterNode, 0,
                          (float)pAnm->nFaceX, (float)pAnm->nFaceY, (float)pAnm->nFaceZ, 2);
     }
 }
 
 /* -------------------------------------------------------------------
  * sceneObjectAnimStep @0x434540 — multi-obj variant.
- * pObjList is int[?] where [0..4] are obj ids (0-terminated, max 5) and
- * state at pObjList[5] is int* state = {frame, frameCount, loopStart,
- * dataPtr (track table), ?, ?, ?, masterNode, pos[3], face[3]} (mirrors
- * AnmFile but list is external). Op dispatch iterates obj list for ops 3/4/5/6.
+ * pList = SceneObjAnimList: apObjs[0..4] are SceneNode* (0-terminated, max 5)
+ * and pList->pState is a SceneObjAnimState (mirrors AnmFile layout, see
+ * anim.h). Op dispatch iterates the object list for ops 3/4/5/6. Verified
+ * against disasm 0x434540 (obj loaded via MOV EDX,[EDI] and pushed straight
+ * to sceneObjSetPos/sceneObjSetPosOrient/sceneObjSetSubPos).
  * ------------------------------------------------------------------- */
-int sceneObjectAnimStep(int *pObjList, byte bLoop) /* @0x434540 */
+int sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop) /* @0x434540 */
 {
-    int *state;
-    AnmTrack *trk;
+    SceneObjAnimState *st;
+    int *pCur;
     byte *rec;
     int n, i;
 
-    if (!pObjList) return 0;
-    state = (int *)(intptr_t)pObjList[5];
-    if (!state) return 0;
-    if (state[0] >= state[1]) return 0;
-    trk = (AnmTrack *)(intptr_t)state[3];
-    {
-        int idx = state[0];
-        trk = (AnmTrack *)((char *)trk + idx * 8); /* pCurTrack = base + frame*8 */
-        n = trk->nRecs;
-        rec = (byte *)trk->pRecs;
-    }
-    /* Re-derive via current frame pointer stored at state[3] which advances per frame;
-       simpler: use state[3] as pCurTrack directly as original disasm does. */
-    {
-        /* Original disasm: puVar5 = *(pCurTrack+4), n = *pCurTrack, where pCurTrack=state[3] */
-        int *pCur = (int *)(intptr_t)state[3];
-        n = pCur[0];
-        rec = (byte *)(intptr_t)pCur[1];
-        for (i = 0; i < n; i++) {
-            byte tp = rec[0];
-            switch (tp) {
-            case 1:
-                state[8] = *(int *)(rec + 4);
-                state[9] = -*(int *)(rec + 8);
-                state[10] = -*(int *)(rec + 0xc);
-                rec += 0x10;
-                break;
-            case 2:
-                state[0xb] = *(int *)(rec + 4);
-                state[0xc] = -*(int *)(rec + 8);
-                state[0xd] = -*(int *)(rec + 0xc);
-                rec += 0x10;
-                break;
-            case 3: {
-                int mesh = *(int *)(rec + 4);
-                int ax = *(int *)(rec + 8);
-                int ay = -*(int *)(rec + 0xc);
-                int az = -*(int *)(rec + 0x10);
-                if (pObjList[0] == 0) {
-                    if (mesh != 0) sceneObjSetPos(mesh, ax, ay, az, 2);
-                } else {
-                    int k = 0;
-                    while (k < 5 && pObjList[k] != 0) {
-                        sceneObjSetPos(pObjList[k], ax, ay, az, 2);
-                        k++;
-                    }
+    if (!pList) return 0;
+    st = pList->pState;
+    if (!st) return 0;
+    if (st->nFrame >= st->nFrameCount) return 0;
+    /* Original disasm reads {nRecs, pRecs} directly from pCurTrack, which
+     * advances +8 per frame (no frame*8 re-indexing). */
+    pCur = (int *)st->pCurTrack;
+    n = pCur[0];
+    rec = (byte *)pCur[1];
+    for (i = 0; i < n; i++) {
+        byte tp = rec[0];
+        switch (tp) {
+        case 1:
+            st->nPosX = *(int *)(rec + 4);
+            st->nPosY = -*(int *)(rec + 8);
+            st->nPosZ = -*(int *)(rec + 0xc);
+            rec += 0x10;
+            break;
+        case 2:
+            st->nFaceX = *(int *)(rec + 4);
+            st->nFaceY = -*(int *)(rec + 8);
+            st->nFaceZ = -*(int *)(rec + 0xc);
+            rec += 0x10;
+            break;
+        case 3: {
+            SceneNode *mesh = *(SceneNode **)(rec + 4);
+            int ax = *(int *)(rec + 8);
+            int ay = -*(int *)(rec + 0xc);
+            int az = -*(int *)(rec + 0x10);
+            if (pList->apObjs[0] == 0) {
+                if (mesh != 0) sceneObjSetPos(mesh, ax, ay, az, 2);
+            } else {
+                int k = 0;
+                while (k < 5 && pList->apObjs[k] != 0) {
+                    sceneObjSetPos(pList->apObjs[k], ax, ay, az, 2);
+                    k++;
                 }
-                rec += 0x14;
-                break;
             }
-            case 4: {
-                short sx = *(short *)(rec + 8);
-                short sy = *(short *)(rec + 10);
-                short sz = *(short *)(rec + 0xc);
-                if (pObjList[0] == 0) {
-                    int mesh = *(int *)(rec + 4);
-                    sceneObjSetPosOrient(mesh, sx, (short)-sy, (short)-sz, 2);
-                } else {
-                    int k = 0;
-                    while (k < 5 && pObjList[k] != 0) {
-                        sceneObjSetPosOrient(pObjList[k], sx, (short)-sy, (short)-sz, 2);
-                        k++;
-                    }
+            rec += 0x14;
+            break;
+        }
+        case 4: {
+            short sx = *(short *)(rec + 8);
+            short sy = *(short *)(rec + 10);
+            short sz = *(short *)(rec + 0xc);
+            if (pList->apObjs[0] == 0) {
+                SceneNode *mesh = *(SceneNode **)(rec + 4);
+                sceneObjSetPosOrient(mesh, sx, (short)-sy, (short)-sz, 2);
+            } else {
+                int k = 0;
+                while (k < 5 && pList->apObjs[k] != 0) {
+                    sceneObjSetPosOrient(pList->apObjs[k], sx, (short)-sy, (short)-sz, 2);
+                    k++;
                 }
-                rec += 0x10;
-                break;
             }
-            case 5: {
-                if (pObjList[0] != 0) {
-                    int k = 0;
-                    while (k < 5 && pObjList[k] != 0) {
-                        byte ch = rec[1];
-                        short sx = *(short *)(rec + 2);
-                        short sy = *(short *)(rec + 4);
-                        short sz = *(short *)(rec + 6);
-                        sceneObjSetSubPos(pObjList[k], (int)ch, sx, sy, sz, 2, 0.0f, 0, 0.0f, 0.0f);
-                        k++;
-                    }
+            rec += 0x10;
+            break;
+        }
+        case 5: {
+            if (pList->apObjs[0] != 0) {
+                int k = 0;
+                while (k < 5 && pList->apObjs[k] != 0) {
+                    int ch = (signed char)rec[1];
+                    short sx = *(short *)(rec + 2);
+                    short sy = *(short *)(rec + 4);
+                    short sz = *(short *)(rec + 6);
+                    /* extra floats pass 0 — see eventAnimStep op5 note */
+                    sceneObjSetSubPos(pList->apObjs[k], ch, sx, sy, sz, 2, 0.0f, 0, 0.0f, 0.0f);
+                    k++;
                 }
-                rec += 8;
-                break;
             }
-            case 6: {
-                if (pObjList[0] != 0) {
-                    int k = 0;
-                    while (k < 5 && pObjList[k] != 0) {
-                        int ax = *(int *)(rec + 4);
-                        int ay = -*(int *)(rec + 8);
-                        int az = -*(int *)(rec + 0xc);
-                        sceneObjSetPos(pObjList[k], ax, ay, az, 2);
-                        k++;
-                    }
+            rec += 8;
+            break;
+        }
+        case 6: {
+            if (pList->apObjs[0] != 0) {
+                int k = 0;
+                while (k < 5 && pList->apObjs[k] != 0) {
+                    int ax = *(int *)(rec + 4);
+                    int ay = -*(int *)(rec + 8);
+                    int az = -*(int *)(rec + 0xc);
+                    sceneObjSetPos(pList->apObjs[k], ax, ay, az, 2);
+                    k++;
                 }
-                rec += 0x10;
-                break;
             }
-            default:
-                rec += 0x10;
-                break;
-            }
+            rec += 0x10;
+            break;
+        }
+        default:
+            rec += 0x10;
+            break;
         }
     }
-    if (state[7] != 0) {
-        sceneObjSetPos(state[7], state[8], state[9], state[10], 2);
-        sceneNodeFacePos(state[7], 0, (float)state[0xb], (float)state[0xc], (float)state[0xd], 2);
+    if (st->pMasterNode != 0) {
+        sceneObjSetPos(st->pMasterNode, st->nPosX, st->nPosY, st->nPosZ, 2);
+        sceneNodeFacePos(st->pMasterNode, 0,
+                         (float)st->nFaceX, (float)st->nFaceY, (float)st->nFaceZ, 2);
     }
-    state[0]++;
-    if (state[0] >= state[1]) {
+    st->nFrame++;
+    if (st->nFrame >= st->nFrameCount) {
         if ((bLoop & 1) == 0) return 1;
-        state[0] = 0;
-        state[3] = state[2];
+        st->nFrame = 0;
+        st->pCurTrack = st->pLoopBase;
         return 1;
     }
-    state[3] += 8;
+    st->pCurTrack = (AnmTrack *)((char *)st->pCurTrack + 8);
     return 0;
 }
 
 /* -------------------------------------------------------------------
  * sceneObjectAnimStepInterp @0x4347c0 — interpolation variant.
- * Op3/6 do midpoint lerp, op4/5 use SubOrient. No frame-advancement wrap
- * beyond the early loop-reset at entry (if frame>=count and bLoop&1, reset).
+ * Op3/6 do midpoint lerp (asymmetric formula, see eventAnimApply op3),
+ * op4/5 use SubOrient; op6 checks each list object for NULL before the
+ * sceneNodeGetPosWorld midpoint (TEST EAX,EAX / JZ at 0x43495b). No frame-
+ * advancement wrap beyond the early loop-reset at entry (if frame>=count
+ * and bLoop&1, reset).
  * ------------------------------------------------------------------- */
-void sceneObjectAnimStepInterp(int *pObjList, byte bLoop) /* @0x4347c0 */
+void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop) /* @0x4347c0 */
 {
-    int *state;
+    SceneObjAnimState *st;
     int *pCur;
     byte *rec;
     int n, i;
 
-    if (!pObjList) return;
-    state = (int *)(intptr_t)pObjList[5];
-    if (!state) return;
-    if (state[0] >= state[1]) {
+    if (!pList) return;
+    st = pList->pState;
+    if (!st) return;
+    if (st->nFrame >= st->nFrameCount) {
         if ((bLoop & 1) == 0) return;
-        state[0] = 0;
+        st->nFrame = 0;
     }
-    pCur = (int *)(intptr_t)state[3];
+    pCur = (int *)st->pCurTrack;
     n = pCur[0];
-    rec = (byte *)(intptr_t)pCur[1];
+    rec = (byte *)pCur[1];
     for (i = 0; i < n; i++) {
         byte tp = rec[0];
         switch (tp) {
         case 1:
-            state[8] = *(int *)(rec + 4);
-            state[9] = -*(int *)(rec + 8);
-            state[10] = -*(int *)(rec + 0xc);
+            st->nPosX = *(int *)(rec + 4);
+            st->nPosY = -*(int *)(rec + 8);
+            st->nPosZ = -*(int *)(rec + 0xc);
             rec += 0x10;
             break;
         case 2:
-            state[0xb] = *(int *)(rec + 4);
-            state[0xc] = -*(int *)(rec + 8);
-            state[0xd] = -*(int *)(rec + 0xc);
+            st->nFaceX = *(int *)(rec + 4);
+            st->nFaceY = -*(int *)(rec + 8);
+            st->nFaceZ = -*(int *)(rec + 0xc);
             rec += 0x10;
             break;
         case 3: {
-            int mesh = *(int *)(rec + 4);
+            SceneNode *mesh = *(SceneNode **)(rec + 4);
             if (mesh != 0) {
                 float out[3];
                 int curX, curY, curZ;
@@ -786,9 +792,10 @@ void sceneObjectAnimStepInterp(int *pObjList, byte bLoop) /* @0x4347c0 */
                     int tx = *(int *)(rec + 8);
                     int ty = *(int *)(rec + 0xc);
                     int tz = *(int *)(rec + 0x10);
+                    /* Asymmetric midpoint per disasm 0x43485e-0x4348bd. */
                     int nx = curX + (tx - curX) / 2;
-                    int ny = curY + (ty - curY) / 2;
-                    int nz = curZ + (tz - curZ) / 2;
+                    int ny = (ty + curY) / 2 - curY;
+                    int nz = (tz + curZ) / 2 - curZ;
                     sceneObjSetPos(mesh, nx, -ny, -nz, 2);
                 }
             }
@@ -796,7 +803,7 @@ void sceneObjectAnimStepInterp(int *pObjList, byte bLoop) /* @0x4347c0 */
             break;
         }
         case 4: {
-            int mesh = *(int *)(rec + 4);
+            SceneNode *mesh = *(SceneNode **)(rec + 4);
             if (mesh != 0) {
                 short sx = *(short *)(rec + 8);
                 short sy = *(short *)(rec + 10);
@@ -807,14 +814,14 @@ void sceneObjectAnimStepInterp(int *pObjList, byte bLoop) /* @0x4347c0 */
             break;
         }
         case 5: {
-            if (pObjList[0] != 0) {
+            if (pList->apObjs[0] != 0) {
                 int k = 0;
-                while (k < 5 && pObjList[k] != 0) {
-                    byte ch = rec[1];
+                while (k < 5 && pList->apObjs[k] != 0) {
+                    int ch = (signed char)rec[1];
                     short sx = *(short *)(rec + 2);
                     short sy = *(short *)(rec + 4);
                     short sz = *(short *)(rec + 6);
-                    sceneObjSetSubOrient(pObjList[k], (int)ch, sx, sy, sz);
+                    sceneObjSetSubOrient(pList->apObjs[k], ch, sx, sy, sz);
                     k++;
                 }
             }
@@ -822,23 +829,27 @@ void sceneObjectAnimStepInterp(int *pObjList, byte bLoop) /* @0x4347c0 */
             break;
         }
         case 6: {
-            if (pObjList[0] != 0) {
+            if (pList->apObjs[0] != 0) {
                 int k = 0;
-                while (k < 5 && pObjList[k] != 0) {
-                    float out[3];
-                    int curX, curY, curZ;
-                    sceneNodeGetPosWorld(pObjList[k], out, 2);
-                    memcpy(&curX, &out[0], sizeof(int));
-                    memcpy(&curY, &out[1], sizeof(int));
-                    memcpy(&curZ, &out[2], sizeof(int));
-                    {
-                        int tx = *(int *)(rec + 4);
-                        int ty = *(int *)(rec + 8);
-                        int tz = *(int *)(rec + 0xc);
-                        int nx = curX + (tx - curX) / 2;
-                        int ny = curY + (ty - curY) / 2;
-                        int nz = curZ + (tz - curZ) / 2;
-                        sceneObjSetPos(pObjList[k], nx, -ny, -nz, 2);
+                while (k < 5 && pList->apObjs[k] != 0) {
+                    SceneNode *obj = pList->apObjs[k];
+                    if (obj != 0) {
+                        float out[3];
+                        int curX, curY, curZ;
+                        sceneNodeGetPosWorld(obj, out, 2);
+                        memcpy(&curX, &out[0], sizeof(int));
+                        memcpy(&curY, &out[1], sizeof(int));
+                        memcpy(&curZ, &out[2], sizeof(int));
+                        {
+                            int tx = *(int *)(rec + 4);
+                            int ty = *(int *)(rec + 8);
+                            int tz = *(int *)(rec + 0xc);
+                            /* Same asymmetric midpoint (disasm 0x43496c-0x4349b6). */
+                            int nx = curX + (tx - curX) / 2;
+                            int ny = (ty + curY) / 2 - curY;
+                            int nz = (tz + curZ) / 2 - curZ;
+                            sceneObjSetPos(obj, nx, -ny, -nz, 2);
+                        }
                     }
                     k++;
                 }
@@ -851,8 +862,9 @@ void sceneObjectAnimStepInterp(int *pObjList, byte bLoop) /* @0x4347c0 */
             break;
         }
     }
-    if (state[7] != 0) {
-        sceneObjSetPos(state[7], state[8], state[9], state[10], 2);
-        sceneNodeFacePos(state[7], 0, (float)state[0xb], (float)state[0xc], (float)state[0xd], 2);
+    if (st->pMasterNode != 0) {
+        sceneObjSetPos(st->pMasterNode, st->nPosX, st->nPosY, st->nPosZ, 2);
+        sceneNodeFacePos(st->pMasterNode, 0,
+                         (float)st->nFaceX, (float)st->nFaceY, (float)st->nFaceZ, 2);
     }
 }

@@ -49,12 +49,12 @@ float g_flCharModelZoom = 2000.0f;   /* @0x45d48c */
 float g_flCharAnimTime = 0;     /* @0x45d410 */
 int   g_nCharAnimFrame = 0;     /* @0x45d498 */
 float g_flCharAnimAccum = 0;    /* @0x45d49c */
-void *g_pCharModelNode = NULL;  /* @0x45a6c4 */
-void *g_pCharModelNodePrev = NULL; /* @0x45a6c8 */
-void *g_pCharAnim = NULL;       /* @0x45a6d8 */
-void *g_pCharAnimPrev = NULL;   /* @0x45a6dc */
+SceneNode *g_pCharModelNode = NULL;  /* @0x45a6c4 current preview node */
+SceneNode *g_pCharModelNodePrev = NULL; /* @0x45a6c8 previous node */
+AnmFile *g_pCharAnim = NULL;       /* @0x45a6d8 current anim */
+AnmFile *g_pCharAnimPrev = NULL;   /* @0x45a6dc previous anim */
 int   g_nCharModelSwapFlag = 0; /* @0x45d494 */
-void *g_pSceneRoot = NULL;      /* @0x4588f8 scene root (set by sceneSystemInit) */
+SceneNode *g_pSceneRoot = NULL;      /* @0x4588f8 scene root (set by sceneSystemInit) */
 void *g_anMenuCharTex[10] = {0};/* @0x45a660 per-char tex */
 void *g_hMenuTexTom = NULL;     /* @0x45a688 */
 void *g_pCharSelAnimData = NULL;/* @0x45a6d0 anim-data pointer passed to anmLoad */
@@ -293,14 +293,14 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
             /* sceneNodeAllocChild — original pushes (0, 0, 0x352, 0, 0x591),
              * i.e. pParent=0, channel=0x352, channel2=0, channel3=0, channel4=0x591. */
             g_pCharModelNode = sceneNodeAllocChild(0, 0, (void *)0x352, 0, (void *)0x591);
-            sceneObjSetPosOrient((int)g_pCharModelNode, 0, 0, 0, 0x2);  /* @0x4307d0 */
+            sceneObjSetPosOrient(g_pCharModelNode, 0, 0, 0, 0x2);  /* @0x4307d0 */
             int id;
             if (g_nCharSelIdx >= g_nLevelCount + 5)
                 id = scenNameToId("QUESTION");             /* @0x450aa0 fallback */
             else
                 id = scenNameToId(g_apCharSceneNames[g_nCharSelIdx]);
-            void *pScen = sceneryObjAlloc((int)g_pCharModelNode, 0, 0, 0, 0, 0, 0, 0,
-                                          (void *)(uintptr_t)id);   /* @0x430200 */
+            SceneNode *pScen = sceneryObjAlloc(g_pCharModelNode, 0, 0, 0, 0, 0, 0, 0,
+                                               (void *)(uintptr_t)id);   /* @0x430200 */
             /* anmLoad — original passes *0x45a6d0 as pData (the anim block from
              * the loaded .SEN), 0 as pMasterNode, and the sceneryObj as pObj. */
             g_pCharAnim = anmLoad(g_pCharSelAnimData, 0, pScen);     /* @0x433a90 */
@@ -329,13 +329,13 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
          * x = (int)(sin(rot)*zoom) - 0x1f4,  y = 0,  z = (int)(cos(rot)*zoom) + 0x320. */
         {
             float vec[8];
-            sceneNodeGetPosWorld((int)g_pCharModelNode, vec, 0x2);  /* @0x430e80 (side effect) */
+            sceneNodeGetPosWorld(g_pCharModelNode, vec, 0x2);  /* @0x430e80 (side effect) */
             int x = (int)(sinf(g_flCharModelRot) * g_flCharModelZoom) - 0x1f4;
             int z = (int)(cosf(g_flCharModelRot) * g_flCharModelZoom) + 0x320;
-            sceneObjSetPos((int)g_pCharModelNode, x, 0, z, 0x2);    /* @0x430660 */
+            sceneObjSetPos(g_pCharModelNode, x, 0, z, 0x2);    /* @0x430660 */
         }
         /* Per-frame orientation pitch (original @0x41f725): pitch = frameDelta * -653.0. */
-        sceneObjSetPosOrient((int)g_pCharModelNode, 0,
+        sceneObjSetPosOrient(g_pCharModelNode, 0,
                              (short)((int)(g_flFrameDelta * -653.0f)), 0, 0x5);  /* @0x4307d0 */
         /* Rotation + zoom easing (original @0x41f733 / @0x41f74e). */
         g_flCharModelRot -= g_flFrameDelta * 0.0628f;                  /* 0x44b6b4 */
@@ -349,16 +349,16 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
          * y=0x1f4 (500). */
         if (g_pCharModelNodePrev != NULL) {
             float vec2[8];
-            sceneNodeGetPosWorld((int)g_pCharModelNodePrev, vec2, 0x2); /* @0x430e80 */
+            sceneNodeGetPosWorld(g_pCharModelNodePrev, vec2, 0x2); /* @0x430e80 */
             if (((int *)vec2)[1] < 0x4e20) {                            /* y < 20000 */
-                sceneObjSetPos((int)g_pCharModelNodePrev, 0, 0x1f4, 0, 0x5);  /* @0x430660 mode 5 */
+                sceneObjSetPos(g_pCharModelNodePrev, 0, 0x1f4, 0, 0x5);  /* @0x430660 mode 5 */
             }
         }
         /* Camera placement (original @0x41f7b8): g_pSceneRoot is the camera
          * block allocated by menuInit @0x41a24e via sceneNodeAlloc @0x4318e0
          * with {1.0,10.0,500000,0,0,0x1000,0x1000} (mode 2). No hack needed here. */
-        sceneObjSetPos((int)g_pSceneRoot, 0, -1600, -2000, 0x2);        /* @0x430660 */
-        sceneNodeFacePos((int)g_pSceneRoot, 0, -2100.0f, 0.0f, 1000.0f, 0x2);  /* @0x431030 */
+        sceneObjSetPos(g_pSceneRoot, 0, -1600, -2000, 0x2);        /* @0x430660 */
+        sceneNodeFacePos(g_pSceneRoot, 0, -2100.0f, 0.0f, 1000.0f, 0x2);  /* @0x431030 */
         sceneRender(g_pSceneRoot);                                      /* @0x42f1c0 */
     }
 

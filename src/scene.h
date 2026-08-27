@@ -25,7 +25,6 @@ typedef unsigned int   uint;
 /* --- shared mesh registry (defined in sen.c) --- */
 extern void *g_pMeshTable;     /* @0x45e930 8-byte entries {char*name, void*meshData} */
 extern int   g_nMeshTableCount;/* @0x45e944 */
-extern void *g_pSceneRoot;     /* @0x4588f8 scene root (set by sceneSystemInit) */
 
 /* --- SceneObjTypeDef: a MESH chunk (serialized in a .sen). sceneMeshFixup
  * relocates the pointer fields at +0xc,+0x10,+0x14,+0x20,+0x28,+0x30 (these
@@ -139,6 +138,12 @@ typedef struct __attribute__((packed)) SceneNode {
     int  nField_34;             /* +0x34 */
     SceneChannel ch;            /* +0x38 (0x70) embedded channel */
 } SceneNode;                    /* 0xa8 */
+
+/* Scene root / camera node (set by sceneSystemInit @0x42ed40 and by
+ * menuInit's sceneNodeAlloc @0x4318e0). The original passes it directly to
+ * sceneObjSetPos/sceneNodeFacePos/sceneRender (e.g. 0x41f7b8), so it is a
+ * SceneNode*. Declared after the typedef because of the type. */
+extern SceneNode *g_pSceneRoot;   /* @0x4588f8 */
 
 /* camera/root block passed to sceneRender (mode==2 @+0, viewport rect @+0x20)
  * Layout verified vs disasm 0x4318e0 / 0x42f1c0: +0 mode (short, ==2),
