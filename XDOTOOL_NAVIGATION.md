@@ -68,9 +68,15 @@ space, Return, Return   # as above
 **Character-cycle stress:**
 ```
 space, Return, Return
-Right, Right, Right, Left, Return   # cycle 0→1→2→3→2 then Enter → stateCharSelectOk @0x41ef40 → stateLevelSelect @0x41b900 (weak stub)
+Right, Right, Right, Left, Return   # cycle 0→1→2→3→2 then Enter → stateCharSelectOk @0x41ef40 → stateLevelSelect @0x41b900
 ```
 Check: `cat rebuild.log | grep charselect` should show `Right -> char 1/2/3`, `SUSANNE00/OKE00/AGATA00` loads, no `page fault`.
+
+**Character select → level select → gameplay smoke test:**
+```
+space, Return, Return, Return, Return
+```
+The first two `Return` keys enter character select; the third enters level select and the fourth confirms its currently selected map. Wait `0.8` seconds between keys, then check `rebuild.log` for one `[gameplay] round <level> initialized` entry; the game must remain responsive with no Wine page fault.
 
 **Back out (safe for automation — exit via Alt+F4):**
 ```

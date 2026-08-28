@@ -5,6 +5,7 @@
 #include "custom_helpers.h"
 #include "menu.h"
 #include "options.h"
+#include "gameplay.h"
 void gameInit(void); /* @0x409d90 — defined in game.c */
 
 /* =====================================================================
@@ -167,7 +168,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         }
         if (!g_bRunning) break;
 
-        gameFrameUpdate();
+        if (g_bGameActive != 0) {
+            gameRunFrame(0);
+        } else {
+            gameFrameUpdate();
+        }
+
+        /* Yield the CPU between frames: the fixed-step gate inside
+         * gameFrameUpdate returns without work most iterations, and
+         * without this the pump spins one core at 100%. ~10 ms keeps the
+         * menu/gameplay frame pacing smooth (input polled every turn). */
+        Sleep(10);
     }
 
     appLog("[winmain] exiting cleanly");

@@ -16,5 +16,7 @@ void *memPoolAllocZero(int pool, size_t size);  /* @0x419a20 */
 int  memPoolFree(int pool, void *ptr);          /* @0x419a60 */
 int  memPoolDestroy(int pool);      /* @0x419ae0 */
 int  memPoolSystemShutdown(void);   /* @0x419bb0 */
+void memFree(void *ptr);            /* @0x43ef99 CRT free glue */
+void memFreeDirect(void *ptr);      /* @0x43dd37 */
 
 #endif /* POOL_H */

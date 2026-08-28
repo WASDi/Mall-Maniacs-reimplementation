@@ -216,3 +216,17 @@ int memPoolSystemShutdown(void)
     }
     return 1;
 }
+
+/* memFree @0x43ef99 — CRT free glue (heap-type dispatch in the original;
+ * the rebuild always uses the CRT heap). */
+void memFree(void *ptr) /* @0x43ef99 */
+{
+    free(ptr);
+}
+
+/* memFreeDirect @0x43dd37 — thin wrapper over memFree used by the string
+ * and config clusters. */
+void memFreeDirect(void *ptr) /* @0x43dd37 */
+{
+    memFree(ptr);
+}

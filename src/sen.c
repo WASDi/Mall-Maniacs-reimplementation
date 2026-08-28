@@ -9,6 +9,7 @@
 #include "charselect.h"
 #include "util.h"
 #include "pool.h"
+#include "scenetext.h"
 
 /* =====================================================================
  * SEN scene-file loader cluster. Faithful reimplementation of maniac.exe
@@ -25,15 +26,12 @@
 
 /* --- scene-load globals (original addrs in comments) --- */
 char   g_szSceneDir[256];               /* @0x45e950 scene dir (empty for menu) */
-static char   g_meshNameBuf[8192];             /* backing for mesh-name strings */
-static char  *g_pMeshNameStr = g_meshNameBuf;  /* @0x45eab4 running name cursor */
-static unsigned char g_meshTableMem[256 * 8];  /* 8B entries {name*,data*} */
-void  *g_pMeshTable   = g_meshTableMem;       /* @0x45e930 */
+static char  *g_pMeshNameStr;                  /* @0x45eab4 running name cursor */
+void  *g_pMeshTable;                            /* @0x45e930 */
 int   g_nMeshTableCount = 0;                  /* @0x45e994 */
 static void  *g_pMeshTableWr;                 /* @0x45e948 write cursor */
 static void  *g_pMeshTableStart;              /* @0x45eab8 first new entry this load */
-static char   g_sceneNameBuf[16384];          /* rebuild storage for the original scene name arena */
-static char  *g_pSceneNameBufPos = g_sceneNameBuf; /* @0x45e94c write cursor into the scene name arena */
+static char  *g_pSceneNameBufPos;             /* @0x45e94c write cursor into scene name arena */
 static char  *g_pObjNameList = NULL;          /* @0x45e934 */
 char  *g_pObjNameTable = NULL;         /* @0x45e990 */
 int    g_nObjNameTableSize = 0;        /* @0x45eaa8 */
@@ -48,6 +46,16 @@ char  *g_pSubObjData = NULL;           /* @0x45eb30 */
 int    g_nColsCount = 0;               /* @0x45eb2c (count) */
 char  *g_pColsData = NULL;             /* @0x45eb28 (data) */
 static int    g_nSceneLoadCount = 0;          /* @0x45e938 */
+static int    g_nSceneNamePool = -1;          /* @0x45e998 pool created by scenNameTableInit */
+static char  *g_pMeshNameArena = NULL;        /* @0x45e93c mesh-name arena start */
+static char  *g_pSceneNameArena = NULL;       /* @0x45eabc scene-name arena start */
+static int    g_nScenObjCap = 0;              /* @0x45eac0 scene-obj table capacity */
+ScenNameEntry *g_pScenObjTable = NULL;        /* @0x45eb10 {name,node} scene-object table */
+/* Stat pad zeroed by scenNameTableInit @0x431db4 (16 dwords @0x45eac4 and
+ * two ints @0x45eb08/0x45eb0c; no reader found in the analyzed code). */
+static int    g_anSceneTblStat[16];           /* @0x45eac4 */
+static int    g_nSceneTblStatA;               /* @0x45eb08 */
+static int    g_nSceneTblStatB;               /* @0x45eb0c */
 static int    g_scenesceneLoadSen = 0;        /* @0x45e99c */
 static int    g_nSceneMeshMaxSize = 0;        /* @0x45eb14 */
 static int    g_scenesceneMeshFixup = 0;      /* @0x45eb18 */
@@ -57,7 +65,71 @@ static int    g_scenesceneMeshFixup = 0;      /* @0x45eb18 */
  * scenery/musics nodes from g_pObjInstances etc. when gameplay lands. */
 extern int sceneInstantiateObjects(int pool);
 extern int scenExpandNameList(char *pList, void *pEnd, char *pszDir); /* @0x432dd0 */
-extern void sceneTextAnimAdd(void *pvPool, int *pMapGeom, char *pData, int nSize); /* @0x434a90 helper */
+
+/* scenNameTableInit @0x431cb0 — create the pool-backed mesh/name tables used
+ * by the SEN loader (pool name "SCENE" @0x450fa8). Four pool allocations in
+ * original order: mesh table (nMeshCount*8 @0x45e930), scene-object table
+ * ((nScenObjCap+1)*8 @0x45eb10), scene-name arena (nScenObjCap*32 @0x45eabc,
+ * cursor @0x45e94c), mesh-name arena (nMeshCount*32 @0x45e93c, cursor
+ * @0x45eab4). The +4 (node/handle) fields of mesh-table entries 1..count-1
+ * and scene-obj entries 1..cap are cleared; the 0x45eac4 stat pad and
+ * 0x45eb08/0x45eb0c are zeroed; g_nSceneLoadCount @0x45e938 resets. Any
+ * allocation failure destroys the pool and returns 0. */
+int scenNameTableInit(int nMeshCount, int nScenObjCap)
+{
+    int nPool;
+    ScenNameEntry *pMeshTable;
+    ScenNameEntry *pScenObjTable;
+    char *pSceneNames;
+    char *pMeshNames;
+
+    nPool = memPoolCreate("SCENE");               /* @0x431cb8 */
+    g_nSceneNamePool = nPool;
+    if (nPool < 0) return 0;
+
+    pMeshTable = (ScenNameEntry *)memPoolAlloc(nPool, (size_t)nMeshCount * 8);              /* @0x431cdc */
+    pScenObjTable = (ScenNameEntry *)memPoolAlloc(nPool, (size_t)nScenObjCap * 8 + 8);      /* @0x431cf8 */
+    pSceneNames = memPoolAlloc(nPool, (size_t)nScenObjCap * 32);           /* @0x431d0f */
+    pMeshNames = memPoolAlloc(nPool, (size_t)nMeshCount * 32);             /* @0x431d26 */
+    if (pMeshTable == NULL || pScenObjTable == NULL ||
+        pSceneNames == NULL || pMeshNames == NULL) {                       /* @0x431d34 */
+        memPoolDestroy(nPool);
+        g_nSceneNamePool = -1;
+        return 0;
+    }
+
+    g_pMeshTable = pMeshTable;              /* @0x45e930 */
+    g_pScenObjTable = pScenObjTable;        /* @0x45eb10 */
+    g_pSceneNameArena = pSceneNames;        /* @0x45eabc */
+    g_pSceneNameBufPos = pSceneNames;       /* @0x45e94c */
+    g_pMeshNameArena = pMeshNames;          /* @0x45e93c */
+    g_pMeshNameStr = pMeshNames;            /* @0x45eab4 */
+    g_nMeshTableCount = nMeshCount;         /* @0x45e994 */
+    g_nScenObjCap = nScenObjCap;            /* @0x45eac0 */
+    /* The original clears only the id (+4) fields of mesh entries 1..count-1
+     * (@0x431d7c) and scene-obj entries 1..cap (@0x431d9e); entry 0 and the
+     * name fields rely on the pool's underlying zero-filled allocation. The
+     * rebuild's memPoolAlloc wraps malloc, so both tables are zeroed fully
+     * for an identical starting state. */
+    memset(pMeshTable, 0, (size_t)nMeshCount * 8);
+    memset(pScenObjTable, 0, (size_t)nScenObjCap * 8 + 8);
+    g_nSceneLoadCount = 0;                  /* @0x45e938 @0x431dc0 */
+    memset(g_anSceneTblStat, 0, sizeof(g_anSceneTblStat));   /* @0x431dbb */
+    g_nSceneTblStatA = 0;                   /* @0x45eb08 @0x431dc9 */
+    g_nSceneTblStatB = 0;                   /* @0x45eb0c @0x431dcf */
+    return 1;
+}
+
+/* scenNameTableFree @0x431e00 — destroy the scenNameTableInit pool
+ * (handle @0x45e998). Returns 1. */
+int scenNameTableFree(void) /* @0x431e00 */
+{
+    if (g_nSceneNamePool >= 0) {
+        memPoolDestroy(g_nSceneNamePool);
+        g_nSceneNamePool = -1;
+    }
+    return 1;
+}
 
 /* ---------------------------------------------------------------------
  * senChunkParse @0x432c00 — parse a chain of nested .sen chunk records
@@ -369,18 +441,20 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
                                 g_nObjInstanceCount = size >> 5;
                             }
                         } else if (tag == 0x454d414e) {     /* EMAN */
+                            /* Mesh name stored VERBATIM (no scene-dir prefix —
+                             * dir expansion is ONAM-only via scenExpandNameList).
+                             * Gives the previous mesh entry its name, then copies
+                             * the chunk string into the mesh-name arena. */
                             char nbuf[256];
                             fileReadN(fp, nbuf, size);
                             if (g_pMeshTableStart < g_pMeshTableWr) {
                                 *(char **)((int)g_pMeshTableWr - 8) = g_pMeshNameStr;
                             }
                             {
-                                size_t d = strlen(g_szSceneDir);
-                                if (d) { memcpy(g_pMeshNameStr, g_szSceneDir, d); g_pMeshNameStr += d; }
-                                size_t nm = strlen(nbuf);
-                                if (nm > 255) nm = 255;
-                                memcpy(g_pMeshNameStr, nbuf, nm); g_pMeshNameStr += nm;
-                                *g_pMeshNameStr++ = '\0';
+                                size_t nm = strlen(nbuf) + 1;
+                                if (nm > 256) nm = 256;
+                                memcpy(g_pMeshNameStr, nbuf, nm);
+                                g_pMeshNameStr += nm;
                             }
                         } else if (tag == 0x4853454d) {     /* MESH */
                             pcVar5 = memPoolAlloc((int)(intptr_t)pvPool, size);
@@ -389,7 +463,6 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
                                 *(char **)((int)g_pMeshTableWr + 4) = pcVar5;
                                 *(int *)g_pMeshTableWr = 0;
                                 g_pMeshTableWr = (void *)((int)g_pMeshTableWr + 8);
-                                g_nMeshTableCount++;
                             }
                         }
                     } else {

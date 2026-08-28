@@ -16,6 +16,7 @@
 #include "sen.h"
 #include "scene.h"
 #include "input.h"
+#include "mstring.h"
 #include "custom_helpers.h"
 #include "stubs.h"
 #include "sound.h"
@@ -751,6 +752,9 @@ void menuInit(int nRestartMode)
      * 0x7d0, 0x2). */
     sceneSystemInit(100000, 40000, 40000, 2000, 0x2);
     appLog("[menu] sceneSystemInit done (root=%p)", g_pSceneRoot);
+    if (scenNameTableInit(4000, 4000) == 0) {
+        appLog("[menu] WARNING scene name-table initialization failed");
+    }
     /* Camera alloc (menuInit @0x41a24e): sceneNodeAlloc @0x4318e0 with
      * {1.0, 10.0, 500000, 0,0,0x1000,0x1000} -> g_pSceneRoot (camera block).
      * Original then does sceneObjSetPos(g_pSceneRoot, 0,-1600,-2000) and
@@ -873,8 +877,12 @@ void menuInit(int nRestartMode)
             for (int k = 0; k < n; k++) sceneNodeSetHiddenFlag(tmp[k], 3);
         }
         {
-            char a[8] = {0}, b[8] = {0};
-            mStringAssignCopy(a, b);
+            MString a, b;
+            mStringCtorEmpty(&a);
+            mStringCtorEmpty(&b);
+            mStringAssignCopy(&a, &b);
+            mStringFree(&a);
+            mStringFree(&b);
         }
     }
 

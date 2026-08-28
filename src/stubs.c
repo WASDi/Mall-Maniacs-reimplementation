@@ -4,6 +4,8 @@
 #include "menu.h"
 #include "gx.h"
 #include "pool.h"
+#include "player.h"
+#include "obj.h"
 #include "custom_helpers.h"
 
 extern HWND g_hWnd;
@@ -13,11 +15,6 @@ extern HWND g_hWnd;
  * transitions let future milestones wire real implementations without
  * changing callers. Original addresses noted in stubs.h.
  * ===================================================================== */
-
-/* gameInit @0x409d90 — now implemented in src/game.c.
- * Previous stub incorrectly called menuInit; original gameInit does NOT call
- * menuInit — menuInit is entered lazily from gameFrameUpdate @0x41a8c0 and
- * dispatchKeyEvent @0x41ade0 (and stateOptionsExit @0x41c672). */
 
 /* Main-menu row targets (menu.c dispatch table). TODO stubs: log once and
  * return to the menu. Replace the bodies later without changing the
@@ -51,18 +48,88 @@ void unloadGameWorld(void)
     appLog("[stub TODO] unloadGameWorld");
 }
 
+/* sndEmitterUpdateAll @0x42bf40 — the original walks the positional-emitter
+ * list after rendering. The world/emitter ownership model is deferred, so an
+ * empty list is the safe temporary contract. */
+void sndEmitterUpdateAll(void)
+{
+}
+
+/* playerAiUpdate @0x401160 — the original AI state machine needs world
+ * objects, nav points, item rules, and player commands not reconstructed yet.
+ * The dispatcher preserves its scheduling contract while this safe TODO keeps
+ * active AI records unchanged. */
+void playerAiUpdate(Player *pPlayer)
+{
+    (void)pPlayer;
+}
+
+/* movieFrameUpdate @0x40af80 — records or replays per-player input against
+ * the original config-node database. The offline game has neither movie data
+ * nor config-node ownership yet, so this safe TODO preserves idle playback. */
+void movieFrameUpdate(void)
+{
+}
+
+/* roundLogicUpdate @0x40beb0 — applies the game clock, objective state, and
+ * round-end transitions. It will own the active-round transition once level
+ * world initialization and gameplay rules are reconstructed. */
+void roundLogicUpdate(void)
+{
+}
+
+/* netGameUpdate @0x414fa0 — performs client/server state replication only
+ * while a network session is active. Networking is out of scope for the
+ * offline rebuild, so the no-op preserves the original frame-stage boundary
+ * without creating a network session or mutating local player state. */
+void netGameUpdate(void)
+{
+}
+
+/* zoneConnUpdateCulling @0x42b8f0 — updates visibility across AR/IN zone
+ * connections. Level objects and zone connections are not loaded yet, so the
+ * empty list is a safe rendering-stage boundary. */
+void zoneConnUpdateCulling(void)
+{
+}
+
+/* sceneDetailGridUpdate @0x42b1d0 — rebuilds the visible-cell list for the
+ * current scene detail grid. The level loader will provide this owner later;
+ * until then a NULL grid deliberately has no visible cells. */
+void sceneDetailGridUpdate(void *pDetailGrid)
+{
+    (void)pDetailGrid;
+}
+
+/* sndStopAllVoices @0x438100 — culls positional voices no longer in a
+ * rendered zone. Positional voice ownership is deferred, so there is nothing
+ * to stop in the offline gameplay slice. */
+void sndStopAllVoices(void *pVoiceList)
+{
+    (void)pVoiceList;
+}
+
+/* renderGameHud @0x412810 — draws score, timer, and item HUD surfaces after
+ * the scene. HUD assets/state are loaded by the deferred level setup path. */
+void renderGameHud(void)
+{
+}
+
 /* commandDispatch — original command/config query contract. Returning NULL
- * is safe for callers that only use the result as optional text. */
+ * is safe for callers that only use the result as optional text. The level
+ * startup scripts run "eload <file>.eo" (EventObject zones) and "nload
+ * <file>.ai" (AI nav mesh, still deferred). */
 unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
 {
     (void)nCommand;
-    (void)pszCommand;
+    if (pszCommand != NULL && strncmp(pszCommand, "run ", 4) == 0) {
+        runCmd(0, pszCommand + 4);
+    }
+    else if (pszCommand != NULL && strncmp(pszCommand, "eload ", 6) == 0) {
+        eloadCmd(0, pszCommand + 6);     /* @0x406cb0 */
+    }
     return NULL;
 }
-
-/* stateHighScoreTable @0x41dfd0 — now implemented in record.c */
-
-/* stateCharacterSelect @0x41efa0 — now implemented in charselect.c */
 
 /* sceneInstantiateObjects — documented stub for scene-graph population at the
  * end of sceneLoadSen @0x432320 (out of scope for the offline menu preview).
@@ -70,18 +137,6 @@ unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
 int sceneInstantiateObjects(int pool)
 {
     (void)pool;
-    return 1;
-}
-
-int scenNameTableInit(int nMeshCount, int nScenObjCap) /* @0x431cb0 */
-{
-    if (0) {
-        void *p = (void *)memPoolCreate(NULL);
-        void *a = memPoolAlloc((int)p, 8);
-        (void)a;
-        memPoolDestroy((int)p);
-    }
-    (void)nMeshCount; (void)nScenObjCap;
     return 1;
 }
 
@@ -101,11 +156,6 @@ int scenExpandNameList(char *pList, void *pEnd, char *pszDir) /* @0x432dd0 */
     (void)pList; (void)pEnd; (void)pszDir;
     return 0;
 }
-void sceneTextAnimAdd(void *pvPool, int *pMapGeom, char *pData, int nSize) /* @0x434a90 helper */
-{
-    (void)pvPool; (void)pMapGeom; (void)pData; (void)nSize;
-}
-
 int sceneFindByName(int *pOut, int nMax, char *pszSubstr) /* @0x431fd0 */
 {
     (void)pOut; (void)nMax; (void)pszSubstr;
@@ -129,8 +179,22 @@ int sceneNodeSetHiddenFlag(int pNode, int nMode) /* @0x4305c0 */
     return 1;
 }
 
-void *mStringAssignCopy(void *pThis, void *pSrc) /* @0x435440 */
+/* aiNavNodeCtorScene @0x428cf0 — documented TODO stub, see stubs.h. The
+ * original (thiscall, 0x48-byte node from levelSceneTexturesLoad): zeroes
+ * +0x38/+0x3c/+0x40/+0x44, sceneNodeGetPos(node,0,this+0x2a,4), copies
+ * *(float*)(this+0x2e) to +0x00, g_pNavMeshData = *(mesh+0x14) via
+ * sceneNodeGetMesh, clears g_nNavTriIdx/g_pNavTriCur, then aiNavNodeUpdate.
+ * Deferred with the AI navigation subsystem (docs/16-rebuild.md step 2). */
+void aiNavNodeCtorScene(void *pNavNode, int nSceneNode) /* @0x428cf0 */
 {
-    (void)pSrc;
-    return pThis;
+    (void)pNavNode; (void)nSceneNode;
+}
+
+/* zoneWallListBuild @0x42a650 — documented TODO stub, see stubs.h. Original
+ * pass over g_pNavNodeList: zoneConnMergeDupesInMesh per node, zoneWall
+ * CalcPlane per node, zoneConnMergeDupesCrossMesh per node, a doubly-linked
+ * wall-list resort (+0x10/+0x44), zoneWallMergeDupesSameDir per node.
+ * Deferred with the zone/AI subsystem; no-op while the nav list is empty. */
+void zoneWallListBuild(void) /* @0x42a650 */
+{
 }

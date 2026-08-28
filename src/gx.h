@@ -109,6 +109,19 @@ typedef struct GxColorUv {
     unsigned short hV2;        /* +0x1a */
 } GxColorUv;                   /* 0x1c */
 
+/* 2D vector used by the math helpers and the EventObject zone test
+ * (objContainsPoint @0x414bb0 builds one via gxVec2SetAngleZero). */
+typedef struct GxVec2 {
+    float x;   /* +0x00 (polar: length) */
+    float y;   /* +0x04 (polar: angle) */
+} GxVec2;      /* 8 bytes */
+
+/* --- 2D vector helpers (originals verified in Ghidra) --- */
+void gxVec2SetAngleZero(GxVec2 *pVec);   /* @0x434f90 set to unit X {1,0} */
+void gxVec2Set(GxVec2 *pVec, float x, float y);            /* @0x434fa0 */
+void gxVec2FromPolar(GxVec2 *pOut, const GxVec2 *pPolar);  /* @0x434fc0 */
+void mathVec2Polar(GxVec2 *pOut, const GxVec2 *pIn);       /* @0x435060 (scene.c) */
+
 /* Maniac-side GX wrapper cluster (thin dispatches through GxDriverApi).
  * Each matches the maniac.exe function at the noted address. */
 int  gxGetMode(GxMode *mode);              /* @0x433310 */

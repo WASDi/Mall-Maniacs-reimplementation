@@ -3,6 +3,7 @@
 
 #include <windows.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 /* File helper cluster — reimplementation of the maniac file* wrappers.
  * The original functions thunk to the statically-linked MSVC CRT
@@ -19,5 +20,21 @@ char *fileReadText(int pool, LPCSTR path); /* @0x408e20 NUL-terminated pool buff
 int  fileGetSizeOpen(FILE *fp);                 /* @0x408ee0 current offset preserved */
 int  fileGetSize(LPCSTR path);                  /* @0x408f20 0 on failure */
 int  fileExists(LPCSTR path);                   /* @0x408f60 */
+int  fileDelete(LPCSTR path);                   /* @0x43e126 CRT remove glue */
+
+/* fmtSprintf @0x43e767 — CRT sprintf glue used across the game. */
+int  fmtSprintf(char *pBuf, const char *pFmt, ...);
+
+/* fmtSscanf @0x43e69d — CRT sscanf glue (crtFscanfCore over the string). */
+int  fmtSscanf(const char *pStr, const char *pFmt, ...);
+
+/* fmtAtoi @0x43e75c — thin wrapper over fmtAtoiCore @0x43e6d1 (= CRT atoi:
+ * skip whitespace, optional sign, decimal digits). The original is
+ * __thiscall with an unused ECX operand (callers pass the source node
+ * name there); only the string argument matters. */
+int  fmtAtoi(const char *pszText);
+
+/* fatalError @0x414570 — scene/sound teardown + message box + exit. */
+void fatalError(const char *pFmt, ...);
 
 #endif /* UTIL_H */

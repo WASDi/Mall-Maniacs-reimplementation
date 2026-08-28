@@ -2,6 +2,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "gx.h"
+#include "config.h"
+#include "gameplay.h"
+#include "pool.h"
+#include "util.h"
 #include "custom_helpers.h"
 #include "time.h"
 
@@ -38,16 +42,12 @@ extern int g_nGfxMode;              /* @0x4580c4 1 Glide,2 Soft — defined in o
 /* One-time guard mirroring g_bGameInitDone @0x4583c0 bit 0. */
 static int g_bGameInitDone;
 
+/* g_bSommarSolFirstRun @0x44f0ec — static-initialized to 1; the config
+ * parse runs only on the first gameInit, afterwards the flag clears. */
+static int g_bSommarSolFirstRun = 1;   /* @0x44f0ec (byte in original) */
+
 /* g_pMoveState @0x455e60 — heap object allocated in gameInit. */
 void *g_pMoveState;                 /* @0x455e60 */
-
-/* gxVec2SetAngleZero @0x434f90 — set to unit X {1.0f,0.0f}. */
-void gxVec2SetAngleZero(void *pVec) /* @0x434f90 */
-{
-    float *f = (float *)pVec;
-    f[0] = 1.0f;
-    f[1] = 0.0f;
-}
 
 /* moveStateCtor @0x401000 — ctor for 0x60-byte movement-state object.
  * Zeros gxVec2 at +0x14,+0x20,+0x2c,+0x58. */
@@ -74,6 +74,11 @@ void gameInit(void) /* @0x409d90 */
     }
     g_bGameInitDone |= 1;
 
+    /* Original runs the g_configEnvMaster dynamic initializer
+     * (configMasterEnvInit @0x409b80) before WinMain; the rebuild calls
+     * it at the top of the guarded one-time block. */
+    configMasterEnvInit();
+
     /* One-time leaf block (original does mStringCtorEmpty*2 etc).
      * We keep the gxVec2/moveState part that is safe and in-scope;
      * the MString/constructor and atexit parts are deferred. */
@@ -83,13 +88,13 @@ void gameInit(void) /* @0x409d90 */
          * rebuild has no storage for them, so we just exercise the
          * leaf calls for call-graph coverage without materializing
          * the globals. */
-        char dummyVec[8];
-        gxVec2SetAngleZero(dummyVec);
-        gxVec2SetAngleZero(dummyVec);
-        gxVec2SetAngleZero(dummyVec);
-        gxVec2SetAngleZero(dummyVec);
-        gxVec2SetAngleZero(dummyVec);
-        gxVec2SetAngleZero(dummyVec);
+        GxVec2 dummyVec;
+        gxVec2SetAngleZero(&dummyVec);
+        gxVec2SetAngleZero(&dummyVec);
+        gxVec2SetAngleZero(&dummyVec);
+        gxVec2SetAngleZero(&dummyVec);
+        gxVec2SetAngleZero(&dummyVec);
+        gxVec2SetAngleZero(&dummyVec);
         /* Original: moveStateCtor(0x4561ac) — static 0x60-byte object
          * at 0x4561ac. Rebuild has no fixed mapping, so we call the
          * ctor on a dummy to preserve the tracked call. */
@@ -102,23 +107,71 @@ void gameInit(void) /* @0x409d90 */
 
     /* Deferred blocks (documented TODO, not called):
      *  - playerRecordInitDefaults loop for g_playerRecords[8] @0x456210
-     *  - scrollTextClear @0x414550 / consoleClearLines @0x4086c0
-     *  - commandDispatch(0,"get_toplevel") -> g_nLevelCount
-     *  - fileOpen/fileSeek/fileTell/fileRead/fileWrite/memFreeDirect
-     *    XOR 0x55 maniac.cfg -> sommar.sol, configParseFile,
-     *    fileDelete, configMasterLoad, configGetValue
-     * These are out-of-scope or file-dependent and are intentionally
-     * left missing; the rebuild does not fatalError if files are absent.
-     */
+     *  - g_nEditorMode @0x458344 / g_bQuitRequested @0x4580f4 clears,
+     *    scrollTextClear @0x414550 / consoleClearLines @0x4086c0
+     * These are deferred; the rebuild does not fatalError if their
+     * subsystems are absent. The original also issues
+     * commandDispatch(0, "load") @0x44e52c here. */
     nopDebugStub();
     nopDebugStub();
 
-    /* Driver selection — original reads pszDriverPath = configGetValue()
-     * then tries gxLoadDriver(path) with fallback GXGLIDE -> GXSOFT,
-     * setting g_nGfxMode. The rebuild keeps the fallback without the
-     * config lookup (deferred). Order matches original: GXGLIDE first. */
+    /* maniac.cfg (XOR 0x55) -> sommar.sol -> configParseFile ->
+     * configMasterLoad, exactly as disasm 0x409e88..0x409f65. */
     {
-        int ok = 0; // gxLoadDriver("DRIVERS\\GXGLIDE.DLL"); Rebuild only supports gxSoft.dll !!!
+        extern int g_bSommarSolFirstRun;   /* @0x44f0ec (defined below) */
+        FILE *pOut = fopen("sommar.sol", "wb");            /* @0x44e6c4 / "wb" @0x44e6d0 */
+        if (pOut != NULL) {
+            FILE *pIn = fopen("maniac.cfg", "rb");         /* @0x44f210 / "rb" @0x44e6c0 */
+            char *pBuf = NULL;
+            unsigned int nSize = 0;
+            if (pIn != NULL) {
+                fseek(pIn, 0, SEEK_END);
+                nSize = (unsigned int)ftell(pIn);
+                fseek(pIn, 0, SEEK_SET);
+                pBuf = (char *)malloc(nSize);              /* operator_new @0x43dd42 */
+                if (pBuf != NULL) {
+                    size_t n = fread(pBuf, 1, nSize, pIn);
+                    int i;
+                    for (i = 0; i < (int)n; i++) {
+                        pBuf[i] = (char)(pBuf[i] ^ 0x55);
+                    }
+                }
+                fclose(pIn);
+            }
+            if (pBuf != NULL) {
+                fwrite(pBuf, 1, nSize, pOut);
+                memFreeDirect(pBuf);
+                fclose(pOut);
+            } else {
+                fclose(pOut);
+                fatalError("Kunde inte l\x84sa \"maniac.cfg\".");   /* @0x44f1f0 */
+            }
+        } else {
+            fatalError("Kunde inte l\x84sa \"maniac.cfg\".");
+        }
+        if (g_bSommarSolFirstRun && configParseFile(&g_configEnvMaster, "sommar.sol") < 0) {
+            fileDelete("sommar.sol");
+            fatalError("Kunde inte l\x84sa \"maniac.cfg\".");
+        }
+        fileDelete("sommar.sol");
+        configMasterLoad();
+        g_bGameActive = 0;                                  /* @0x4580f8 */
+        appLog("[gameInit] config parsed (levels/objects/master)");
+    }
+
+    /* Driver selection — original reads pszDriverPath = configGetValue
+     * ("driver" @0x44f180) then tries gxLoadDriver(path) with fallback
+     * GXGLIDE -> GXSOFT, setting g_nGfxMode. The config lookup returns
+     * NULL here (commandDispatch contract) and the rebuild only supports
+     * gxSoft.dll, so the GXSOFT fallback is the live path. */
+    {
+        unsigned char *pszDriverPath = configGetValue("driver");
+        int ok = 0;
+        if (pszDriverPath != NULL) {
+            /* original compares the path against GXGLIDE/GXSOFT to pick
+             * g_nGfxMode 1/2; the rebuild never receives a path. */
+            appLog("[gameInit] config driver '%s' ignored (rebuild is GXSOFT-only)", (char *)pszDriverPath);
+        }
         if (ok) {
             g_nGfxMode = 1;
         } else {
@@ -159,4 +212,6 @@ void gameInit(void) /* @0x409d90 */
         }
     }
     appLog("[gameInit] done (g_nGfxMode=%d)", g_nGfxMode);
+
+    g_bSommarSolFirstRun = 0;   /* original clears the flag at the tail */
 }

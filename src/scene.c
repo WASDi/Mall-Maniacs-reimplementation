@@ -8,6 +8,9 @@
 #include "gx.h"
 #include "pool.h"
 #include "sen.h"
+#include "stubs.h"
+#include "time.h"
+#include "util.h"
 #include "custom_helpers.h"
 
 /* =====================================================================
@@ -195,6 +198,35 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
     g_pSceneRoot = &g_rootNode; /* @0x4588f8 */
     g_nSceneFlags = nFlags & 0xffffffef; /* @0x45e920 */
     g_nSceneFlagTexAnim = ((int)(char)nFlags & 0x10U) >> 4; /* @0x45e924 */
+    return 1;
+}
+
+/* sceneFreeAllNodes @0x42f150 — free every node reachable from the
+ * g_pSceneNodeList head via sceneNodeFree(n,1). The original relies on
+ * g_pSceneNodeList aliasing the root node's pChild so the head advances
+ * as each node unlinks; the rebuild keeps them separate, so the next
+ * sibling is captured before the free. */
+int sceneFreeAllNodes(void) /* @0x42f150 */
+{
+    while (g_pSceneNodeList != NULL) {
+        SceneNode *pNext = ((SceneNode *)g_pSceneNodeList)->pNextSib;
+        sceneNodeFree((SceneNode *)g_pSceneNodeList, 1);
+        g_pSceneNodeList = pNext;
+    }
+    return 1;
+}
+
+/* sceneSystemClose @0x42f180 — scene/render system close: free all scene
+ * nodes, then the sort buffer and node/mesh pools from sceneSystemInit.
+ * roundStartInit pairs sceneSystemInit...sceneSystemClose around the
+ * level texture-load pass. */
+int sceneSystemClose(void) /* @0x42f180 */
+{
+    sceneFreeAllNodes();
+    memFree(g_pSortBuffer);
+    memFree(g_pNodePool);
+    memFree(g_pNodePool2);
+    memFree(g_pMeshPool);
     return 1;
 }
 
@@ -386,6 +418,46 @@ int scenNameToId(LPCSTR pszName)
 
 /* sceneMeshFixup @0x4320f0 — defined in sen.c (faithful). */
 
+/* sceneCollectMeshHandles @0x42b360 — collect scene-node ids from the
+ * scene-object name table g_pScenObjTable (entries {name, id}). Iteration
+ * stops at the first entry whose id is 0.
+ * pszFilter==0: every entry whose name does not start with '_' is stored,
+ * but pOut advances on EVERY scanned entry, so underscore names leave gaps
+ * and the return value counts scanned entries (original quirk, relied on
+ * by levelSceneTexturesLoad).
+ * pszFilter!=0: entries whose name does not start with '_' and contains
+ * pszFilter (strFindSubstring @0x43e7e0, rebuild: strstr) are packed
+ * contiguously; returns the number stored, capped at nMax. */
+int sceneCollectMeshHandles(int *pOut, int nMax, const char *pszFilter) /* @0x42b360 */
+{
+    int i = 0;
+
+    if (pszFilter == NULL) {
+        if (nMax <= 0) return 0;
+        for (i = 0; i < nMax; i++) {
+            int nId = g_pScenObjTable[i].nId;
+            if (nId == 0) break;
+            if (g_pScenObjTable[i].pszName[0] != '_') {
+                pOut[i] = nId;
+            }
+        }
+        return i;
+    } else {
+        int n = 0;
+        if (g_pScenObjTable[0].nId == 0) return 0;
+        do {
+            const char *pszName = g_pScenObjTable[i].pszName;
+            if (n >= nMax) return n;
+            if (pszName[0] != '_' && strstr(pszName, pszFilter) != NULL) {
+                pOut[n] = g_pScenObjTable[i].nId;
+                n++;
+            }
+            i++;
+        } while (g_pScenObjTable[i].nId != 0);
+        return n;
+    }
+}
+
 /* scenNameToIdEx @0x431e20 — anim-specific resolver (faithful).
  * Original upper-cases via crtStrUpr and searches g_pScenObjList; for the
  * menu preview the shipped .anm files have zero mesh names, so returning 0
@@ -572,6 +644,293 @@ int sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode) /* @0x430e
         return 1;
     }
     return 0;
+}
+
+/* ===================================================================
+ * sceneNodeGetPos @0x431270 / sceneNodeGetMesh @0x431ae0 /
+ * sceneSetCurrentObj @0x430d98 / sceneMeshBBox @0x42ba40 /
+ * sceneDetailGridCtor @0x42ad00
+ * =================================================================== */
+
+/* Current scene-object context for mode 6 (sceneSetCurrentObj @0x430d98,
+ * consumed by playerAnimSfxUpdate). */
+SceneNode *g_pSceneNodeHead;   /* @0x45e810 */
+int g_nSceneCurrentObj;        /* @0x45e608 */
+
+/* sceneNodeGetMesh @0x431ae0 — return the node's SceneObjTypeDef (+0x20),
+ * 0 when the node word0 != 1 or when the type is the shared default type
+ * g_sceneObjDefaultType (original constant @0x450f38). */
+unsigned int sceneNodeGetMesh(SceneNode *pNode) /* @0x431ae0 */
+{
+    if (pNode->nId != 1) {
+        return 0;
+    }
+    if (pNode->pTypeDef == &g_sceneObjDefaultType) {
+        return 0;
+    }
+    return (unsigned int)(size_t)pNode->pTypeDef;
+}
+
+/* sceneSetCurrentObj @0x430d98 — record the scene-object context used by
+ * sceneNodeGetPos mode 6. Returns 1. */
+int sceneSetCurrentObj(SceneNode *pNodeHead, int nCurrentObj) /* @0x430d98 */
+{
+    g_pSceneNodeHead = pNodeHead;
+    g_nSceneCurrentObj = nCurrentObj;
+    return 1;
+}
+
+/* sceneNodeGetPos @0x431270 — position query over the channel hierarchy.
+ * nMode 2: raw local translation bits (pOut read back as ints by callers).
+ * nMode 4: walk the channel-parent chain to g_rootNode accumulating
+ *   Ry(r1)*Rx(r0)*Rz(r2) rotations per ancestor (binary-degree sin/cos
+ *   @0x42d030/@0x42d050) and the per-channel translation; results stored
+ *   as ints via __ftol truncation. For nChannel==0 the walk starts at the
+ *   node's parent (channel 0's parent lives one node up).
+ * nMode 6: same for this node and for the scene-object context
+ *   (g_pSceneNodeHead, g_nSceneCurrentObj), clears bFlagB along the
+ *   context's channel chain, recomputes its world transform
+ *   (chanCalcWorldTransform @0x42f6e0) and returns
+ *   Wmat * (posThis - posHead) as ints. */
+int sceneNodeGetPos(SceneNode *pNode, int nChannel, int *pOutXYZ, int nMode) /* @0x431270 */
+{
+    if (nChannel < 0 || nChannel >= (int)pNode->nChannelCount) {
+        return 0;
+    }
+    if (nMode == 2) {
+        SceneChannel *ch = &pNode->pChannels[nChannel];
+        ((int *)pOutXYZ)[0] = ch->x;
+        ((int *)pOutXYZ)[1] = ch->y;
+        ((int *)pOutXYZ)[2] = ch->z;
+        return 1;
+    }
+    if (nMode == 4) {
+        SceneChannel *ch = &pNode->pChannels[nChannel];
+        float px = (float)ch->x;
+        float py = (float)ch->y;
+        float pz = (float)ch->z;
+        SceneNode *n = (nChannel == 0) ? pNode->pParent : pNode;
+        int idx = ch->nIdx;
+        while (n != &g_rootNode) {
+            SceneChannel *c = &n->pChannels[idx];
+            float s0 = mathSinDeg(c->rot[0]);
+            float c0 = mathCosDeg(c->rot[0]);
+            float s1 = mathSinDeg(c->rot[1]);
+            float c1 = mathCosDeg(c->rot[1]);
+            float s2 = mathSinDeg(c->rot[2]);
+            float c2 = mathCosDeg(c->rot[2]);
+            float t = c2 * px - s2 * py;             /* 0x43137a..0x43138f */
+            float u = c2 * py + s2 * px;             /* 0x431393..0x43139f */
+            float v = u * s0 + c0 * pz;              /* 0x4313a1..0x4313b1 */
+            float w = u * c0 - s0 * pz;              /* 0x4313b5..0x4313c1 */
+            px = t * c1 + v * s1 + (float)c->x;      /* 0x4313c3..0x4313d8 */
+            py = w + (float)c->y;                    /* 0x4313dc..0x4313e1 */
+            pz = v * c1 - t * s1 + (float)c->z;      /* 0x4313e7..0x4313fc */
+            if (idx == 0) {
+                n = n->pParent;                      /* 0x431400..0x431402 */
+            }
+            idx = c->nIdx;                           /* 0x431405 */
+        }
+        pOutXYZ[0] = (int)px;                        /* __ftol 0x431414 */
+        pOutXYZ[1] = (int)py;                        /* 0x431421 */
+        pOutXYZ[2] = (int)pz;                        /* 0x43142c */
+        return 1;
+    }
+    if (nMode == 6) {
+        int anPos[3];
+        int anHead[3];
+        SceneNode *n;
+        int idx;
+        SceneChannel *hc;
+        float dx, dy, dz;
+        sceneNodeGetPos(pNode, nChannel, anPos, 4);                  /* 0x431450..0x431459 */
+        sceneNodeGetPos(g_pSceneNodeHead, g_nSceneCurrentObj, anHead, 4); /* 0x43145e..0x431472 */
+        n = g_pSceneNodeHead;
+        idx = g_nSceneCurrentObj;
+        while (n != &g_rootNode) {                                   /* 0x431486..0x4314bd */
+            SceneChannel *c = &n->pChannels[idx];
+            c->bFlagB = 0;                                           /* 0x43149f */
+            int next = c->nIdx;
+            if (idx == 0) {
+                n = n->pParent;                                      /* 0x4314a9..0x4314ac */
+            }
+            idx = next;
+        }
+        chanCalcWorldTransform(g_pSceneNodeHead, g_nSceneCurrentObj); /* 0x4314c8 */
+        hc = &g_pSceneNodeHead->pChannels[g_nSceneCurrentObj];
+        dx = (float)(anPos[0] - anHead[0]);                          /* 0x4314e7..0x431505 */
+        dy = (float)(anPos[1] - anHead[1]);
+        dz = (float)(anPos[2] - anHead[2]);
+        /* out = wmat * diff (column-major 3x3 at hc+0x40), stored as ints */
+        pOutXYZ[0] = (int)(dx * hc->wmat[0] + dy * hc->wmat[3] + dz * hc->wmat[6]); /* 0x431522..0x431539 */
+        pOutXYZ[1] = (int)(dx * hc->wmat[1] + dy * hc->wmat[4] + dz * hc->wmat[7]); /* 0x431546..0x431557 */
+        pOutXYZ[2] = (int)(dx * hc->wmat[2] + dy * hc->wmat[5] + dz * hc->wmat[8]); /* 0x43155f..0x431570 */
+        return 1;
+    }
+    return 0;
+}
+
+/* mathVec2Polar @0x435060 — cartesian in, polar out {length, atan2(y, x)}
+ * (FPATAN + FSQRT). Lives here next to the other math* helpers. */
+void mathVec2Polar(GxVec2 *pOut, const GxVec2 *pIn) /* @0x435060 */
+{
+    pOut->y = (float)atan2((double)pIn->y, (double)pIn->x);
+    pOut->x = (float)sqrt(pIn->y * pIn->y + pIn->x * pIn->x);
+}
+
+/* SceneMeshPrim / sceneMeshBBox share the indexed-polygon format stored in
+ * SceneObjRenderInfo.pPolyA (@+0x18, count @+0x14) with the nav-mesh
+ * streams: each primitive record = {byte nFans @0, byte nType @1 (3=tri,
+ * 4=quad), ..., byte nFanIdxCount @6}, then nFans * nFanIdxCount byte
+ * vertex indices; vertices live in pVerts (@+0x08) at 8 bytes each
+ * {short x, y, z, pad}. */
+
+/* sceneMeshBBox @0x42ba40 — AABB over the mesh's local vertices (primitive
+ * types 3/4 only, others skipped), then out[i] =
+ * (int)((min[i] + max[i]) * 0.5f + pos[i]) where pos comes from
+ * sceneNodeGetPos(node, 0, ..., 4); the 0.5f constant is @0x44b274. */
+void sceneMeshBBox(SceneNode *pNode, int *pOutBBox) /* @0x42ba40 */
+{
+    SceneObjTypeDef *pMesh = (SceneObjTypeDef *)(size_t)sceneNodeGetMesh(pNode);
+    SceneObjRenderInfo *pRender = pMesh->pRender;   /* mesh +0x14 */
+    int anPos[3];
+    int anMin[3] = {0, 0, 0};
+    int anMax[3] = {0, 0, 0};
+    int bInit = 0;
+    int i, k;
+
+    sceneNodeGetPos(pNode, 0, anPos, 4);
+    for (i = 0; i < pRender->nPolyA; i++) {
+        byte *prim = ((byte **)pRender->pPolyA)[i];
+        int nFans = prim[0];
+        int nIdxPerFan = prim[6];
+        byte *pCur = prim + 8;
+        byte *pEnd = prim + 8 + nFans * nIdxPerFan * 2;
+        short *pVerts = (short *)pRender->pVerts;
+        int nVerts = (prim[1] == 3) ? 3 : (prim[1] == 4) ? 4 : 0;
+
+        if (nVerts == 0) {
+            continue;
+        }
+        for (; pCur < pEnd; pCur += nIdxPerFan * 2) {
+            for (k = 0; k < nVerts; k++) {
+                short *v = pVerts + pCur[k] * 4;   /* idx * 8 bytes */
+                if (!bInit) {
+                    anMin[0] = anMax[0] = v[0];
+                    anMin[1] = anMax[1] = v[1];
+                    anMin[2] = anMax[2] = v[2];
+                    bInit = 1;
+                } else {
+                    if (v[0] > anMax[0]) anMax[0] = v[0];
+                    if (v[1] > anMax[1]) anMax[1] = v[1];
+                    if (v[2] > anMax[2]) anMax[2] = v[2];
+                    if (v[0] < anMin[0]) anMin[0] = v[0];
+                    if (v[1] < anMin[1]) anMin[1] = v[1];
+                    if (v[2] < anMin[2]) anMin[2] = v[2];
+                }
+            }
+        }
+    }
+    pOutBBox[0] = (int)((anMin[0] + anMax[0]) * 0.5f + (float)anPos[0]); /* 0x42bc77..0x42bc8e */
+    pOutBBox[1] = (int)((anMin[1] + anMax[1]) * 0.5f + (float)anPos[1]); /* 0x42bc8e..0x42bca6 */
+    pOutBBox[2] = (int)((anMin[2] + anMax[2]) * 0.5f + (float)anPos[2]); /* 0x42bcab..0x42bcc5 */
+}
+
+/* sceneDetailGridCtor @0x42ad00 — per-level detail/culling grid (called
+ * from levelSetup with (this, 0, 4, 0x400, 10000)). Registers each
+ * non-'_' scene-object (a column header) in cells[0][col], then scans the
+ * name table for "_<level><colname>" detail nodes, hides them
+ * (sceneNodeSetHiddenFlag) and stores them in cells[level][col] (cell
+ * index = level * nRows + col). The detail level is the digit at name[1]
+ * (1 <= level < nCols, otherwise the grid fails -> "Failed to set up
+ * detail levels!!"). Columns missing detail nodes are filled forward from
+ * the previous level; the name match compares the column name against
+ * detailName+2. Afterwards every column's header mesh gets an AABB
+ * (sceneMeshBBox) in the 0x14-byte row buffer (+0xc/+0x10 zeroed) and
+ * pColScales[j] = (j+1) * nCellSize^2 (squared detail thresholds). */
+void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
+                          int nRows, int nCellSize) /* @0x42ad00 */
+{
+    pGrid->nRootNode = nRootNode;              /* 0x42ad24 */
+    pGrid->nFailed = 0;
+    pGrid->nCols = nCols;                      /* 0x42ad2b */
+    pGrid->nRows = nRows;
+    pGrid->nColsFilled = 0;
+    pGrid->pCells = NULL;
+    if (nCols <= 1 || nRows <= 1) {
+        goto fail;                             /* 0x42afe5 */
+    }
+    pGrid->pCells = (int *)memPoolAllocZero(0, (size_t)nCols * nRows * 4);   /* 0x42ad5e */
+    pGrid->pRowBuf = memPoolAlloc(0, (size_t)pGrid->nRows * 0x14);           /* 0x42ad75 */
+    pGrid->pColScales = (float *)memPoolAlloc(0, (size_t)pGrid->nCols * 4);  /* 0x42ad86 */
+    if (pGrid->pCells == NULL || pGrid->pRowBuf == NULL || pGrid->pColScales == NULL) {
+        goto fail;
+    }
+    if (g_pScenObjTable[0].nId != 0) {         /* 0x42ada1 */
+        int nEntry;
+        for (nEntry = 0; g_pScenObjTable[nEntry].nId != 0; nEntry++) {   /* 0x42adb5.. */
+            ScenNameEntry *e = &g_pScenObjTable[nEntry];
+            if (pGrid->nRows <= pGrid->nColsFilled) {
+                goto fail;                     /* 0x42adc3 */
+            }
+            if (e->pszName[0] != '_') {
+                int nFilled = 0;
+                int nDetail;
+                pGrid->pCells[pGrid->nColsFilled] = e->nId;   /* 0x42ae7e */
+                for (nDetail = 0; g_pScenObjTable[nDetail].nId != 0; nDetail++) { /* 0x42ae9c */
+                    ScenNameEntry *d = &g_pScenObjTable[nDetail];
+                    if (d->pszName[0] == '_' &&
+                        strcmp(e->pszName, d->pszName + 2) == 0) {   /* word-wise cmp 0x42ae1f */
+                        char szDigit[2];
+                        int nLevel;
+                        szDigit[0] = d->pszName[1];   /* 0x42ae4e (byte 1 of the name) */
+                        szDigit[1] = '\0';
+                        nLevel = fmtAtoi(szDigit);    /* fmtAtoi @0x43e75c */
+                        if (nLevel < 1 || pGrid->nCols <= nLevel) {
+                            goto fail;                /* 0x42ae68 */
+                        }
+                        sceneNodeSetHiddenFlag(d->nId, 1);   /* @0x4305c0 */
+                        if (pGrid->pCells[pGrid->nRows * nLevel + pGrid->nColsFilled] == 0) {
+                            nFilled++;                /* 0x42aea8 */
+                        } else {
+                            nopDebugStub();           /* 0x42aeae */
+                        }
+                        pGrid->pCells[pGrid->nRows * nLevel + pGrid->nColsFilled] = d->nId;
+                    }
+                }
+                if (nFilled != pGrid->nCols - 1) {      /* 0x42aee5 */
+                    int nLevel;
+                    nopDebugStub();                     /* 0x42aeeb */
+                    for (nLevel = 1; nLevel < pGrid->nCols; nLevel++) {  /* 0x42aef2..0x42af1a */
+                        if (pGrid->pCells[pGrid->nRows * nLevel + pGrid->nColsFilled] == 0) {
+                            pGrid->pCells[pGrid->nRows * nLevel + pGrid->nColsFilled] =
+                                pGrid->pCells[pGrid->nRows * (nLevel - 1) + pGrid->nColsFilled];
+                        }
+                    }
+                }
+                pGrid->nColsFilled++;                   /* 0x42af1f */
+            }
+        }
+    }
+    {   /* AABB per column header (0x42af30..0x42af68) */
+        int i;
+        for (i = 0; i < pGrid->nColsFilled; i++) {
+            int *pRow = (int *)((char *)pGrid->pRowBuf + (size_t)i * 0x14);
+            sceneMeshBBox((SceneNode *)(size_t)pGrid->pCells[i], pRow);
+            pRow[3] = 0;   /* +0x0c */
+            pRow[4] = 0;   /* +0x10 */
+        }
+    }
+    {   /* detail squared-distance thresholds (0x42af7a..0x42af9e) */
+        int j;
+        for (j = 0; j < pGrid->nCols; j++) {
+            pGrid->pColScales[j] = ((float)j + 1.0f) * (float)(nCellSize * nCellSize);
+        }
+    }
+    return pGrid;
+fail:
+    pGrid->nFailed = 1;                            /* 0x42afea */
+    return pGrid;
 }
 
 /* ===================================================================

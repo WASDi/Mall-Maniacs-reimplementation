@@ -145,6 +145,27 @@ typedef struct __attribute__((packed)) SceneNode {
  * SceneNode*. Declared after the typedef because of the type. */
 extern SceneNode *g_pSceneRoot;   /* @0x4588f8 */
 
+/* Current scene-object context used by sceneNodeGetPos mode 6 (relative
+ * positions). Written by sceneSetCurrentObj @0x430d98 (called from
+ * playerAnimSfxUpdate per player). */
+extern SceneNode *g_pSceneNodeHead;   /* @0x45e810 */
+extern int        g_nSceneCurrentObj; /* @0x45e608 channel index of current obj */
+
+/* Per-level detail/culling grid built by sceneDetailGridCtor @0x42ad00
+ * (called from levelSetup with (this, 0, 4, 0x400, 10000)). 0x20 bytes.
+ * The pCells layout is [level * nRows + col]: row 0 holds the column
+ * header node ids, rows 1..nCols-1 the "_<level><col>" detail nodes. */
+typedef struct SceneDetailGrid {
+    int   nFailed;      /* +0x00 1 = setup failed -> fatalError */
+    int   nRootNode;    /* +0x04 root scene node */
+    int   nColsFilled;  /* +0x08 column entries registered */
+    int   nRows;        /* +0x0c row stride (0x400) */
+    int   nCols;        /* +0x10 detail-level count (4) */
+    int  *pCells;       /* +0x14 nCols*nRows node ids (memPool) */
+    void *pRowBuf;      /* +0x18 nColsFilled * 0x14 mesh bboxes (memPool) */
+    float *pColScales;  /* +0x1c nCols squared-distance detail thresholds */
+} SceneDetailGrid;      /* 0x20 */
+
 /* camera/root block passed to sceneRender (mode==2 @+0, viewport rect @+0x20)
  * Layout verified vs disasm 0x4318e0 / 0x42f1c0: +0 mode (short, ==2),
  * +0x20 vx/vy/vw/vh (short), +0x28 nWidth (float), +0x2c nHeight (float),
@@ -215,17 +236,26 @@ extern float g_sceneCameraBasis_7;
 
 /* --- prototypes --- */
 int  sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount, int nMeshPoolSize, unsigned int nFlags);
+int  sceneFreeAllNodes(void);       /* @0x42f150 */
+int  sceneSystemClose(void);        /* @0x42f180 */
 void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, short nMeshIdx, short nUnk5, short nUnk6, short nUnk7); /* @0x4318e0 */
 void *sceneNodeAllocChild(SceneNode *pParent, void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, void *pChannelPtr4);
 void *sceneryObjAlloc(SceneNode *pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, int nChanPtr4,
                       short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef);
 int  scenNameToId(LPCSTR pszName);
+int  sceneCollectMeshHandles(int *pOut, int nMax, const char *pszFilter); /* @0x42b360 */
 int  scenNameToIdEx(LPCSTR pszName); /* @0x431e20 */
 int  sceneObjSetPos(SceneNode *pObj, int nX, int nY, int nZ, int nMode); /* @0x430660 */
 int  sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll, byte nMode); /* @0x4307d0 */
 int  sceneObjSetSubPos(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode); /* @0x430a90 */
 int  sceneObjSetSubOrient(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll); /* @0x431110 */
 int  sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode); /* @0x430e80 */
+int  sceneNodeGetPos(SceneNode *pNode, int nChannel, int *pOutXYZ, int nMode); /* @0x431270 */
+unsigned int sceneNodeGetMesh(SceneNode *pNode); /* @0x431ae0 */
+int  sceneSetCurrentObj(SceneNode *pNodeHead, int nCurrentObj); /* @0x430d98 */
+void sceneMeshBBox(SceneNode *pNode, int *pOutBBox); /* @0x42ba40 */
+void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
+                          int nRows, int nCellSize); /* @0x42ad00 */
 int  sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float flZ, int nMode); /* @0x431030 */
 void sceneNodeFree(SceneNode *pNode, int nFreeChildren); /* @0x430460 */
 void sceneNodeUpdateBounds(SceneNode *pNode); /* @0x4303c0 */

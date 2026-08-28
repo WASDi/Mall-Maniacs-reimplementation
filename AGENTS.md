@@ -16,7 +16,7 @@ GUI and single-player functionality.
 
 ## Implementation
 - Do not reimplement system libraries, runtime code, import stubs, or compiler glue.
-  Also do not reimplement features that exist in standard libraries, such as math and other utils.
+  Also do not reimplement features that exist in standard libraries, such as math, string, and other utils.
   Network features and the in-game console are out of scope.
 - Build 32-bit Windows with `i686-w64-mingw32-gcc` and the needed original system
   libraries (`KERNEL32`, `USER32`, `GDI32`, `WINMM`). Skip DirectInput, DirectSound,
@@ -27,15 +27,14 @@ GUI and single-player functionality.
 - Reproduce initialization and state-machine behavior subsystem by subsystem, while
   prioritizing dependencies of the next visible single-player feature.
 - Build with `make`, which writes to `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe`.
-  Read `XDOTOOL_NAVIGATION.md` for triggering keyboard events and navigating the in-game menu,
-  including reaching the character selection menu.
+  Read `XDOTOOL_NAVIGATION.md` for triggering keyboard events to navigate the in-game menu during verification.
 
 ## Working practices
 - Use the Ghidra MCP bridge (`ghidra_*`) for decompilation, cross-references, naming,
   prototypes, comments, structs, and string searches. Pass `program=maniac.exe` when
   multiple programs are open.
 - Save the Ghidra program periodically; do not commit unless asked.
-- Toe run ghidra scripts, follow `Ghidra_scripts.md`.
+- To run ghidra scripts, follow `Ghidra_scripts.md`.
 - Inspect assembly closely enough for the reconstructed source to match the original.
 - Follow established patterns and code format and comment structures.
 

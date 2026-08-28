@@ -13,13 +13,18 @@
 
 /* --- rebuild diagnostics --- */
 
-/* appLog — rebuild diagnostic helper, appends to "rebuild.log". No original
- * in maniac.exe (replacement logging used by the vertical slice). */
+/* appLog — rebuild diagnostic helper, writes to "rebuild.log". No original
+ * in maniac.exe (replacement logging used by the vertical slice).
+ * The first call in a process truncates the file ("w") so stale content
+ * from previous runs cannot be mistaken for the current run; afterwards
+ * it appends ("a"). */
 void appLog(const char *fmt, ...)
 {
-    FILE *f = fopen("rebuild.log", "a");
+    static int bFirstCall = 1;
+    FILE *f = fopen("rebuild.log", bFirstCall ? "w" : "a");
     va_list ap;
     if (f == NULL) return;
+    bFirstCall = 0;
     va_start(ap, fmt);
     vfprintf(f, fmt, ap);
     va_end(ap);

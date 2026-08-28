@@ -47,8 +47,14 @@ int  sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames)
 /* --- mesh-table registry (shared with scene.c / scenNameToId) ---
  * g_pMeshTable holds 8-byte entries {char *name, void *pMeshData}; pMeshData is
  * the raw MESH chunk bytes, which are a serialized SceneObjTypeDef. */
+typedef struct ScenNameEntry {
+    char *pszName;   /* +0x00 */
+    int   nId;       /* +0x04 mesh id (mesh table) / scene-node handle (scene-obj table) */
+} ScenNameEntry;
+
 extern void *g_pMeshTable;      /* @0x45e930 */
 extern int   g_nMeshTableCount; /* @0x45e994 */
+extern ScenNameEntry *g_pScenObjTable; /* @0x45eb10 {name,node} scene-object table */
 extern char g_szSceneDir[];     /* @0x45e950 scene base dir (set by scenSetDir) */
 extern char *g_pObjNameTable;   /* @0x45e990 TNAM packed names */
 extern int g_nObjNameTableSize; /* @0x45eaa8 */
@@ -57,5 +63,12 @@ extern int g_nMapGeomCount;     /* @0x45eb24 */
 extern char *g_pColsData;       /* @0x45eb28 COLS base */
 extern int g_nColsCount;        /* @0x45eb2c */
 extern char *g_pSubObjData;     /* @0x45eb30 SUBO base */
+
+/* scenNameTableInit @0x431cb0 — allocate and reset the mesh, scene-object,
+ * and name tables for a scene load. Returns zero if any allocation fails. */
+int scenNameTableInit(int nMeshCount, int nScenObjCap);
+
+/* scenNameTableFree @0x431e00 — destroy the scene name-table pool. */
+int scenNameTableFree(void);
 
 #endif /* SEN_H */

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "gx.h"
 #include "pool.h"
 #include "util.h"
@@ -341,4 +342,31 @@ void gxDrawQuadColor(void *tex,int x0,int y0,int x1,int y1,int u0,int v0,int u1,
     uv.gwU = (unsigned short)(u1 << 8); uv.gwU2 = uv.gwU;
     uv.hV = (unsigned short)(v1 << 8); uv.hV2 = uv.hV;
     gxDrawPolygon(&v00,&v01,&v02,&v03,0x2004,&uv);
+}
+
+/* ===================================================================
+ * 2D vector helpers
+ * =================================================================== */
+
+/* gxVec2SetAngleZero @0x434f90 — set to unit X {1.0f, 0.0f}. Moved here
+ * from game.c so the zone/geometry cluster can share it. */
+void gxVec2SetAngleZero(GxVec2 *pVec) /* @0x434f90 */
+{
+    pVec->x = 1.0f;
+    pVec->y = 0.0f;
+}
+
+/* gxVec2Set @0x434fa0 — store (x, y). Original __thiscall RET 0x8. */
+void gxVec2Set(GxVec2 *pVec, float x, float y) /* @0x434fa0 */
+{
+    pVec->x = x;
+    pVec->y = y;
+}
+
+/* gxVec2FromPolar @0x434fc0 — pPolar holds {length, angle}; writes
+ * cartesian out = length * (cos(angle), sin(angle)) via FSIN/FCOS. */
+void gxVec2FromPolar(GxVec2 *pOut, const GxVec2 *pPolar) /* @0x434fc0 */
+{
+    pOut->x = pPolar->x * (float)cos((double)pPolar->y);
+    pOut->y = pPolar->x * (float)sin((double)pPolar->y);
 }

@@ -1,8 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include "pool.h"
 #include "util.h"
+#include "gx.h"
+#include "sen.h"
+#include "scene.h"
+#include "custom_helpers.h"
+
+extern HWND g_hWnd;   /* maniac g_hMainWindow @0x459ce0 (defined in maniac.c) */
 
 /* --- file helper cluster (fileOpenMode @0x408cd0 .. fileExists @0x408f60) --- */
 
@@ -137,4 +144,65 @@ int fileExists(LPCSTR path)
     if (f == NULL) return 0;
     fclose(f);
     return 1;
+}
+
+/* fileDelete @0x43e126 — CRT remove() glue. */
+int fileDelete(LPCSTR path) /* @0x43e126 */
+{
+    return remove(path);
+}
+
+/* fmtSprintf @0x43e767 — CRT sprintf glue (crtVfprintfCore into a memory
+ * stream, unbounded). */
+int fmtSprintf(char *pBuf, const char *pFmt, ...) /* @0x43e767 */
+{
+    int n;
+    va_list args;
+    va_start(args, pFmt);
+    n = vsprintf(pBuf, pFmt, args);
+    va_end(args);
+    return n;
+}
+
+/* fmtSscanf @0x43e69d — CRT sscanf glue (crtFscanfCore drives the scanf
+ * core over the source string; vararg out parameters). */
+int fmtSscanf(const char *pStr, const char *pFmt, ...) /* @0x43e69d */
+{
+    int n;
+    va_list args;
+    va_start(args, pFmt);
+    n = vsscanf(pStr, pFmt, args);
+    va_end(args);
+    return n;
+}
+
+/* fatalError @0x414570 — tear the render/scene systems down, show the
+ * message box and quit. The original calls exitProc @0x43ed1c (CRT exit
+ * glue: atexit handlers + ExitProcess); the rebuild maps it to exit(). */
+void fatalError(const char *pFmt, ...) /* @0x414570 */
+{
+    char buf[256];
+    va_list args;
+
+    scenNameTableFree();
+    sceneSystemClose();
+    gxUnloadDriver();
+    va_start(args, pFmt);
+    vsnprintf(buf, sizeof(buf), pFmt, args);
+    va_end(args);
+    appLog("[fatalError] %s", buf);     /* log before the modal box so headless runs show the cause */
+    MessageBoxA(g_hWnd, buf, "Mall Maniacs - Error", MB_ICONERROR);  /* caption @0x44ffe4, uType 0x10 */
+    exit(-1);                             /* exitProc(0xffffffff) */
+}
+/* ===================================================================
+ * fmtAtoi @0x43e75c / fmtAtoiCore @0x43e6d1
+ * =================================================================== */
+
+/* fmtAtoi @0x43e75c — CRT atoi (fmtAtoiCore): skip whitespace, optional
+ * +/-, parse decimal digits. The ECX 'this' operand of the original
+ * thiscall is never dereferenced by fmtAtoiCore, so the rebuild exposes
+ * only the string argument. */
+int fmtAtoi(const char *pszText) /* @0x43e75c */
+{
+    return atoi(pszText);   /* fmtAtoiCore @0x43e6d1 */
 }

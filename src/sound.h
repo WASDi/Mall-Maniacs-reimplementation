@@ -76,4 +76,8 @@ int sndPlaySfx(int nMixerVoice, unsigned int nBank, unsigned int nSfxIndex,
  * voices. */
 int sndMixTick(unsigned int nFrameCounter);
 
+/* sndEmitterUpdateAll @0x42bf40 — updates/frees positional SFX emitters
+ * after each active game frame. The 3D emitter list is deferred. */
+void sndEmitterUpdateAll(void);
+
 #endif /* SOUND_H */
