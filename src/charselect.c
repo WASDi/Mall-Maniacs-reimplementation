@@ -14,6 +14,7 @@
 #include "sound.h"
 #include "sen.h"
 #include "scene.h"
+#include "levelselect.h"
 
 /* =====================================================================
  * Character-select subsystem — reimplementation of stateCharacterSelect
@@ -97,16 +98,6 @@ const int g_kCharStatAgility[10] = { /* @0x4501bc */
     3,4,2,3,3,2,4,2,3,4
 };
 
-/* stateLevelSelect is defined in gameflow (not yet rebuilt); declare
- * extern to allow the advance transition. Original @0x41b900. */
-int stateLevelSelect(int nType,int nKey,int nKeyType); /* @0x41b900 stub when not linked */
-__attribute__((weak)) int stateLevelSelect(int nType,int nKey,int nKeyType)
-{
-    (void)nType; (void)nKey; (void)nKeyType;
-    appLog("[charselect] stateLevelSelect @0x41b900 not yet implemented (stub)");
-    g_pStateFunc = menuUpdate;
-    return 0;
-}
 
 /* Player record — faithful packed 0x374 stride per Ghidra PlayerRecord @0x456210.
  * 8 records × 0x374 (884B) with alignment 1; g_apPlayers @0x456360 is the

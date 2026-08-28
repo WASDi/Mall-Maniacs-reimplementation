@@ -24,6 +24,12 @@ void gameInit(void);
  * gotoOptions @0x41d300 is now implemented in options.c (Alternativ ->
  * Svårighetsgrad, Grafik ignored). */
 int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
+
+/* Gameplay entry contracts used by stateLevelInit0..4. These are safe no-op
+ * placeholders until the single-player world subsystem is rebuilt. */
+void playerSetupCharacters(void);                            /* @0x41b760 */
+void unloadGameWorld(void);                                  /* gameplay teardown */
+unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand); /* console/config query */
 /* stateHighScoreTable @0x41dfd0 — now implemented in record.c */
 
 /* stateCharacterSelect @0x41efa0 — now implemented in charselect.c */

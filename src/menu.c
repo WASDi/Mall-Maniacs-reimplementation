@@ -701,6 +701,16 @@ void menuInit(int nRestartMode)
     g_hMenuTexGfx     = (void *)(unsigned int)gxLoadTpgFile("menu\\gfx00.tpg");
     g_hMenuTexChar    = (void *)(unsigned int)gxLoadTpgFile("menu\\char00.tpg");
     g_hMenuTexLevel   = (void *)(unsigned int)gxLoadTpgFile("menu\\level00.tpg");
+    g_hMenuTexSmal    = (void *)(unsigned int)gxLoadTpgFile("menu\\smal00.tpg");
+    g_hMenuTexWood    = (void *)(unsigned int)gxLoadTpgFile("menu\\wood00.tpg");
+    g_hMenuTexOrie    = (void *)(unsigned int)gxLoadTpgFile("menu\\orie00.tpg");
+    g_hMenuTexAqua    = (void *)(unsigned int)gxLoadTpgFile("menu\\aqua00.tpg");
+    g_hMenuTexRock    = (void *)(unsigned int)gxLoadTpgFile("menu\\rock00.tpg");
+    g_hMenuTexSec100  = (void *)(unsigned int)gxLoadTpgFile("menu\\sec100.tpg");
+    g_hMenuTexSec200  = (void *)(unsigned int)gxLoadTpgFile("menu\\sec200.tpg");
+    g_hMenuTexSec300  = (void *)(unsigned int)gxLoadTpgFile("menu\\sec300.tpg");
+    g_hMenuTexSec400  = (void *)(unsigned int)gxLoadTpgFile("menu\\sec400.tpg");
+    g_hMenuTexSec500  = (void *)(unsigned int)gxLoadTpgFile("menu\\sec500.tpg");
     g_hMenuTexSign100 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign100.tpg");
     g_hMenuTexSign200 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign200.tpg");
     g_hMenuTexSign300 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign300.tpg");

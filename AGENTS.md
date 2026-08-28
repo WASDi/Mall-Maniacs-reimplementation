@@ -16,6 +16,7 @@ GUI and single-player functionality.
 
 ## Implementation
 - Do not reimplement system libraries, runtime code, import stubs, or compiler glue.
+  Also do not reimplement features that exist in standard libraries, such as math and other utils.
   Network features and the in-game console are out of scope.
 - Build 32-bit Windows with `i686-w64-mingw32-gcc` and the needed original system
   libraries (`KERNEL32`, `USER32`, `GDI32`, `WINMM`). Skip DirectInput, DirectSound,

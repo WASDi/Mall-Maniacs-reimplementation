@@ -37,6 +37,29 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType)
     return 0;
 }
 
+/* playerSetupCharacters @0x41b760 — prepare player scene records before a
+ * round. The offline rebuild has no gameplay world yet, so preserve the call
+ * contract without dereferencing incomplete player/world state. */
+void playerSetupCharacters(void)
+{
+    appLog("[stub TODO] playerSetupCharacters @0x41b760");
+}
+
+/* unloadGameWorld — gameplay-world teardown contract. */
+void unloadGameWorld(void)
+{
+    appLog("[stub TODO] unloadGameWorld");
+}
+
+/* commandDispatch — original command/config query contract. Returning NULL
+ * is safe for callers that only use the result as optional text. */
+unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
+{
+    (void)nCommand;
+    (void)pszCommand;
+    return NULL;
+}
+
 /* stateHighScoreTable @0x41dfd0 — now implemented in record.c */
 
 /* stateCharacterSelect @0x41efa0 — now implemented in charselect.c */

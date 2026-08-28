@@ -8,9 +8,10 @@ The original game-flow state machine is fully mapped and documented at the
 behavioral level. The verified offline path is intro → main menu → game-type
 selection → character selection → level selection → `run <level>`; gameplay
 returns through results, deferred menu actions, high scores, and end scenes.
-The rebuild currently implements the intro, main menu, game-type select, and
-quit-confirm states; the character-select state (reachable through the
-`modeInit*` initializers) is the next useful slice.
+The rebuild currently implements the intro, main menu, game-type select,
+character-select, map-select, and quit-confirm states. The five map-entry
+initializers preserve the original `run 0` through `run 4` contracts; gameplay
+world loading remains a documented deferred dependency.
 
 ## Purpose and evidence
 
