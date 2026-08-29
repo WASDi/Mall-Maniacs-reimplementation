@@ -53,5 +53,13 @@ int     textDraw(gxFont *font, unsigned int color, int x, int y, char *text);
 int     textDrawCentered(gxFont *font, unsigned int color, int x, int y, char *text);
 int     textDrawInt(void *font, unsigned int color, int x, int y, int value);
 int     textIntWidth(void *font, int value);
+void    textDrawWrappedCentered(void *pMsgBlock, int nX, int nY, int nMaxWidth); /* @0x4101d0 */
+
+/* In-game HUD fonts @0x458364..0x45836c, loaded by roundStartInit
+ * @0x40a727..0x40a7f2 from the per-level HUD directory
+ * (g_aszLevelDirs[g_nLevelIdx]). */
+extern gxFont *g_hHudFont;       /* @0x458364 font.txt        + font00.tpg (list/scroll text) */
+extern gxFont *g_hHudFontDigits; /* @0x458368 hudfont.txt     + hfont00.tpg (counts, timer) */
+extern gxFont *g_hHudFontTiny;   /* @0x45836c menu\tinyfont.txt + tfont00.tpg (labels) */
 
 #endif /* FONT_H */

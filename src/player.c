@@ -336,7 +336,7 @@ void playerSetupRound(void) /* @0x410e90 */
         pRec->nStatSpeed = g_kCharStatSpeed[pRec->nCharIdx];          /* @0x4501b4 @0x4112c5 */
         pRec->nStatStrength = g_kCharStatStrength[pRec->nCharIdx];    /* @0x4501b8 @0x4112db */
         pRec->nStatAgility = g_kCharStatAgility[pRec->nCharIdx];      /* @0x4501bc @0x4112f1 */
-        pRec->field_16c = 0;                                               /* @0x411302 */
+        pRec->nCheckoutProgress = 0;                                               /* @0x411302 */
         wsprintfA(szBuf, "carts[%d]", pRec->nCartIdx);                     /* @0x44f9b8 @0x411313 */
         pNode = configEnvGetValue(&g_configEnvMaster, pObjects, szBuf);    /* @0x411331 */
         if (pNode == NULL) {

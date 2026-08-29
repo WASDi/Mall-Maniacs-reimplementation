@@ -101,12 +101,6 @@ void sndStopAllVoices(void *pVoiceList)
     (void)pVoiceList;
 }
 
-/* renderGameHud @0x412810 — draws score, timer, and item HUD surfaces after
- * the scene. HUD assets/state are loaded by the deferred level setup path. */
-void renderGameHud(void)
-{
-}
-
 /* commandDispatch — original command/config query contract. Returning NULL
  * is safe for callers that only use the result as optional text. The level
  * startup scripts run "eload <file>.eo" (EventObject zones) and "nload

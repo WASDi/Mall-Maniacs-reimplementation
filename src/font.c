@@ -34,6 +34,11 @@ unsigned char g_abFontGlyphMap[256];  /* @0x455d40 */
 unsigned int  g_textColor;            /* @0x455e40 (bottom / "RGB2" tag) */
 unsigned int  g_textColor2;           /* @0x455e44 (top / "RGB" tag) */
 
+/* In-game HUD fonts @0x458364..0x45836c (loaded in roundStartInit). */
+gxFont *g_hHudFont;       /* @0x458364 */
+gxFont *g_hHudFontDigits; /* @0x458368 */
+gxFont *g_hHudFontTiny;   /* @0x45836c */
+
 const char g_szTextTagX[]   = "X";    /* @0x44ed40 */
 const char g_szTextTagY[]   = "Y";    /* @0x44ed3c */
 const char g_szTextTagRGB[] = "RGB";  /* @0x44f0d4 */
@@ -426,4 +431,53 @@ int textIntWidth(void *font, int value)
         buf[0] = '-';
     }
     return textWidth((gxFont *)font, buf);
+}
+
+/* textDrawWrappedCentered @0x4101d0 — word-wrap a message block's text
+ * (block +0x10 holds the char*) to nMaxWidth px measured with g_hHudFontTiny
+ * and draw each line centered at nY, stepping 0xf per line. Wraps on spaces
+ * (backtracking to the last space) and hard newlines; the wrap point is
+ * temporarily NUL-terminated in place. Called from renderGameHud's frog
+ * message panel @0x413692. */
+void textDrawWrappedCentered(void *pMsgBlock, int nX, int nY, int nMaxWidth)
+{
+    char *text;
+    char cSave;
+    char acOne[2];
+    int y;
+    int w;
+    char *pLineEnd;
+    char *pBreak;
+    char *p;
+
+    (void)nX;
+    if (pMsgBlock == NULL) return;
+    text = *(char **)((char *)pMsgBlock + 0x10);         /* @0x4101e4 */
+    y = nY;
+    if (text == NULL || *text == '\0') return;
+    acOne[1] = '\0';   /* original zero-fills the 1-char measure slot @0x4101f5 */
+    for (;;) {
+        w = 0;
+        pLineEnd = text;
+        pBreak = text;
+        for (p = text; *p != '\0'; p++) {                /* @0x4101fe */
+            if (*p == '\n') break;
+            if (p != text) {
+                acOne[0] = *p;
+                w += textWidth(g_hHudFontTiny, acOne);   /* @0x410224 */
+                if (nMaxWidth <= w) {
+                    if (pBreak != text) pLineEnd = pBreak;
+                    break;
+                }
+                if (p[-1] == ' ') pBreak = p - 1;        /* @0x410246 */
+            }
+        }
+        cSave = *pLineEnd;                               /* @0x410262 */
+        *pLineEnd = '\0';
+        textDrawCentered(g_hHudFontTiny, 0x2004, 0, y, text); /* @0x41026e */
+        *pLineEnd = cSave;
+        if (*pLineEnd == '\0') return;                   /* @0x41027b */
+        text = pLineEnd + 1;                             /* @0x410284 */
+        y += 0xf;                                        /* @0x410289 */
+    }
 }

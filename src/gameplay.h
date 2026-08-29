@@ -13,6 +13,9 @@ extern int g_nGameTime;         /* @0x4580d4 */
 extern int g_nObjUpdateTime;    /* @0x4580d0 */
 extern int g_nRoundStartTime;   /* @0x4580cc */
 extern int g_bQuitPrompt;       /* @0x45812c */
+extern int g_nGamePhase;        /* @0x458124 countdown phase (HUD; -1 = "Gå!!") */
+extern int g_nWinnerIdx;        /* @0x458134 results-screen winner slot */
+extern unsigned char g_bGameRunning; /* @0x44fdc4 round live flag (HUD/results gate) */
 extern int g_nWorldFrameTick;   /* @0x458944 */
 extern int g_nClearColor;       /* @0x45892c */
 extern int g_bCollisionEnabled; /* @0x458354 */

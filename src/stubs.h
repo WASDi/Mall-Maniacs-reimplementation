@@ -37,7 +37,6 @@ void netGameUpdate(void);                                    /* @0x414fa0 */
 void zoneConnUpdateCulling(void);                            /* @0x42b8f0 */
 void sceneDetailGridUpdate(void *pDetailGrid);               /* @0x42b1d0 */
 void sndStopAllVoices(void *pVoiceList);                     /* @0x438100 */
-void renderGameHud(void);                                    /* @0x412810 */
 
 /* netIsActive @0x426ed0 — g_nNetIsClient | g_nNetIsServer. The offline
  * rebuild keeps both flags 0 (set by the deferred net subsystem). */

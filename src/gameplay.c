@@ -3,6 +3,7 @@
 #include "gameplay.h"
 #include "config.h"
 #include "gx.h"
+#include "hud.h"
 #include "input.h"
 #include "level.h"
 #include "levelselect.h"
@@ -32,6 +33,9 @@ int g_nGameTime;         /* @0x4580d4 */
 int g_nObjUpdateTime = 25; /* @0x4580d0 */
 int g_nRoundStartTime;   /* @0x4580cc */
 int g_bQuitPrompt;       /* @0x45812c */
+int g_nGamePhase;        /* @0x458124 countdown phase (HUD; -1 = "Gå!!") */
+int g_nWinnerIdx;        /* @0x458134 results-screen winner slot */
+unsigned char g_bGameRunning; /* @0x44fdc4 round live flag (HUD/results gate) */
 int g_nWorldFrameTick;   /* @0x458944 */
 int g_nClearColor;       /* @0x45892c */
 void *g_pSceneDetailGrid;/* @0x45838c */
@@ -118,13 +122,30 @@ void roundStartInit(void) /* @0x40a4d0 */
             }
         }
     }
-    /* Original order after the zone-connection pass: fontPoolCreate +
-     * the three HUD font loads + hudLoadGraphics, then the per-object item
-     * slot loop (g_pItemSlotObjects), then playerSetupRound and
-     * playerSetupSceneObjects, then levelObjectsCartsCameraInit. The HUD
-     * fonts and item slots are still TODO boundaries; the player round
-     * setup (playerSetupRound @0x410e90 + playerSetupSceneObjects
-     * @0x411550) is live below. */
+    /* Original order after the zone-connection pass (@0x40a727..0x40a7f7):
+     * fontPoolCreate, the three HUD font loads (per-level descriptor +
+     * texture pairs), then hudLoadGraphics; the per-object item slot loop
+     * follows (still a TODO boundary). The player round setup
+     * (playerSetupRound @0x410e90 + playerSetupSceneObjects @0x411550) is
+     * live below. */
+    fontPoolCreate();                                      /* @0x408f90 @0x40a727 */
+    {
+        char szPath[124];
+
+        fmtSprintf(szPath, "%s\\hud\\font00.tpg",           /* @0x44f2c8 @0x40a744 */
+                   g_aszLevelDirs[g_nLevelIdx]);
+        g_hHudFont = fontLoad("scene_ica\\hud\\font.txt",   /* @0x44f2b0 @0x40a765 */
+                              (void *)gxLoadTpgFile(szPath), 0, 0, 0);
+        fmtSprintf(szPath, "%s\\hud\\hfont00.tpg",          /* @0x44f29c @0x40a786 */
+                   g_aszLevelDirs[g_nLevelIdx]);
+        g_hHudFontDigits = fontLoad("scene_ica\\hud\\hudfont.txt", /* @0x44f280 @0x40a7a7 */
+                                    (void *)gxLoadTpgFile(szPath), 0, 0, 0);
+        fmtSprintf(szPath, "%s\\hud\\tfont00.tpg",          /* @0x44f26c @0x40a7c9 */
+                   g_aszLevelDirs[g_nLevelIdx]);
+        g_hHudFontTiny = fontLoad("menu\\tinyfont.txt",     /* @0x44f258 @0x40a7ea */
+                                  (void *)gxLoadTpgFile(szPath), 0, 0, 0);
+    }
+    hudLoadGraphics();                                     /* @0x412700 @0x40a7f7 */
     playerSetupRound();                                    /* @0x410e90 @0x40a74c */
     playerSetupSceneObjects();                             /* @0x411550 @0x40a751 */
     levelObjectsCartsCameraInit();                         /* @0x411b70 @0x40a756 */

@@ -69,11 +69,13 @@ typedef struct PlayerRecord {
     int nStartPosIdx;            /* +0x14c start_positions[%d] index (player slot) */
     int nCharIdx;           /* +0x150 selected character 0..9 */
     int nCartIdx;                /* +0x154 selected cart 0..23 */
-    int field_158_pad[2];        /* +0x158 */
+    unsigned char bStateFlags;   /* +0x158 &0x20 = heading to checkout (HUD) */
+    unsigned char _pad159[3];
+    int nScoreTicks;             /* +0x15c score/time ticks (HUD timer, results) */
     int nStatSpeed;              /* +0x160 g_kCharStatSpeed[nCharIdx] */
     int nStatStrength;           /* +0x164 g_kCharStatStrength */
     int nStatAgility;            /* +0x168 g_kCharStatAgility */
-    int field_16c;               /* +0x16c zeroed */
+    int nCheckoutProgress;       /* +0x16c checkout bar fill 0..100 (HUD) */
     int field_170_pad[1];        /* +0x170 */
     int field_174;               /* +0x174 set 1 per player (input gate in playerAiUpdate) */
     int field_178_pad[1];        /* +0x178 */
@@ -81,7 +83,9 @@ typedef struct PlayerRecord {
     int nListProgress;           /* +0x180 reset each round (checked ==5 in mode 3 AI) */
     int anListIds[10];           /* +0x184 shopping list item ids */
     int abListTaken[10];         /* +0x1ac taken flags */
-    int field_1d4_pad[5];        /* +0x1d4 */
+    int field_1d4_pad[2];        /* +0x1d4 */
+    void *pQuestMessage;         /* +0x1dc frog message block (+0x10 = text, HUD) */
+    int field_1e0_pad[2];        /* +0x1e0 */
     /* +0x1e8 walk physics block (16 dwords; refreshed from the shared block) */
     float flAccSpeed;            /* +0x1e8 (speed*0.7+100)*[master]/acc */
     float flFriction;            /* +0x1ec [master]/friction */
@@ -127,7 +131,9 @@ typedef struct PlayerRecord {
     int field_2f0;               /* +0x2f0 zeroed */
     int field_2f4_pad[2];        /* +0x2f4 */
     int field_2fc;               /* +0x2fc zeroed */
-    int field_300_pad[5];        /* +0x300 (0x310..0x313 untouched) */
+    int field_300_pad[3];        /* +0x300 */
+    int nNetReady;               /* +0x30c ==1 while waiting for peers (HUD) */
+    int field_310_pad[1];        /* +0x310 (0x310..0x313 untouched) */
     AiController ai;             /* +0x314 controller view (original base 0x456524) */
 } PlayerRecord;                   /* 0x374 */
 
@@ -139,6 +145,7 @@ extern PlayerRecord g_playerRecords[8];  /* @0x456210 */
 extern int g_nLocalPlayerIdx;    /* @0x458104 local (human) player slot */
 extern int g_nResultsScreen;     /* @0x458130 nonzero while results screen runs */
 extern int g_nCameraUpdateTick;  /* @0x458948 camera-follow scheduler tick */
+extern int g_nCurrentItemId;     /* @0x458128 mode 3 target item id (HUD) */
 
 /* 4-byte object ids used by cameraFollowUpdate: "c_ac" camera-active zone
  * (snap target, @0x44e20c) and "c_di" camera-distance limiter (@0x44e204). */
