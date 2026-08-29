@@ -63,13 +63,6 @@ void movieFrameUpdate(void)
 {
 }
 
-/* roundLogicUpdate @0x40beb0 — applies the game clock, objective state, and
- * round-end transitions. It will own the active-round transition once level
- * world initialization and gameplay rules are reconstructed. */
-void roundLogicUpdate(void)
-{
-}
-
 /* netGameUpdate @0x414fa0 — performs client/server state replication only
  * while a network session is active. Networking is out of scope for the
  * offline rebuild, so the no-op preserves the original frame-stage boundary
@@ -205,4 +198,76 @@ int objSegListIntersectTest(EventObject *pObj, float flX1, float flY1,
 {
     (void)pObj; (void)flX1; (void)flY1; (void)flX2; (void)flY2;
     return 0;
+}
+
+/* netServerSendSubCmd @0x415d20 — see stubs.h. Dead offline (no session). */
+void netServerSendSubCmd(int nSubCmd, int nArg1, int nArg2, int nArg3,
+                         int nArg4, int nArg5, int nArg6) /* @0x415d20 */
+{
+    (void)nSubCmd; (void)nArg1; (void)nArg2; (void)nArg3;
+    (void)nArg4; (void)nArg5; (void)nArg6;
+}
+
+/* netClientSendSubCmd @0x415cb0 — see stubs.h. Dead offline (no session). */
+void netClientSendSubCmd(int nSubCmd, int nArg1, int nArg2, int nArg3,
+                         int nArg4, int nArg5, int nArg6) /* @0x415cb0 */
+{
+    (void)nSubCmd; (void)nArg1; (void)nArg2; (void)nArg3;
+    (void)nArg4; (void)nArg5; (void)nArg6;
+}
+
+/* musicModuleInit @0x437b10 — see stubs.h. The slot-allocator entry and its
+ * callback chain stay unreconstructed; returning NULL keeps the offline
+ * game music-silent (g_nMusicModuleHandle == 0, mciPlayCdaudio still runs
+ * the CD track like the original). */
+void *g_pMusicSlotAlloc;                                     /* @0x450f6c */
+
+void *musicModuleInit(void *pModuleEntry) /* @0x437b10 */
+{
+    (void)pModuleEntry;
+    return NULL;
+}
+
+/* levelEventDirector_L0..L4 — see stubs.h. No-op until the per-level
+ * director subsystem is reconstructed. */
+void levelEventDirector_L0(void) /* @0x416fd0 */
+{
+}
+
+void levelEventDirector_L1(void) /* @0x4178c0 */
+{
+}
+
+void levelEventDirector_L2(void) /* @0x418000 */
+{
+}
+
+void levelEventDirector_L3(void) /* @0x418a30 */
+{
+}
+
+void levelEventDirector_L4(void) /* @0x4192a0 */
+{
+}
+
+/* levelEventDirector_L0_Init..L4_Init — see stubs.h. No-op until the
+ * per-level director subsystem is reconstructed. */
+void levelEventDirector_L0_Init(void) /* @0x416db0 */
+{
+}
+
+void levelEventDirector_L1_Init(void) /* @0x4175e0 */
+{
+}
+
+void levelEventDirector_L2_Init(void) /* @0x417dc0 */
+{
+}
+
+void levelEventDirector_L3_Init(void) /* @0x4186c0 */
+{
+}
+
+void levelEventDirector_L4_Init(void) /* @0x418f30 */
+{
 }

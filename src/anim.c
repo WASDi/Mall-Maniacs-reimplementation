@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "anim.h"
 #include "pool.h"
@@ -861,5 +862,46 @@ void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop) /* @0x4347c0
         sceneObjSetPos(st->pMasterNode, st->nPosX, st->nPosY, st->nPosZ, 2);
         sceneNodeFacePos(st->pMasterNode, 0,
                          (float)st->nFaceX, (float)st->nFaceY, (float)st->nFaceZ, 2);
+    }
+}
+
+/* g_awWalkAnimTable @0x458138 — walk-anim lookup table filled by
+ * roundStartInit @0x40a941..0x40a981, read by playerAnimOrientFromDir
+ * @0x4336b0. */
+short g_awWalkAnimTable[128][2];                               /* @0x458138 */
+
+/* walkAnimTableEntryCalc @0x433980 — [VERIFIED 2026-08-20 + 2026-08-29]
+ * disassembly: for candidate angles cand = nAngle + nStep (nStep from
+ * 0x4000 halving to 1) compute the foot point on the walk circle
+ * (x = cos(a)*R + C, y = sin(a)*R, a = cand*g_dblBdgToRad) and accept the
+ * candidate (nAngle = cand) when the target distance
+ * flNormSpeed*(C+R) exceeds sqrt(x^2 + y^2). Afterwards pOut[0] =
+ * (short)ftol(-(atan2(sin(A)*R, cos(A)*R + C) * g_dblRadToBdg)) with
+ * A = nAngle*g_dblBdgToRad (FMUL @0x44b780 + FCHS), pOut[1] = (short)nAngle.
+ * For flNormSpeed == 0 the divide produces NaN/inf exactly like the x87
+ * path; the resulting ftol truncation is the same 0 as the original. */
+void walkAnimTableEntryCalc(short *pOut, float flNormSpeed,
+                            int nCircleCenter, int nCircleRadius) /* @0x433980 */
+{
+    int nAngle = 0;
+    int nStep = 0x4000;
+    double dTarget = (double)(nCircleCenter + nCircleRadius) * (double)flNormSpeed;
+
+    do {
+        int nCand = nStep + nAngle;
+        double dA = (double)nCand * g_dblBdgToRad;
+        double dX = cos(dA) * (double)nCircleRadius + (double)nCircleCenter;
+        double dY = sin(dA) * (double)nCircleRadius;
+        if (dTarget > sqrt(dX * dX + dY * dY)) {
+            nAngle = nCand;
+        }
+        nStep /= 2;
+    } while (nStep != 0);
+    {
+        double dA = (double)nAngle * g_dblBdgToRad;
+        double dAtan = atan2(sin(dA) * (double)nCircleRadius,
+                             cos(dA) * (double)nCircleRadius + (double)nCircleCenter);
+        pOut[0] = (short)(int)(-dAtan * g_dblRadToBdg);      /* FMUL @0x44b780, FCHS */
+        pOut[1] = (short)nAngle;
     }
 }

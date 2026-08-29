@@ -84,8 +84,8 @@ static const float g_flHalf = 0.5f; /* @0x44b274 shared 0.5f literal (also used 
  * (= 2*pi/65536, exact stored value below) before FSIN/FCOS.
  * mathAtan2Deg (@0x42d010) FPATANs and multiplies by @0x44b780
  * (= 65536/(2*pi), exact stored value below) before ftol. */
-static const double g_dblBdgToRad = 9.58737992553711e-05;      /* @0x44b788 */
-static const double g_dblRadToBdg = 10430.378349108529;        /* @0x44b780 */
+const double g_dblBdgToRad = 9.58737992553711e-05;             /* @0x44b788 */
+const double g_dblRadToBdg = 10430.378349108529;               /* @0x44b780 */
 /* mathSinDeg @0x42d030 */
 float mathSinDeg(short d)
 {
@@ -495,12 +495,11 @@ int sceneFindByName(SceneNode **pOut, int nMax, const char *pszFilter) /* @0x431
     }
 }
 
-/* scenNameToIdEx @0x431e20 — anim-specific resolver (faithful).
- * Original upper-cases via crtStrUpr and searches g_pScenObjList; for the
- * menu preview the shipped .anm files have zero mesh names, so returning 0
- * is faithful without pulling the obj-list registry. Inline upper-casing to
- * avoid an extra tracked call (scenNameToId) which would show as unexpected.
- * Returns mesh id or 0. */
+/* scenNameToIdEx @0x431e20 — anim/round-start resolver (faithful).
+ * Original upper-cases the query via crtStrUpr and searches the scene-object
+ * name table case-sensitively, returning the entry's id (the node handle)
+ * or 0 when the name is absent. Inline upper-casing to avoid an extra
+ * tracked call (scenNameToId) which would show as unexpected. */
 int scenNameToIdEx(LPCSTR pszName) /* @0x431e20 */
 {
     char up[256];
@@ -508,7 +507,11 @@ int scenNameToIdEx(LPCSTR pszName) /* @0x431e20 */
     if (!pszName) return 0;
     for (i = 0; i < 255 && pszName[i]; i++) up[i] = (char)toupper((unsigned char)pszName[i]);
     up[i] = 0;
-    (void)up;
+    for (i = 0; g_pScenObjTable[i].nId != 0; i++) {
+        if (strcmp(g_pScenObjTable[i].pszName, up) == 0) {
+            return g_pScenObjTable[i].nId;
+        }
+    }
     return 0;
 }
 

@@ -125,4 +125,17 @@ typedef struct SceneObjAnimList {
 int  sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop);            /* @0x434540 */
 void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop);      /* @0x4347c0 interpolation variant */
 
+/* g_awWalkAnimTable @0x458138 — 128 x {Bdg-orientation, search angle} shorts
+ * precomputed by roundStartInit via walkAnimTableEntryCalc and consumed by
+ * playerAnimOrientFromDir @0x4336b0. */
+extern short g_awWalkAnimTable[128][2];                                /* @0x458138 */
+
+/* walkAnimTableEntryCalc @0x433980 — [VERIFIED 2026-08-20] compute one entry
+ * of g_awWalkAnimTable: binary-search the Bdg angle whose walk-circle foot
+ * point distance from the origin reaches flNormSpeed*(center+radius), then
+ * store pOut[0] = -(atan2 of the foot point) in Bdg units and
+ * pOut[1] = the search angle. */
+void walkAnimTableEntryCalc(short *pOut, float flNormSpeed,
+                            int nCircleCenter, int nCircleRadius);  /* @0x433980 */
+
 #endif /* ANIM_H */

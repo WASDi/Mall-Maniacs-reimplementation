@@ -336,4 +336,9 @@ int  sceneCacheLocalVerts(SceneNode *pNode); /* @0x42ffa0 */
 void *sceneRayFindNearest(float flZ, float flX, float flHeight,
                           float flMaxDist, float flRadius);
 
+/* Bungee-degree conversion constants shared by the trig helpers and
+ * walkAnimTableEntryCalc (declared in scene.c). */
+extern const double g_dblBdgToRad;   /* @0x44b788 = pi/32768 */
+extern const double g_dblRadToBdg;   /* @0x44b780 = 65536/(2*pi) */
+
 #endif /* SCENE_H */

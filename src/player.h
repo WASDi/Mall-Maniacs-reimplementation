@@ -77,7 +77,9 @@ typedef struct PlayerRecord {
     int nStatAgility;            /* +0x168 g_kCharStatAgility */
     int nCheckoutProgress;       /* +0x16c checkout bar fill 0..100 (HUD) */
     int field_170_pad[1];        /* +0x170 */
-    int field_174;               /* +0x174 set 1 per player (input gate in playerAiUpdate) */
+    int field_174;               /* +0x174 round gate: nonzero arms the win
+                                  * checks in roundLogicUpdate; mode 4 also
+                                  * uses it as the checkpoint-stage flag */
     int field_178_pad[1];        /* +0x178 */
     int nHeldItemId;             /* +0x17c */
     int nListProgress;           /* +0x180 reset each round (checked ==5 in mode 3 AI) */
@@ -133,7 +135,8 @@ typedef struct PlayerRecord {
     int field_2fc;               /* +0x2fc zeroed */
     int field_300_pad[3];        /* +0x300 */
     int nNetReady;               /* +0x30c ==1 while waiting for peers (HUD) */
-    int field_310_pad[1];        /* +0x310 (0x310..0x313 untouched) */
+    int nNetFlags;               /* +0x310 &0x100 = peer announced ready
+                                  * (roundLogicUpdate server handshake) */
     AiController ai;             /* +0x314 controller view (original base 0x456524) */
 } PlayerRecord;                   /* 0x374 */
 
