@@ -68,7 +68,7 @@ void zoneConnCollectMeshes(ZoneConn *pConn, EventObject *pArZone, int nFill) /* 
     }
     for (i = 0; i < pGrid->nColsFilled; i++) {           /* 0x42b4c8..0x42b851 */
         SceneNode *pNode = (SceneNode *)(size_t)pGrid->pCells[i];
-        SceneObjTypeDef *pMesh = (SceneObjTypeDef *)(size_t)sceneNodeGetMesh(pNode);
+        SceneObjTypeDef *pMesh = sceneNodeGetMesh(pNode);
         SceneObjRenderInfo *pRender = pMesh->pRender;    /* mesh +0x14 */
         int anPos[3];
         int bFound = 0;

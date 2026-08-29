@@ -36,7 +36,7 @@ extern SceneNode *g_pCharModelNodePrev; /* @0x45a6c8 previous node */
 extern AnmFile *g_pCharAnim;        /* @0x45a6d8 current anim */
 extern AnmFile *g_pCharAnimPrev;    /* @0x45a6dc previous anim */
 extern int   g_nCharModelSwapFlag; /* @0x45d494 swap flag */
-extern SceneNode *g_pSceneRoot;       /* @0x4588f8 scene root (also declared in scene.h) */
+/* g_pSceneRoot is a macro over g_camFollowBlock (see scene.h). */
 extern void *g_pCharSelAnimData;  /* @0x45a6d0 anim-data block (fileReadRaw of anim\s_run.anm) */
 extern void *g_anMenuCharTex[10];/* @0x45a660 per-char portrait textures */
 extern void *g_hMenuTexTom;      /* @0x45a688 QUESTION fallback tex */

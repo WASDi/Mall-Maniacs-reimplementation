@@ -1,6 +1,8 @@
 #ifndef OBJ_H
 #define OBJ_H
 
+#include "gx.h"
+
 /* obj.h — EventObject registry + point-in-zone tests (maniac.exe
  * 0x414xxx). EventObjects are the named zone/trigger objects ("AR00",
  * "IN00", shopping zones, ...) whose 4-byte name acts as the integer id
@@ -64,6 +66,11 @@ typedef struct EventObject {
  * nIndex < 0 or no match. */
 EventObject *objFindById(int nId, int nIndex);
 
+/* objHashNextSame @0x414a40 — next EventObject with the SAME 4-byte id in
+ * the id-hash chain, or NULL when the chain ends or the next object has a
+ * different id. */
+EventObject *objHashNextSame(EventObject *pObj);
+
 /* objContainsPoint @0x414bb0 — 2D point-in-zone test over the polygon
  * line list: ray-casts a horizontal line at the point, finds the closest
  * crossing segment (squared distance) and tests its half-plane normal. */
@@ -114,5 +121,45 @@ void eventObjAddLine(EventObject *pObj, float flX1, float flY1,
  * its "line[%d]" polygon records and up to 5 "values" ints (+0x10..).
  * Returns 0. */
 int eloadCmd(int nContext, LPCSTR pszArgs);
+
+/* --- world-object list (playerSetupRound sub-objects) ---
+ * WorldNode is the 0x48-byte world-position node built by worldNodeCtor
+ * @0x402a20 and unlinked by objDtor @0x402ab0. All nodes live on the
+ * doubly-linked g_pObjHead @0x4550d4 list (objListPush @0x4055c0). */
+
+typedef struct WorldNode {
+    struct WorldNode *pPrev;    /* +0x00 list link toward the head */
+    struct WorldNode *pNext;    /* +0x04 list link toward the tail */
+    void *pTurretList;          /* +0x08 sub-struct (+0x48 -> objTurretListFree) */
+    void *pTurretList2;         /* +0x0c sub-struct (+0x18 -> objTurretListFree2) */
+    void *pShotList;            /* +0x10 shot list (objShotListFree) */
+    int field_14;               /* +0x14 */
+    int field_18;               /* +0x18 */
+    int field_1c;               /* +0x1c */
+    GxVec2 vPos;                /* +0x20 ground-plane position {x=z, y=x} */
+    GxVec2 vPosB;               /* +0x28 copy of vPos */
+    float flScaleA;             /* +0x30 nScale*g_flPi*g_dblAngleScale */
+    float flScaleB;             /* +0x34 */
+    float flScaleC;             /* +0x38 */
+    int field_3c;               /* +0x3c */
+    int _pad40;                 /* +0x40 untouched in worldNodeCtor */
+    void *pParent;              /* +0x44 parent node (or the name MString ptr
+                                 * as passed by playerSetupRound) */
+} WorldNode;                    /* 0x48 */
+
+typedef char WorldNodeSizeMustBe0x48[(sizeof(WorldNode) == 0x48) ? 1 : -1];
+
+/* objListPush @0x4055c0 — head-insert a world node into g_pObjHead. */
+void objListPush(WorldNode *pNode);
+
+/* worldNodeCtor @0x402a20 — init a 0x48-byte world node: zero links,
+ * vPos = {z, x} (both copies), scale = nScale*g_flPi*g_dblAngleScale into
+ * +0x30..+0x38, parent at +0x44, then objListPush. */
+WorldNode *worldNodeCtor(void *pMem, int nX, int nY, int nZ, short nScale,
+                          void *pParent);
+
+/* objDtor @0x402ab0 — unlink from g_pObjHead, free the shot list (+0x10)
+ * and the two turret sub-structs (+0x08/+0x0c) when present. */
+void objDtor(WorldNode *pNode);
 
 #endif /* OBJ_H */

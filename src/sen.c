@@ -5,6 +5,7 @@
 #include <math.h>
 #include "sen.h"
 #include "gx.h"
+#include "scene.h"
 #include "custom_helpers.h"
 #include "charselect.h"
 #include "util.h"
@@ -18,10 +19,10 @@
  *
  * For incremental milestone: file parsing + MESH/EMAN handling + mesh fixup
  * are faithful so CHARACTERS.SEN loads without fault. The post-fixup
- * object-instantiation stream (OBJI/TANI/MAPI expansion into live scene
- * nodes/emitters via sceneryObjAlloc/musicEmitterAlloc) is deferred —
- * sceneInstantiateObjects in stubs.c is a documented no-op that returns 1.
- * See docs/16-rebuild.md — gameplay remains after GUI states.
+ * OBJI instantiation is implemented inline in sceneLoadSen (original loop
+ * @0x00432900-0x00432ba1): scene nodes are created via sceneNodeAllocChild
+ * (type 3) / sceneryObjAlloc (type 1) and {name,node} entries append to
+ * g_pScenObjTable.
  * ===================================================================== */
 
 /* --- scene-load globals (original addrs in comments) --- */
@@ -52,7 +53,11 @@ static char  *g_pSceneNameArena = NULL;       /* @0x45eabc scene-name arena star
 static int    g_nScenObjCap = 0;              /* @0x45eac0 scene-obj table capacity */
 ScenNameEntry *g_pScenObjTable = NULL;        /* @0x45eb10 {name,node} scene-object table */
 /* Stat pad zeroed by scenNameTableInit @0x431db4 (16 dwords @0x45eac4 and
- * two ints @0x45eb08/0x45eb0c; no reader found in the analyzed code). */
+ * two ints @0x45eb08/0x45eb0c). The OBJI instantiation loop in sceneLoadSen
+ * reads g_nSceneTblStatA/B as the NULL-parent fallback (@0x0043297e/
+ * @0x00432988) and scans g_anSceneTblStat for the music-emitter check
+ * (@0x004329df) — scenNameTableInit is the only writer of all three
+ * (xref-verified), so at instantiation time they are always zero. */
 static int    g_anSceneTblStat[16];           /* @0x45eac4 */
 static int    g_nSceneTblStatA;               /* @0x45eb08 */
 static int    g_nSceneTblStatB;               /* @0x45eb0c */
@@ -60,10 +65,6 @@ static int    g_scenesceneLoadSen = 0;        /* @0x45e99c */
 static int    g_nSceneMeshMaxSize = 0;        /* @0x45eb14 */
 static int    g_scenesceneMeshFixup = 0;      /* @0x45eb18 */
 
-/* sceneInstantiateObjects — deferred scene-graph population stub (see stubs.c).
- * Declared here for sceneLoadSen's tail call; real body will allocate
- * scenery/musics nodes from g_pObjInstances etc. when gameplay lands. */
-extern int sceneInstantiateObjects(int pool);
 extern int scenExpandNameList(char *pList, void *pEnd, char *pszDir); /* @0x432dd0 */
 
 /* scenNameTableInit @0x431cb0 — create the pool-backed mesh/name tables used
@@ -362,11 +363,9 @@ int sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames) 
 }
 
 /* ---------------------------------------------------------------------
- * sceneLoadSen @0x432320 — open REV2 .SEN, iterate chunks, fixup meshes.
- * Incremental: faithful through REV2 check + chunk walk + mesh fixup +
- * file-close. Object instantiation (OBJI/scene graph) is deferred to
- * sceneInstantiateObjects stub (returns 1) so CHARACTERS.SEN (MESH+EMAN only)
- * completes without requiring sceneryObjAlloc path.
+ * sceneLoadSen @0x432320 — open REV2 .SEN, iterate chunks, fixup meshes,
+ * then instantiate the OBJI objects into the live scene graph (inline
+ * loop @0x00432900-0x00432ba1).
  * ------------------------------------------------------------------- */
 int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
 {
@@ -377,8 +376,6 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
     char local_100[256];
     int local_124 = 0;
     char *pcVar5;
-
-    (void)pOut; /* unused for menu preview; original writes to it for type==1 OBJI */
 
     g_pObjNameTable   = NULL;
     g_pObjNameList    = NULL;
@@ -574,8 +571,7 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
             sceneTextAnimAdd(pvPool, g_pMapGeom, g_pTextAnimData, g_nTextAnimSize);
         }
         /* Verification logging for SEN+TPG step (pre-render): mesh count,
-         * MAPI/COLS/SUBO sizes. Original would continue to OBJI instantiation
-         * (sceneryObjAlloc loop @0x0043293d) — deferred for menu preview. */
+         * MAPI/COLS/SUBO sizes. */
         {
             int nMesh = ((int)g_pMeshTableWr - (int)g_pMeshTableStart) >> 3;
             int suboSize = g_pSubObjData ? 0 : 0; /* SUBO presence, size tracked via g_pMapGeomCount handling */
@@ -583,9 +579,92 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
             appLog("[sen] loaded '%s' REV2 %d bytes: %d MESH, MAPI %d (16B), COLS %d, SUBO %s, TNAM %dB, OBJI %d", pszPath, hdr[1], nMesh, g_nMapGeomCount, g_nColsCount, g_pSubObjData?"present":"none", g_nObjNameTableSize, g_nObjInstanceCount);
             (void)suboSize;
         }
-        /* Deferred instantiate — keep no-op for CHARACTERS.SEN's OBJI (36)
-         * until render milestone, but call stub to preserve hierarchy. */
-        sceneInstantiateObjects((int)(intptr_t)pvPool);
+        /* OBJI instantiation — original inline loop @0x00432900-0x00432ba1.
+         * Appends one {name,node} entry per instance to g_pScenObjTable
+         * (persists across the loads of one scene-system cycle) and creates
+         * the scene node: type 3 -> sceneNodeAllocChild @0x4319e0, type 1 ->
+         * sceneryObjAlloc @0x430200 with the instance's mesh-table entry.
+         * Instance layout (32 bytes): +0x00 ONAM string index, +0x04 type,
+         * +0x08 parent node (0 -> g_nSceneTblStatA @0x45eb08, always zero),
+         * +0x0c/+0x10/+0x14 float pos (__ftol), +0x18/+0x1a/+0x1c yaw/pitch/
+         * roll shorts, +0x1e mesh index (type 1). pOut collects {node,x,y,z}
+         * quads per type-1 instance (item spawn positions). */
+        {
+            size_t d = strlen(g_szSceneDir);
+            byte *pInst = (byte *)g_pObjInstances;
+            ScenNameEntry *pEntry;
+            int nExisting = 0;
+            int iInst;
+
+            while (g_pScenObjTable[nExisting].nId != 0) nExisting++;   /* @0x00432900 */
+            pEntry = &g_pScenObjTable[nExisting];
+            for (iInst = 0; iInst < g_nObjInstanceCount;
+                 iInst++, pInst += 0x20, pEntry++) {
+                char *pName = g_pObjNameList + d;                      /* @0x00432959 */
+                int nameIdx = *(int *)pInst;
+                SceneNode *pNode = NULL;
+                int nChanArg;
+
+                if (nameIdx > 0) {                                     /* @0x0043295e */
+                    do {
+                        char c = *pName++;
+                        if (c == '\0') pName += d;
+                    } while (--nameIdx != 0);
+                }
+                pName -= d;                                            /* @0x0043296a */
+                pEntry->pszName = pName;
+                if (*(int *)(pInst + 8) == 0) {                        /* @0x00432978 */
+                    *(int *)(pInst + 8) = g_nSceneTblStatA;            /* zero @0x45eb08 */
+                    nChanArg = g_nSceneTblStatB;                       /* zero @0x45eb0c */
+                } else {
+                    nChanArg = 0;
+                }
+                if (*(int *)(pInst + 4) == 3) {                        /* @0x004329bc */
+                    /* Music-emitter branch @0x004329cd matches the object
+                     * name against the pattern strings @0x45e9a0 only for
+                     * non-zero g_anSceneTblStat entries (@0x45eac4). The
+                     * init zero-fill is their only writer (xref-verified),
+                     * so the scan exits at index 0 and every type-3
+                     * instance takes the child-node path @0x00432a5e. */
+                    pNode = (SceneNode *)sceneNodeAllocChild(
+                        (SceneNode *)(uintptr_t)*(int *)(pInst + 8),
+                        (void *)(uintptr_t)nChanArg,
+                        (void *)(uintptr_t)(int)(*(float *)(pInst + 0x0c)),
+                        (void *)(uintptr_t)(int)(*(float *)(pInst + 0x10)),
+                        (void *)(uintptr_t)(int)(*(float *)(pInst + 0x14)));
+                    pEntry->nId = (int)(uintptr_t)pNode;
+                    if (pNode != NULL) {
+                        sceneObjSetPosOrient(pNode,                    /* @0x00432ab2 */
+                                             *(short *)(pInst + 0x18),
+                                             *(short *)(pInst + 0x1a),
+                                             *(short *)(pInst + 0x1c), 2);
+                    }
+                } else if (*(int *)(pInst + 4) == 1) {                 /* @0x00432abf */
+                    short nMeshIdx = *(short *)(pInst + 0x1e);
+                    void *pMesh = *(void **)((char *)g_pMeshTableStart + nMeshIdx * 8 + 4);
+                    pNode = (SceneNode *)sceneryObjAlloc(
+                        (SceneNode *)(uintptr_t)*(int *)(pInst + 8), nChanArg,
+                        (int)(*(float *)(pInst + 0x0c)), (int)(*(float *)(pInst + 0x10)),
+                        (int)(*(float *)(pInst + 0x14)),
+                        *(short *)(pInst + 0x18), *(short *)(pInst + 0x1a),
+                        *(short *)(pInst + 0x1c), pMesh);
+                    pEntry->nId = (int)(uintptr_t)pNode;
+                    if (pOut != NULL) {                                /* @0x00432b2b */
+                        int *pDst = *(int **)pOut;
+                        pDst[0] = (int)(uintptr_t)pNode;
+                        pDst[1] = (int)(*(float *)(pInst + 0x0c));
+                        pDst[2] = (int)(*(float *)(pInst + 0x10));
+                        pDst[3] = (int)(*(float *)(pInst + 0x14));
+                        *(int **)pOut = pDst + 4;
+                    }
+                }
+                if (pNode == NULL) {                                   /* @0x00432b7c */
+                    memPoolDestroy((int)(intptr_t)pvPool);
+                    return 0;
+                }
+            }
+            appLog("[sen] instantiated %d OBJI objects (%s)", g_nObjInstanceCount, pszPath);
+        }
         return (int)(intptr_t)pvPool;
     }
     fileCloseStream(fp);

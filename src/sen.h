@@ -14,10 +14,8 @@
  * MESH (mesh geometry node), EMAN (mesh name string), ONAM (object name
  * list), TNAM (object name table), SUBO (sub-object data), COLS (collision),
  * MAPI (map geometry), TANI (text anim), KEEP/TEMP (contain nested chunks
- * parsed by senChunkParse), OBJI (object instances). For CHARACTERS.SEN only
- * MESH + EMAN chunks are present; the full object-instantiation path is
- * deferred and stubbed as sceneInstantiateObjects in stubs.c (out of scope
- * for the menu preview per AGENTS.md). */
+ * parsed by senChunkParse), OBJI (object instances — instantiated into the
+ * scene graph by the inline loop at the end of sceneLoadSen). */
 
 #include <windows.h>
 

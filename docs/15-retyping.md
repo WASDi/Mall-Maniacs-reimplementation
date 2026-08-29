@@ -135,6 +135,57 @@ is `void *[16]`; `g_abWsaData` is a Winsock startup refcount, not `WSADATA`.
   `0x42b350`, `zoneConnCtor` `0x42b410` (AR/IN conn, list DAT_0045e5e8),
   `sceneMeshBBox` `0x42ba40` (AABB of indexed tri/quad prims).
 
+### Nav-node structs (2026-08-29)
+
+`AiNavNode` (0x48 B) and `AiNavEdge` (0x3c B) declared from the
+`aiNavNodeCtor`/`aiNavNodeUpdate`/`aiNavNodeAddEdge`/`aiNavEdgeCtor` cluster
+cross-checked against `zoneWallCalcPlane`, `zoneAvoidWalls`, `zoneConnLink` and
+`sceneRayFindNearest`. Node: `flAvgY` +0 (vertical axis; walkable plane test
+`y = (x-nRefX)*flSlopeX + (z-nRefZ)*flSlopeZ + nRefY`, plane ref +0x0c..+0x14,
+normal +0x18..+0x20 with Y >= 0.6 walkable), scene pos ints +0x2a..+0x34
+(unaligned by design), conn/edge list heads +0x38/+0x3c, `pNext`/`pPrev`
++0x40/+0x44. Prototypes applied to all five aiNav functions and
+`g_pNavNodeList` @0x45e5e0 retyped `AiNavNode *`. Ghidra forbids retyping the
+thiscall auto-parameter, so `this` was replaced with an explicit ECX-storage
+parameter via a script (`~/ghidra_scripts/RetypeNavThis.java`,
+`updateFunction(..., CUSTOM_STORAGE, ...)`); the decompiler now shows
+`AiNavNode *this` and field access (`this->pEdgeList`, `g_pNavNodeList->pPrev`).
+Mirrored in `src/zone.h` (packed typedefs); `stubs.c`/`level.c` updated.
+
+### Nav globals (2026-08-29)
+
+The `g_pNav*` globals are now typed, and the nav-mesh data structures they
+point into are declared in both Ghidra and `src/scene.h`:
+
+- `SceneMeshPrim` (new): one indexed-primitive record in the
+  `SceneObjRenderInfo.pPolyA` array — `{bFans +0, bType +1 (1=points,
+  2=lines, 3=tri fans, 4=quad list), wFlags +2, bFanIdxCount +6}` header,
+  then `bFans * bFanIdxCount` shorts per fan; the first `bType` bytes of
+  each fan are vertex indices (nav/renderer read only their low bytes,
+  e.g. `meshDrawPoly` @0x42e940 and `aiNavNodeUpdate` both step
+  `bFanIdxCount*2` bytes). Layout verified against PHWOODMALL.SEN: FLOOR
+  prims live in the SUBO chunk and the in-file `pPolyA` entries are
+  offsets from `g_pSubObjData` (sceneMeshFixup relocates them against
+  `*(0x45eb30)`, or pMesh when SUBO is absent).
+- `SceneObjRenderInfo` (0x30 B) fixed: `pVerts` +8 is `short *`
+  (short[4] stride 8), `pPolyA` +0x18 / `pPolyB` +0x2c are
+  `SceneMeshPrim **`, `pGroups` +0x20 is `SceneGroupInfo *` (new, 0xc B).
+  `g_pNavMeshData` @0x45e5d4 retyped `SceneObjRenderInfo *`.
+- `SceneObjTypeDef` (0x34 B) fixed: `pA/pB/pTex/pC/pD` typed pointers,
+  `pRender` +0x14 `SceneObjRenderInfo *`;
+  `sceneNodeGetMesh` @0x431ae0 now returns `SceneObjTypeDef *` so
+  `aiNavNodeCtorScene` decompiles as
+  `g_pNavMeshData = sceneNodeGetMesh(pSceneObj)->pRender`.
+- `g_pNavTriCur` @0x45e5d0 / `g_pNavTriEnd` @0x45e5d8 retyped `byte *`
+  (fan-stream cursor/end); `g_nNavTriIdx` @0x45e5cc stays `int`.
+- Nav-point list: `g_pNavPointHead/Tail` @0x45d4d0/4 and
+  `g_pNavPointSel` @0x45e480 retyped `NavPoint *`; `NavPoint.pNext`
+  +0x5c is now `NavPoint *` (singly linked head/tail list —
+  `navPointListAdd`/`navPointRemove`/`navPointListFreeAll` all show
+  typed field access). `NavPoint` (0x60 B) mirrored into `src/zone.h`
+  together with the nav global externs for the milestone-3 `.ai`
+  loader (`nloadCmd` @0x407e10).
+
 ## Limitations
 
 The automated pass is exhausted. **Final census 213 = 65 network + 148 Unwind

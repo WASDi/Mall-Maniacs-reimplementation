@@ -15,6 +15,7 @@
 #include "stubs.h"
 #include "time.h"
 #include "util.h"
+#include "zone.h"
 #include "custom_helpers.h"
 
 /* =====================================================================
@@ -133,7 +134,7 @@ void levelSceneTexturesLoad(void) /* @0x4104b0 */
     n = sceneCollectMeshHandles(anHandles, 0x400, "FLOOR");       /* @0x42b360 @0x410823 */
     if (n > 0) {
         for (i = 0; i < n; i++) {
-            void *pNav = malloc(0x48);                            /* operator_new @0x43dd42 @0x41083a */
+            AiNavNode *pNav = malloc(sizeof(AiNavNode));          /* operator_new @0x43dd42 @0x41083a */
             if (pNav != NULL) {
                 aiNavNodeCtorScene(pNav, anHandles[i]);           /* @0x428cf0 @0x410857 */
             }

@@ -7,6 +7,7 @@
 #include "font.h"
 #include "menu.h"
 #include "charselect.h"
+#include "player.h"
 #include "record.h"
 #include "options.h"
 #include "input.h"
@@ -55,7 +56,7 @@ SceneNode *g_pCharModelNodePrev = NULL; /* @0x45a6c8 previous node */
 AnmFile *g_pCharAnim = NULL;       /* @0x45a6d8 current anim */
 AnmFile *g_pCharAnimPrev = NULL;   /* @0x45a6dc previous anim */
 int   g_nCharModelSwapFlag = 0; /* @0x45d494 */
-SceneNode *g_pSceneRoot = NULL;      /* @0x4588f8 scene root (set by sceneSystemInit) */
+/* g_pSceneRoot is the first field of g_camFollowBlock (player.c, scene.h). */
 void *g_anMenuCharTex[10] = {0};/* @0x45a660 per-char tex */
 void *g_hMenuTexTom = NULL;     /* @0x45a688 */
 void *g_pCharSelAnimData = NULL;/* @0x45a6d0 anim-data pointer passed to anmLoad */
@@ -99,32 +100,12 @@ const int g_kCharStatAgility[10] = { /* @0x4501bc */
 };
 
 
-/* Player record — faithful packed 0x374 stride per Ghidra PlayerRecord @0x456210.
- * 8 records × 0x374 (884B) with alignment 1; g_apPlayers @0x456360 is the
- * player view at record+0x150. The MOV [0x456360],EAX in stateCharSelectOk
- * @0x41ef78 and the ADD ECX,0x374 strides in playerSetupCharacters @0x41b76f
- * @0x41b7b5 prove the stride. Keep the original packed(1) layout so future
- * MString/int mixing does not introduce MSVC pad. */
-typedef struct __attribute__((packed)) PlayerRecord {
-    unsigned char _pad0[0x150]; /* +0x00 SceneObject part (0x150 bytes) */
-    int nCharIdx;               /* +0x150 @0x456360 g_apPlayers[0] offset 0 — MOV [0x456360],EAX */
-    unsigned char _pad1[0x374 - 0x150 - sizeof(int)]; /* +0x154..0x373 remainder */
-} PlayerRecord; /* 0x374 (884) — Ghidra PlayerRecord */
-typedef struct PlayerSlot { /* alias kept for stale externs */
-    int nCharIdx;
-    unsigned char _pad[0x374 - sizeof(int)];
-} PlayerSlot;
-extern PlayerRecord g_playerRecords[]; /* @0x456210 base, 8×0x374 */
+/* Player record layout lives in player.h (PlayerRecord @0x456210, 8 × 0x374;
+ * nCharIdx at +0x150 = the g_apPlayers @0x456360 view). The MOV
+ * [0x456360],EAX in stateCharSelectOk @0x41ef78 and the ADD ECX,0x374
+ * strides in playerSetupCharacters @0x41b76f @0x41b7b5 prove the stride. */
 extern int g_nLocalPlayerIdx;          /* @0x458104 */
-#ifndef PLAYER_RECORDS_DEFINED
-/* Provide weak definitions when gameflow not linked yet. */
-PlayerRecord g_playerRecords[8] = {0};
 int g_nLocalPlayerIdx = 0;
-#endif
-_Static_assert(sizeof(PlayerRecord) == 0x374, "PlayerRecord must be 0x374");
-_Static_assert(sizeof(PlayerSlot) == 0x374, "PlayerSlot alias must be 0x374");
-_Static_assert(__builtin_offsetof(PlayerRecord, nCharIdx) == 0x150,
-               "nCharIdx must be at +0x150 (g_apPlayers view)");
 
 /* textDrawMixedCase @0x41ffc0 — lower-case a-z and å/ä/ö (0xe5/0xe4/0xf6)
  * in the small 200-font, others in the large 200-font. Advances x per token. */

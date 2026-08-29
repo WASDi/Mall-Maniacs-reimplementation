@@ -644,6 +644,13 @@ ConfigNode *configEnvGetValue(ConfigEnv *pEnv, ConfigNode *pNode, const char *pK
     return NULL;
 }
 
+/* configEnvGetValueByIndex @0x436550 — this-call wrapper: configEnvGetValue
+ * with a NULL parent node. Used by playerSetupRound for the [master] block. */
+ConfigNode *configEnvGetValueByIndex(ConfigEnv *pEnv, const char *pKey) /* @0x436550 */
+{
+    return configEnvGetValue(pEnv, NULL, pKey);
+}
+
 /* configEnvGetString @0x436990 — string sibling lookup into pOut. */
 void configEnvGetString(MString *pOut, ConfigNode *pNode, const char *pKey) /* @0x436990 */
 {

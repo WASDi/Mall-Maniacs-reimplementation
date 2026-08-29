@@ -49,6 +49,18 @@ EventObject *objFindById(int nId, int nIndex) /* @0x414a90 */
     return NULL;
 }
 
+/* objHashNextSame @0x414a40 — next EventObject with the same 4-byte id in
+ * the +0x48 id-hash chain; NULL when the chain ends or the next object has
+ * a different id (buckets are id % 0xff, so a chain can mix ids). */
+EventObject *objHashNextSame(EventObject *pObj) /* @0x414a40 */
+{
+    EventObject *pNext = pObj->pHashNext;             /* @0x414a40 */
+    if (pNext == NULL || pNext->nId != pObj->nId) {   /* @0x414a46 */
+        return NULL;
+    }
+    return pNext;
+}
+
 /* objContainsPoint @0x414bb0 — point-in-polygon over the zone's line
  * list. For every segment whose y-range brackets the point, solve the
  * crossing x on the horizontal ray, keep the closest crossing (squared
@@ -348,4 +360,96 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
     configEnvFreeChildren(&env);                     /* @0x4368a0 */
     mStringFree(&env.name);
     return 0;
+}
+
+/* =====================================================================
+ * World-node cluster (playerSetupRound sub-objects)
+ * ===================================================================== */
+
+WorldNode *g_pObjHead;  /* @0x4550d4 world-object list head */
+
+static const float g_flPi = 3.1415925f;        /* @0x44b2d0 (bytes D0 0F 49 40) */
+static const double g_dblAngleScale = 3.0547e-05; /* @0x44b2c8 (bytes 10 00 10 00 10 00 00 3F) */
+
+/* objListPush @0x4055c0 — head-insert a world node into g_pObjHead.
+ * The node's +0x00/+0x04 links form the list chain. */
+void objListPush(WorldNode *pNode) /* @0x4055c0 */
+{
+    if (g_pObjHead != NULL) {
+        g_pObjHead->pNext = pNode;
+        pNode->pPrev = g_pObjHead;
+        g_pObjHead = pNode;
+        return;
+    }
+    g_pObjHead = pNode;
+}
+
+/* worldNodeCtor @0x402a20 — init a 0x48-byte world node: zero the link and
+ * sub-struct fields, vPos = {(float)nZ, (float)nX} (ground plane stored as
+ * {z, x}), copy it to vPosB, scale = nScale*g_flPi*g_dblAngleScale into
+ * +0x30/+0x34/+0x38, parent at +0x44, then objListPush. */
+WorldNode *worldNodeCtor(void *pMem, int nX, int nY, int nZ, short nScale,
+                          void *pParent) /* @0x402a20 */
+{
+    WorldNode *pNode = (WorldNode *)pMem;
+    (void)nY;
+    float flScale;
+
+    gxVec2SetAngleZero(&pNode->vPos);       /* +0x20 @0x434f90 @0x402a2a */
+    gxVec2SetAngleZero(&pNode->vPosB);      /* +0x28 @0x402a34 */
+    pNode->vPos.x = (float)nZ;              /* @0x402a45 */
+    pNode->pPrev = NULL;                    /* @0x402a40 */
+    pNode->pNext = NULL;                    /* @0x402a42 */
+    pNode->vPos.y = (float)nX;              /* +0x24 @0x402a57 */
+    pNode->pShotList = NULL;                /* +0x10 @0x402a54 */
+    pNode->pTurretList = NULL;              /* +0x08 @0x402a51 */
+    pNode->pTurretList2 = NULL;             /* +0x0c @0x402a4e */
+    pNode->field_3c = 0;                    /* @0x402a4b */
+    pNode->field_14 = 0;                    /* @0x402a75 */
+    pNode->field_1c = 0;                    /* @0x402a7b */
+    pNode->vPosB.x = pNode->vPos.x;         /* @0x402a5f */
+    pNode->vPosB.y = pNode->vPos.y;         /* @0x402a5c..0x402a61 */
+    pNode->pParent = pParent;               /* +0x44 @0x402a78 */
+    flScale = (float)nScale * g_flPi * (float)g_dblAngleScale; /* @0x44b2d0/0x44b2c8 @0x402a7e */
+    pNode->flScaleA = flScale;              /* +0x30 @0x402a8a */
+    pNode->flScaleB = flScale;              /* +0x38 @0x402a8d */
+    pNode->flScaleC = flScale;              /* +0x34 @0x402a90 */
+    objListPush(pNode);                     /* @0x4055c0 @0x402a93 */
+    return pNode;
+}
+
+/* objDtor @0x402ab0 — unlink the node from g_pObjHead, free the shot list
+ * at +0x10 (objShotListFree @0x406110 + memFreeDirect) and the two turret
+ * sub-structs at +0x08/+0x0c (objTurretListFree @0x402b40 /
+ * objTurretListFree2 @0x402b70 on their embedded lists) when present. */
+void objDtor(WorldNode *pNode) /* @0x402ab0 */
+{
+    void *pSub;
+
+    if (g_pObjHead == pNode) {                       /* @0x4550d4 @0x402ab8 */
+        g_pObjHead = pNode->pPrev;                   /* @0x402abc */
+    } else if (pNode->pNext != NULL) {               /* @0x402ac5 */
+        pNode->pNext->pPrev = pNode->pPrev;          /* @0x402acc */
+    }
+    if (pNode->pPrev != NULL) {                      /* @0x402ad0 */
+        pNode->pPrev->pNext = pNode->pNext;          /* @0x402ad6 */
+    }
+    if (pNode->pShotList != NULL) {                  /* +0x10 @0x402add */
+        objShotListFree(pNode->pShotList);           /* @0x406110 @0x402ae6 */
+        memFreeDirect(pNode->pShotList);             /* @0x43dd37 @0x402aeb */
+    }
+    pSub = pNode->pTurretList;                       /* +0x08 @0x402af4 */
+    if (pSub != NULL) {
+        if (*(void **)((char *)pSub + 0x48) != NULL) { /* @0x402afb */
+            objTurretListFree(1);                    /* @0x402b40 @0x402b04 */
+        }
+        memFreeDirect(pSub);                         /* @0x402b0a */
+    }
+    pSub = pNode->pTurretList2;                      /* +0x0c @0x402b12 */
+    if (pSub != NULL) {
+        if (*(void **)((char *)pSub + 0x18) != NULL) { /* @0x402b1a */
+            objTurretListFree2(1);                   /* @0x402b70 @0x402b23 */
+        }
+        memFreeDirect(pSub);                         /* @0x402b29 */
+    }
 }

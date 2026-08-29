@@ -755,20 +755,9 @@ void menuInit(int nRestartMode)
     if (scenNameTableInit(4000, 4000) == 0) {
         appLog("[menu] WARNING scene name-table initialization failed");
     }
-    /* Camera alloc (menuInit @0x41a24e): sceneNodeAlloc @0x4318e0 with
-     * {1.0, 10.0, 500000, 0,0,0x1000,0x1000} -> g_pSceneRoot (camera block).
-     * Original then does sceneObjSetPos(g_pSceneRoot, 0,-1600,-2000) and
-     * sceneNodeFacePos(..., -2100,0,1000) before first frame; charselect
-     * repeats that per-frame at 0x41f7b8. */
-    {
-        void *pCam = sceneNodeAlloc((void*)0x3f800000, (void*)0x41200000, (void*)0x7a120, 0, 0, 0x1000, 0x1000);
-        if (pCam) g_pSceneRoot = pCam;
-        appLog("[menu] sceneNodeAlloc @0x4318e0 done (cam=%p root=%p)", pCam, g_pSceneRoot);
-        if (g_pSceneRoot) {
-            sceneObjSetPos(g_pSceneRoot, 0, -0x640, -2000, 2);
-            sceneNodeFacePos(g_pSceneRoot, 0, -2100.0f, 0.0f, 1000.0f, 2);
-        }
-    }
+    /* Camera alloc (menuInit @0x41a24e) happens AFTER the two .SEN loads in
+     * the original (see below); g_pSceneRoot is the camera block created by
+     * sceneNodeAlloc @0x4318e0 with {1.0, 10.0, 500000, 0,0,0x1000,0x1000}. */
 
     /* Scene + character-anim data (menuInit @0x419c20, in this order):
      * fileReadRaw of the two .ANM files first (the character preview anim
@@ -788,6 +777,29 @@ void menuInit(int nRestartMode)
     scenSetDir("");
     sceneLoadSen("menu\\characters.sen", NULL);          /* @0x4504d4 */
     appLog("[menu] scene files loaded (endscene + characters)");
+    /* Original order @0x41a24e..0x41a2xx: camera alloc, position + facing,
+     * then hide every node the loads instantiated — sceneFindByName
+     * (list,0x400,NULL) + sceneNodeSetHiddenFlag(node,3) (bType=2) per
+     * handle. Keeps the loaded meshes/anim data alive without rendering the
+     * menu scenes. */
+    {
+        void *pCam = sceneNodeAlloc((void*)0x3f800000, (void*)0x41200000, (void*)0x7a120, 0, 0, 0x1000, 0x1000);
+        if (pCam) g_pSceneRoot = pCam;
+        appLog("[menu] sceneNodeAlloc @0x4318e0 done (cam=%p root=%p)", pCam, g_pSceneRoot);
+        if (g_pSceneRoot) {
+            sceneObjSetPos(g_pSceneRoot, 0, -0x640, -2000, 2);
+            sceneNodeFacePos(g_pSceneRoot, 0, -2100.0f, 0.0f, 1000.0f, 2);
+        }
+        {
+            int anHandles[0x400];
+            int n = sceneFindByName(anHandles, 0x400, NULL);   /* @0x431fd0 */
+            int i;
+            for (i = 0; i < n; i++) {
+                sceneNodeSetHiddenFlag(anHandles[i], 3);       /* @0x4305c0 */
+            }
+            appLog("[menu] hid %d scene nodes (sceneFindByName @0x431fd0)", n);
+        }
+    }
 
     /* Mirror menuInit's final timing/input reset. */
     g_nMenuRow        = 0;

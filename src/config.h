@@ -70,6 +70,7 @@ void        configEnvCtor(ConfigEnv *pEnv);                                    /
 void        configEnvSetName(MString *pStr, const char *pPsz);                 /* @0x4354a0 */
 int         configParseFile(ConfigEnv *pEnv, const char *pPsz);                /* @0x435890 */
 ConfigNode *configEnvGetValue(ConfigEnv *pEnv, ConfigNode *pNode, const char *pKey); /* @0x436560 */
+ConfigNode *configEnvGetValueByIndex(ConfigEnv *pEnv, const char *pKey); /* @0x436550 */
 void        configEnvGetString(MString *pOut, ConfigNode *pNode, const char *pKey); /* @0x436990 */
 double      configEnvGetDouble2(ConfigEnv *pEnv, ConfigNode *pNode, const char *pKey); /* @0x436a20 */
 MString    *configNodeGetValue(MString *pOut, ConfigNode *pNode);              /* @0x436940 */

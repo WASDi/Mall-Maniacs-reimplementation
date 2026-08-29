@@ -58,6 +58,8 @@ float g_sceneRenderT = 0.0f;      /* @0x450f7c camera-block renderT float bits; 
 float g_flSceneYScale = 0.0f;     /* @0x450f80 */
 int   g_nSceneDistMax = 0x7fffffff;
 int   g_nSceneDrawCount = 0;
+int   g_nDbgRendArm = 0;      /* TEMP DEBUG: arm [rendbg] logging */
+static int g_nDbgCull = 0;    /* TEMP DEBUG: [culldbg] per-frame counter */
 int   g_nNodePoolSize = 0;
 int   g_nSceneBufSize = 0;
 int   g_nSortBufCount = 0;
@@ -458,6 +460,42 @@ int sceneCollectMeshHandles(int *pOut, int nMax, const char *pszFilter) /* @0x42
     }
 }
 
+/* sceneFindByName @0x431fd0 — clean variant of sceneCollectMeshHandles over
+ * g_pScenObjTable {name,node}. pszFilter==NULL: store every entry's node id
+ * until an id of 0 is hit (pOut advances only on stored entries — unlike the
+ * @0x42b360 quirk version). pszFilter!=NULL: entries whose name contains the
+ * substring (strFindSubstring @0x43e7e0) are packed contiguously. Returns
+ * the number stored, capped at nMax. menuInit hides every menu-scene node
+ * through this (sceneNodeSetHiddenFlag mode 3); roundStartInit uses the
+ * filter form to hide "HIDE ME!" meshes. */
+int sceneFindByName(int *pOut, int nMax, const char *pszFilter) /* @0x431fd0 */
+{
+    int i = 0;
+
+    if (pszFilter == NULL) {
+        int n = 0;
+        while (g_pScenObjTable[i].nId != 0) {
+            pOut[n] = g_pScenObjTable[i].nId;
+            n++;
+            i++;
+            if (n >= nMax) return n;
+        }
+        return n;
+    } else {
+        int n = 0;
+        if (g_pScenObjTable[0].nId == 0) return 0;
+        do {
+            if (n >= nMax) return n;
+            if (strstr(g_pScenObjTable[i].pszName, pszFilter) != NULL) {
+                pOut[n] = g_pScenObjTable[i].nId;
+                n++;
+            }
+            i++;
+        } while (g_pScenObjTable[i].nId != 0);
+        return n;
+    }
+}
+
 /* scenNameToIdEx @0x431e20 — anim-specific resolver (faithful).
  * Original upper-cases via crtStrUpr and searches g_pScenObjList; for the
  * menu preview the shipped .anm files have zero mesh names, so returning 0
@@ -630,6 +668,13 @@ int sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll,
 int sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode) /* @0x430e80 */
 {
     SceneNode *n = pNode;
+    if (n == NULL) {
+        /* Safe deviation: cameraFollowUpdate @0x4020d0 passes the follow node
+         * (0x4588fc) which is NULL until a local player exists (rebuild runs
+         * rounds with g_nPlayerCount == 0 while playerSetupCharacters is
+         * stubbed). Callers zero their out buffer. */
+        return 0;
+    }
     if (nMode == 2) {
         SceneChannel *ch = (SceneChannel *)n->pChannels;
         /* Disasm @0x430e80 mode 2: store the raw int bits of the LOCAL
@@ -641,6 +686,49 @@ int sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode) /* @0x430e
         ((int *)pOutXYZ)[0] = ch->x;
         ((int *)pOutXYZ)[1] = ch->y;
         ((int *)pOutXYZ)[2] = ch->z;
+        return 1;
+    }
+    if (nMode == 4) {
+        /* Disasm @0x430e80 mode 4: accumulator = the node's own channel-0
+         * translation (as floats), then walk the ancestor chain starting at
+         * pNode->pParent with the channel index taken from the child's
+         * channel[0].nIdx, applying the same Ry(r1)*Rx(r0)*Rz(r2) rotation
+         * core as sceneNodeGetPos mode 4 (verified operand-by-operand at
+         * 0x430f01..0x430fd1) plus each ancestor channel's translation.
+         * The root node (pParent == NULL) is never processed. Results are
+         * stored via __ftol truncation. */
+        SceneChannel *ch0 = pNode->pChannels;
+        float px = (float)ch0->x;
+        float py = (float)ch0->y;
+        float pz = (float)ch0->z;
+        SceneNode *par = pNode->pParent;
+        int idx = ch0->nIdx;
+
+        while (par->pParent != NULL) {                       /* @0x430ee1 */
+            SceneChannel *c = &par->pChannels[idx];
+            float s0 = mathSinDeg(c->rot[0]);                /* @0x42d030 @0x430f05 */
+            float c0 = mathCosDeg(c->rot[0]);                /* @0x42d050 @0x430f12 */
+            float s1 = mathSinDeg(c->rot[1]);                /* @0x430f20 */
+            float c1 = mathCosDeg(c->rot[1]);                /* @0x430f2e */
+            float s2 = mathSinDeg(c->rot[2]);                /* @0x430f3c */
+            float c2 = mathCosDeg(c->rot[2]);                /* @0x430f4a */
+            float t = c2 * px - s2 * py;                     /* @0x430f64 */
+            float u = c2 * py + s2 * px;                     /* @0x430f74 */
+            float v = u * s0 + c0 * pz;                      /* @0x430f86 */
+            float w = u * c0 - s0 * pz;                      /* @0x430f96 */
+            px = t * c1 + v * s1 + (float)c->x;              /* @0x430faa */
+            py = w + (float)c->y;                            /* @0x430fb4 */
+            pz = v * c1 - t * s1 + (float)c->z;              /* @0x430fce */
+            if (idx == 0) {                                  /* @0x430fd5 */
+                par = par->pParent;                          /* @0x430fd7 */
+            }
+            idx = c->nIdx;                                   /* @0x430fdd */
+        }
+        /* __ftol @0x43dd10 then MOV dword [ESI],EAX — the truncated int
+         * bits go into the buffer (consumers read them back as ints). */
+        ((int *)pOutXYZ)[0] = (int)px;                       /* @0x430fec */
+        ((int *)pOutXYZ)[1] = (int)py;                       /* @0x430ffb */
+        ((int *)pOutXYZ)[2] = (int)pz;                       /* @0x430ff5 */
         return 1;
     }
     return 0;
@@ -658,17 +746,17 @@ SceneNode *g_pSceneNodeHead;   /* @0x45e810 */
 int g_nSceneCurrentObj;        /* @0x45e608 */
 
 /* sceneNodeGetMesh @0x431ae0 — return the node's SceneObjTypeDef (+0x20),
- * 0 when the node word0 != 1 or when the type is the shared default type
+ * NULL when the node word0 != 1 or when the type is the shared default type
  * g_sceneObjDefaultType (original constant @0x450f38). */
-unsigned int sceneNodeGetMesh(SceneNode *pNode) /* @0x431ae0 */
+SceneObjTypeDef *sceneNodeGetMesh(SceneNode *pNode) /* @0x431ae0 */
 {
     if (pNode->nId != 1) {
-        return 0;
+        return NULL;
     }
     if (pNode->pTypeDef == &g_sceneObjDefaultType) {
-        return 0;
+        return NULL;
     }
-    return (unsigned int)(size_t)pNode->pTypeDef;
+    return pNode->pTypeDef;
 }
 
 /* sceneSetCurrentObj @0x430d98 — record the scene-object context used by
@@ -770,6 +858,97 @@ int sceneNodeGetPos(SceneNode *pNode, int nChannel, int *pOutXYZ, int nMode) /* 
     return 0;
 }
 
+/* sceneNodeSetPos @0x431590 — position write. nMode 2: raw MOV of the three
+ * 32-bit words of pXYZ into channel 0's translation (+0x10/+0x14/+0x18).
+ * The channel translation fields are INTS (mode-4 gets FILD them; callers
+ * pass ftol'd config ints), so no float conversion happens here. Any other
+ * mode only refreshes the parent's bounds. Returns 1 for mode 2, else 0. */
+int sceneNodeSetPos(SceneNode *pNode, void *pXYZ, int nMode) /* @0x431590 */
+{
+    if (nMode == 2) {
+        int *pCh = (int *)pNode->pChannels;
+        const int *pIn = (const int *)pXYZ;
+        pCh[4] = pIn[0];                          /* +0x10 @0x4315a5 */
+        pCh[5] = pIn[1];                          /* +0x14 @0x4315ae */
+        pCh[6] = pIn[2];                          /* +0x18 @0x4315b8 */
+        return 1;
+    }
+    if (pNode->pParent != &g_rootNode) {              /* 0x4315e2 */
+        sceneNodeUpdateBounds(pNode->pParent);        /* 0x4315e9 */
+    }
+    return 0;
+}
+
+/* sceneNodeSetPosShorts @0x431850 — orientation write over channel 0.
+ * (nMode & 0xf) == 2: store rot[0..2] shorts (scaled by 0xb6 when bit 0x20
+ * of the mode byte is set — 0xb6 = 360/PI/512... the degree encoding used by
+ * the engine) and clear the +0xa/+0xb dirty flags so the next world-transform
+ * pass rebuilds the matrices. Other modes return 0. */
+int sceneNodeSetPosShorts(SceneNode *pNode, short *pAngles, byte nMode) /* @0x431850 */
+{
+    if ((nMode & 0xf) != 2) {
+        return 0;
+    }
+    SceneChannel *ch = pNode->pChannels;
+    if ((nMode & 0x20) == 0x20) {                     /* 0x431862..0x431894 */
+        ch->rot[0] = (short)(pAngles[0] * 0xb6);
+        ch->rot[1] = (short)(pAngles[1] * 0xb6);
+        ch->rot[2] = (short)(pAngles[2] * 0xb6);
+    } else {
+        ch->rot[0] = pAngles[0];                      /* 0x43189b */
+        ch->rot[1] = pAngles[1];
+        ch->rot[2] = pAngles[2];
+    }
+    ch->bFlagA = 0;                                   /* 0x4318a4..0x4318ad */
+    ch->bFlagB = 0;
+    return 1;
+}
+
+/* sceneNodeGetChannelPos @0x4315e0 — channel orientation query.
+ * (nMode & 0xf) == 2: copy the channel's raw rot[0..2] shorts.
+ * (nMode & 0xf) == 4: world-space orientation via the ancestor-chain
+ *   dirty-flag clear + chanCalcWorldTransform @0x42f6e0 and a
+ *   sceneMatBuildOrient @0x432c50 decomposition into yaw/pitch/roll shorts
+ *   (mathAtan2Deg triple). sceneMatBuildOrient/mathAtan2Deg are not rebuilt
+ *   yet, so mode 4 currently falls back to the raw channel shorts — exact
+ *   for unrotated hierarchies, which is the only current caller
+ *   (levelObjectsCartsCameraInit @0x411b70 on the freshly placed
+ *   g_pCamPosNode). TODO: sceneMatBuildOrient + mathAtan2Deg.
+ * Mode byte bit 0x20 scales the output shorts by 0xb6. Returns 1 on
+ * success, 0 when the channel index is out of range or the mode is
+ * unsupported. */
+int sceneNodeGetChannelPos(SceneNode *pNode, int nChannel, short *pOutAngles,
+                           uint nMode, short *pOutAngles2) /* @0x4315e0 */
+{
+    if (nChannel >= (int)pNode->nChannelCount) {      /* 0x4315f0: char compare */
+        return 0;
+    }
+    if ((nMode & 0xf) == 2) {                         /* 0x4315f9 */
+        SceneChannel *ch = &pNode->pChannels[nChannel];
+        pOutAngles[0] = ch->rot[0];
+        pOutAngles[1] = ch->rot[1];
+        pOutAngles[2] = ch->rot[2];
+        pOutAngles2 = pOutAngles;                     /* unify the out ptrs */
+    } else if ((nMode & 0xf) == 4) {                  /* 0x43163c */
+        /* TODO(0x43163c..0x4316d0): ancestor bFlagB clear walk +
+         * chanCalcWorldTransform + sceneMatBuildOrient/@0x432c50 +
+         * mathAtan2Deg decomposition. Raw channel shorts stand in until
+         * those helpers are rebuilt. */
+        SceneChannel *ch = &pNode->pChannels[nChannel];
+        pOutAngles2[0] = ch->rot[0];
+        pOutAngles2[1] = ch->rot[1];
+        pOutAngles2[2] = ch->rot[2];
+    } else {
+        return 0;
+    }
+    if ((nMode & 0xf0) == 0x20) {                     /* 0x4316d6..0x4316e2 */
+        pOutAngles2[0] = (short)(pOutAngles2[0] * 0xb6);
+        pOutAngles2[1] = (short)(pOutAngles2[1] * 0xb6);
+        pOutAngles2[2] = (short)(pOutAngles2[2] * 0xb6);
+    }
+    return 1;
+}
+
 /* mathVec2Polar @0x435060 — cartesian in, polar out {length, atan2(y, x)}
  * (FPATAN + FSQRT). Lives here next to the other math* helpers. */
 void mathVec2Polar(GxVec2 *pOut, const GxVec2 *pIn) /* @0x435060 */
@@ -778,20 +957,13 @@ void mathVec2Polar(GxVec2 *pOut, const GxVec2 *pIn) /* @0x435060 */
     pOut->x = (float)sqrt(pIn->y * pIn->y + pIn->x * pIn->x);
 }
 
-/* SceneMeshPrim / sceneMeshBBox share the indexed-polygon format stored in
- * SceneObjRenderInfo.pPolyA (@+0x18, count @+0x14) with the nav-mesh
- * streams: each primitive record = {byte nFans @0, byte nType @1 (3=tri,
- * 4=quad), ..., byte nFanIdxCount @6}, then nFans * nFanIdxCount byte
- * vertex indices; vertices live in pVerts (@+0x08) at 8 bytes each
- * {short x, y, z, pad}. */
-
 /* sceneMeshBBox @0x42ba40 — AABB over the mesh's local vertices (primitive
  * types 3/4 only, others skipped), then out[i] =
  * (int)((min[i] + max[i]) * 0.5f + pos[i]) where pos comes from
  * sceneNodeGetPos(node, 0, ..., 4); the 0.5f constant is @0x44b274. */
 void sceneMeshBBox(SceneNode *pNode, int *pOutBBox) /* @0x42ba40 */
 {
-    SceneObjTypeDef *pMesh = (SceneObjTypeDef *)(size_t)sceneNodeGetMesh(pNode);
+    SceneObjTypeDef *pMesh = sceneNodeGetMesh(pNode);
     SceneObjRenderInfo *pRender = pMesh->pRender;   /* mesh +0x14 */
     int anPos[3];
     int anMin[3] = {0, 0, 0};
@@ -889,7 +1061,7 @@ void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
                         if (nLevel < 1 || pGrid->nCols <= nLevel) {
                             goto fail;                /* 0x42ae68 */
                         }
-                        sceneNodeSetHiddenFlag(d->nId, 1);   /* @0x4305c0 */
+                        sceneNodeSetHiddenFlag((SceneNode *)(uintptr_t)d->nId, 1);   /* @0x4305c0 */
                         if (pGrid->pCells[pGrid->nRows * nLevel + pGrid->nColsFilled] == 0) {
                             nFilled++;                /* 0x42aea8 */
                         } else {
@@ -1511,10 +1683,9 @@ void sceneBuildRootMatrix(SceneNode *pRootNode) /* @0x42f520 */
 
 /* ===================================================================
  * sceneNodeRender @0x42f8c0
- * Render one node: chanCalcWorldTransform, culling, sceneMorphInterp,
- * meshDrawPoly/gxSortPushKey, recurse child @+0xc.
- * TODO: original culling does FLD/FILD/FSQRT/FCOMP with g_sceneRenderT,
- * g_flSceneAspect — permissive gate kept for preview so character not culled.
+ * Render one node: chanCalcWorldTransform, exact distance/frustum culling
+ * (see block below), sceneMorphInterp, meshDrawPoly/gxSortPushKey, recurse
+ * child @+0xc.
  * TODO: second vertex pool (normals) transform skipped — original transforms
  * both pools via __ftol. TODO: pTex/pPal order verified: pTex=@+0x20, pC=@+0x28.
  * =================================================================== */
@@ -1531,7 +1702,49 @@ int sceneNodeRender(SceneNode *pNode) /* @0x42f8c0 */
     node->pChannels[0].bFlagB = 0; /* dirty */
     chanCalcWorldTransform(node, 0);
 
-    /* TODO: restore exact frustum/distance culling (FLD/FILD/FSQRT) — permissive */
+    /* Distance/frustum culling — exact (disasm 0x42f90c..0x42f9c4).
+     * The three failing checks prune the whole subtree (return, no child
+     * recursion); the radiusA checks only clear the draw flag.
+     * g_flZero @0x44b244 is 0.0f; the lateral-distance scale @0x44b7a0
+     * is 0.70723f (float bits 0x3f3504f3). g_sceneRenderT is FILDed from
+     * the int camera-block field, i.e. (float) of the integer value. */
+    {
+        SceneChannel *ch0 = node->pChannels;
+        float flRadiusB = (float)node->nBoundingRadiusB;
+        float flRenderT = (float)g_sceneRenderT;
+        float flLateral;
+        int nDist;
+
+        {   /* TEMP DEBUG: cull data for the first nodes each frame */
+            if (g_nDbgCull < 8) {
+                g_nDbgCull++;
+                appLog("[culldbg] node=%p nId=%d bType=%d w=(%.0f,%.0f,%.0f) rA=%d rB=%d rT=%.0f",
+                       (void *)node, (int)node->nId, (int)node->bType,
+                       (double)ch0->wx, (double)ch0->wy, (double)ch0->wz,
+                       node->nBoundingRadiusA, node->nBoundingRadiusB,
+                       (double)flRenderT);
+            }
+        }
+        if (!(0.0f < flRadiusB + ch0->wz)) return 1;               /* @0x42f920 */
+        if (ch0->wz - flRadiusB > flRenderT) return 1;             /* @0x42f940 */
+        flLateral = sqrtf(ch0->wy * ch0->wy + ch0->wx * ch0->wx);
+        if (g_flSceneAspect + ch0->wz <= flLateral) {              /* @0x42f969 */
+            nDist = (int)((flLateral - (g_flSceneAspect + ch0->wz)) * 0.70723f);
+        } else {
+            nDist = 0;
+        }
+        if (nDist > node->nBoundingRadiusB) return 1;              /* @0x42f987 */
+        if (nDist > node->nBoundingRadiusA ||                      /* @0x42f996 */
+            (float)node->nBoundingRadiusA + ch0->wz <= 0.0f ||     /* @0x42f9a1 */
+            flRenderT < ch0->wz - (float)node->nBoundingRadiusA) { /* @0x42f9b3 */
+            bDoRender = 0;
+        }
+        if (g_nDbgCull < 12) {   /* TEMP DEBUG: verdict */
+            g_nDbgCull++;
+            appLog("[culldbg] verdict node=%p nId=%d dist=%d draw=%d",
+                   (void *)node, (int)node->nId, nDist, (int)bDoRender);
+        }
+    }
     if ((char)node->nChannelCount > 1) {
         for (int i = 1; i < (char)node->nChannelCount; i++) {
             node->pChannels[i].bFlagB = 0;
@@ -1631,6 +1844,7 @@ int sceneNodeRender(SceneNode *pNode) /* @0x42f8c0 */
                     int pTex = (int)(uintptr_t)td->pC;
                     int pPal = (int)(uintptr_t)td->pTex;
                     if (!poly) continue;
+
                     if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)(uintptr_t)pVerts, (int)(uintptr_t)pNormals, pTex, pPal);
                     else gxSortPushKey(poly, pVerts, pNormals, pTex, pPal);
                 }
@@ -1684,6 +1898,7 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     int y1;
     g_nSceneDistMax = 0x7fffffff;
     g_nSceneDrawCount = 0;
+    g_nDbgCull = 0; /* TEMP DEBUG */
     if (!cb || cb->mode != 2) return 0;
     if (!g_pSceneNodeList) return 1;
 
@@ -1691,7 +1906,14 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     g_nSceneWidth = cb->nWidth;
     g_nSceneHeight = cb->nHeight;
     g_flSceneAspect = cb->nHeight / cb->nWidth;
-    g_sceneRenderT = cb->renderT;
+    /* renderT is stored at cb+0x30 as RAW INT bits (sceneNodeAlloc copies the
+     * caller's int arg verbatim; disasm 0x42f22f MOV EDX,[ESI+0x30] /
+     * MOV [0x450f7c],EDX) and consumers FILD it — read as int, convert. */
+    {
+        int nRenderT;
+        memcpy(&nRenderT, &cb->renderT, sizeof(nRenderT));
+        g_sceneRenderT = (float)nRenderT;
+    }
     g_pSortBufCur = g_pSortBuffer;
     g_pNodePoolCur = g_pNodePool;
     g_pNodePool2Cur = g_pNodePool2;
@@ -1726,9 +1948,37 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     if (viewport[0] > viewport[2] || viewport[1] > viewport[3]) return 1;
 
     gxSetViewport(viewport);
+    {   /* TEMP DEBUG: camera state on the first two frames after arming */
+        static int nDbgRend = 0;
+        if (g_nDbgRendArm != 0 && nDbgRend < 2) {
+            nDbgRend++;
+            sceneBuildRootMatrix(pCameraBlock);
+            sceneCameraBasisCalc();
+            appLog("[rendbg] cb=%p nId=%d nodes=%p cam=(%.0f,%.0f,%.0f)",
+                   (void *)cb, (int)((SceneNode *)pCameraBlock)->nId,
+                   (void *)g_pSceneNodeList,
+                   (double)g_camPos[0], (double)g_camPos[1], (double)g_camPos[2]);
+        }
+    }
     /* TODO: pre-render MusicSlot callbacks 0x45e650..0x45e81c */
     sceneBuildRootMatrix(pCameraBlock); /* @0x42f520 */
     sceneCameraBasisCalc(); /* @0x42f460 */
+    {   /* TEMP DEBUG: root channel + camera block after build */
+        static int nDbgRoot = 0;
+        if (nDbgRoot < 4) {
+            nDbgRoot++;
+            SceneChannel *rc = &g_rootNode.pChannels[0];
+            SceneCameraBlock *cbd = (SceneCameraBlock *)pCameraBlock;
+            unsigned int *pd = (unsigned int *)cbd;
+            appLog("[rootdbg] cb=%p mode=%d rT=%.0f W=%.0f H=%.0f root w=(%.0f,%.0f,%.0f) m0=(%.3f,%.3f,%.3f)",
+                   (void *)cbd, (int)cbd->mode, (double)cbd->renderT,
+                   (double)cbd->nWidth, (double)cbd->nHeight,
+                   (double)rc->wx, (double)rc->wy, (double)rc->wz,
+                   (double)rc->wmat[0], (double)rc->wmat[1], (double)rc->wmat[2]);
+            appLog("[rootdbg] raw +14..34: %08x %08x %08x %08x %08x %08x %08x %08x",
+                   pd[5], pd[6], pd[7], pd[8], pd[9], pd[10], pd[11], pd[12]);
+        }
+    }
     for (void *p = g_pSceneNodeList; p != NULL;
          p = (void *)(uintptr_t)((SceneNode *)p)->pNextSib) {
         sceneNodeRender(p);
@@ -1798,9 +2048,6 @@ int sceneCacheLocalVerts(SceneNode *pNode) /* @0x42ffa0 */
         int vx = (int)((float)(pVertB[0] - pVertA[0]) * f + (float)pVertA[0]);
         int vy = (int)((float)(pVertB[1] - pVertA[1]) * f + (float)pVertA[1]);
         int vz = (int)((float)(pVertB[2] - pVertA[2]) * f + (float)pVertA[2]);
-        appLog("[cachelocal] node=%u count=%d idxA=%d idxB=%d f=%.3f v=(%d,%d,%d)",
-               pNode->nId, nCount, pNode->nMorphIdxA, pNode->nMorphIdxB,
-               f, vx, vy, vz); /* TEMP DEBUG */
         for (int i = 0; i < nCount; i++) {
             SceneChannel *dst = &pch[i + 1];
             dst->x = vx;
@@ -1810,4 +2057,125 @@ int sceneCacheLocalVerts(SceneNode *pNode) /* @0x42ffa0 */
     }
     pNode->nCacheFlag = 0;
     return 0;
+}
+
+/* ===================================================================
+ * sceneDetailGridAddRow @0x42b000 / sceneDetailGridSetRoot @0x42b350 /
+ * sceneObjSetClassMesh @0x430db0 / sceneNodeSetHiddenFlag @0x4305c0
+ * =================================================================== */
+
+/* sceneNodeSetHiddenFlag @0x4305c0 — node+0x02 is the bType byte the render
+ * gate reads. nMode 1 = set bType 1 (transform+recurse, no draw); 2 = set
+ * bType 1 and recurse over the pChild (+0x0c) / pNextSib (+0x08) list;
+ * 3 = set bType 2 (sceneNodeRender returns immediately — fully hidden).
+ * Returns 1. */
+int sceneNodeSetHiddenFlag(SceneNode *pNode, int nMode) /* @0x4305c0 */
+{
+    if (nMode == 2) {
+        SceneNode *pChild = pNode->pChild;
+        pNode->bType = 1;
+        if (pChild != NULL) {
+            do {
+                sceneNodeSetHiddenFlag(pChild, 2);
+                pChild = pChild->pNextSib;
+            } while (pChild != NULL);
+        }
+        return 1;
+    }
+    if (nMode == 1) {
+        pNode->bType = 1;
+        return 1;
+    }
+    if (nMode == 3) {
+        pNode->bType = 2;
+    }
+    return 1;
+}
+
+/* sceneDetailGridSetRoot @0x42b350 — store the viewer/root scene node into
+ * grid +4. Called from playerSetupSceneObjects with g_pSceneRoot. */
+void sceneDetailGridSetRoot(SceneDetailGrid *pGrid, SceneNode *pRootNode) /* @0x42b350 */
+{
+    pGrid->nRootNode = (int)(size_t)pRootNode;
+}
+
+/* sceneDetailGridAddRow @0x42b000 — register one row (detail level) of
+ * scene-mesh handles: capped at grid->nCols, stored into cells[row][col]
+ * (column-major: col*nRows + row), duplicates beyond the first column are
+ * hidden (sceneNodeSetHiddenFlag 1), missing columns are padded with the
+ * last handle, then the first mesh's world position is read into the row
+ * buffer (+0x18, stride 0x14: 3 pos ints + 0 / 1) and the row counter is
+ * bumped. */
+void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount) /* @0x42b000 */
+{
+    int col;
+
+    if (nCount <= 0) {
+        return;
+    }
+    if (pGrid->nCols < nCount) {                          /* +0x10 @0x42b014 */
+        nCount = pGrid->nCols;
+    }
+    for (col = 0; col < nCount; col++) {                  /* @0x42b020 */
+        pGrid->pCells[col * pGrid->nRows + pGrid->nColsFilled] = pHandles[col]; /* @0x42b027 */
+        if (col > 0) {
+            sceneNodeSetHiddenFlag((SceneNode *)(uintptr_t)pHandles[col], 1);     /* @0x4305c0 @0x42b038 */
+        }
+    }
+    for (col = nCount; col < pGrid->nCols; col++) {       /* pad with last handle @0x42b04d */
+        pGrid->pCells[col * pGrid->nRows + pGrid->nColsFilled] = pHandles[nCount - 1];
+    }
+    sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->pCells[pGrid->nColsFilled], /* @0x42b07d */
+                         (float *)((char *)pGrid->pRowBuf + pGrid->nColsFilled * 0x14), 4);
+    *(int *)((char *)pGrid->pRowBuf + pGrid->nColsFilled * 0x14 + 0xc) = 0;  /* @0x42b096 */
+    *(int *)((char *)pGrid->pRowBuf + pGrid->nColsFilled * 0x14 + 0x10) = 1; /* @0x42b09f */
+    pGrid->nColsFilled++;                                 /* +0x08 @0x42b0a8 */
+}
+
+/* sceneObjSetClassMesh @0x430db0 — re-parent a scene object to a class mesh
+ * node. pClassNode == 0 -> g_rootNode. nMode low nibble 3 unlinks the
+ * object from its old parent (obj+4) and relinks it into pClassNode's
+ * child list (obj+8/+0x10, parent+0xc first-child), updating bounds;
+ * nMode low nibble 2 returns 0 without changes. Then stores the mesh idx
+ * at *(obj+0x14)+0xc. Returns 0 when nMode&0xf0 == 0x10, the mesh idx is
+ * negative or out of the node's channel range (+3 byte). */
+int sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMode) /* @0x430db0 */
+{
+    SceneNode *pObjNode = (SceneNode *)(size_t)pObj;
+
+    if (pClassNode == NULL) {
+        pClassNode = &g_rootNode;
+    }
+    if (((nMode & 0xf0) == 0x10) || nMeshIdx < 0 ||
+        nMeshIdx >= (int)pClassNode->nChannelCount) {     /* +3 @0x430dcf */
+        return 0;
+    }
+    if ((nMode & 0xf) == 3) {                             /* @0x430de0 */
+        SceneNode *pOldParent = pObjNode->pParent;        /* +0x04 */
+        if (pOldParent->pChild == pObjNode) {             /* +0x0c == pObj @0x430de8 */
+            pOldParent->pChild = pObjNode->pNextSib;      /* @0x430df2 */
+        } else {
+            pObjNode->pPrevLink->pNextSib = pObjNode->pNextSib; /* +0x10/+0x08 @0x430df9 */
+        }
+        if (pObjNode->pNextSib != NULL) {                 /* @0x430e04 */
+            pObjNode->pNextSib->pPrevLink = pObjNode->pPrevLink; /* @0x430e0a */
+        }
+        if (pObjNode->pParent != &g_rootNode) {           /* @0x430e10 */
+            sceneNodeUpdateBounds(pObjNode->pParent);     /* @0x4303c0 @0x430e16 */
+        }
+        pObjNode->pParent = pClassNode;                   /* @0x430e20 */
+        pObjNode->pNextSib = pClassNode->pChild;          /* +0x0c @0x430e24 */
+        if (pClassNode->pChild != NULL) {
+            pClassNode->pChild->pPrevLink = pObjNode;     /* @0x430e2e */
+        }
+        pClassNode->pChild = pObjNode;                    /* @0x430e34 */
+        pObjNode->pPrevLink = pClassNode;                 /* +0x10 @0x430e37 */
+    } else if ((nMode & 0xf) == 2) {
+        return 0;
+    }
+    *(int *)((char *)pObjNode->pChannels + 0xc) = nMeshIdx; /* *(obj+0x14)+0xc @0x430e3f */
+    if (pObjNode->pParent != &g_rootNode) {
+        sceneNodeUpdateBounds(pObjNode->pParent);         /* @0x430e46 */
+    }
+    return 1;
 }

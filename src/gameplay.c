@@ -118,6 +118,32 @@ void roundStartInit(void) /* @0x40a4d0 */
             }
         }
     }
+    /* Original order after the zone-connection pass: fontPoolCreate +
+     * the three HUD font loads + hudLoadGraphics, then the per-object item
+     * slot loop (g_pItemSlotObjects), then playerSetupRound and
+     * playerSetupSceneObjects, then levelObjectsCartsCameraInit. The HUD
+     * fonts and item slots are still TODO boundaries; the player round
+     * setup (playerSetupRound @0x410e90 + playerSetupSceneObjects
+     * @0x411550) is live below. */
+    playerSetupRound();                                    /* @0x410e90 @0x40a74c */
+    playerSetupSceneObjects();                             /* @0x411550 @0x40a751 */
+    levelObjectsCartsCameraInit();                         /* @0x411b70 @0x40a756 */
+    /* "__HIDE_ME__" hide pass (original @0x40a764): every scene node whose
+     * object name contains "__HIDE_ME__" ("__HIDE_ME__" @0x44f23c) gets
+     * bType=2 via sceneNodeSetHiddenFlag 3 so sceneNodeRender skips it. */
+    {
+        int anHideHandles[0x400];
+        int n = sceneFindByName(anHideHandles, 0x400, "__HIDE_ME__");  /* @0x431fd0 @0x40a770 */
+        int i;
+        for (i = 0; i < n; i++) {
+            sceneNodeSetHiddenFlag((SceneNode *)(uintptr_t)anHideHandles[i], 3);  /* @0x4305c0 @0x40a77f */
+        }
+    }
+    /* TODO: the per-player sceneObjectAnimStep(+0x2c4)
+     * kick, walkAnimTableEntryCalc, questLoad, snd/music startup,
+     * levelDirectorInits, mciPlayCdaudio and winmmInitTimerRes; the
+     * cameraFollowUpdate call lands at the end (original @0x40a9ce). */
+    cameraFollowUpdate(&g_camFollowBlock);                 /* @0x4020d0 @0x40a9ce */
     g_nRoundStartTime = getGameTime();
     g_nGameTime = getGameTime();
 }
@@ -161,8 +187,13 @@ void gameWorldUpdate(void)
     netGameUpdate();
     g_nWorldFrameTick++;
     sceneTextAnimUpdate(1);
-    /* TODO: playerCheckBlocked, playerUpdateAI, playerAnimSfxUpdate,
-     * gameUpdate, and camera. */
+    /* TODO: playerCheckBlocked item pickup, playerUpdateAI,
+     * playerAnimSfxUpdate, and gameUpdate. */
+    if (g_nResultsScreen == 0 &&
+        ((g_nCameraUpdateTick & 3) == 0 ||
+         g_playerRecords[g_nLocalPlayerIdx].nAnimationFrame != 0)) {
+        cameraFollowUpdate(&g_camFollowBlock); /* @0x4020d0 @0x40b503 */
+    }
 }
 
 /* gameObjectUpdate @0x40cf40 — alternating object update dependency. */

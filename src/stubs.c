@@ -59,9 +59,9 @@ void sndEmitterUpdateAll(void)
  * objects, nav points, item rules, and player commands not reconstructed yet.
  * The dispatcher preserves its scheduling contract while this safe TODO keeps
  * active AI records unchanged. */
-void playerAiUpdate(Player *pPlayer)
+void playerAiUpdate(AiController *pCtrl)
 {
-    (void)pPlayer;
+    (void)pCtrl;
 }
 
 /* movieFrameUpdate @0x40af80 — records or replays per-player input against
@@ -131,15 +131,6 @@ unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
     return NULL;
 }
 
-/* sceneInstantiateObjects — documented stub for scene-graph population at the
- * end of sceneLoadSen @0x432320 (out of scope for the offline menu preview).
- * Safe no-op: takes the owning memPool handle (unused) and returns 1. */
-int sceneInstantiateObjects(int pool)
-{
-    (void)pool;
-    return 1;
-}
-
 extern char g_szSceneDir[]; /* @0x45e950 defined in sen.c */
 int scenSetDir(LPCSTR pszDir) /* @0x432e60 */
 {
@@ -156,36 +147,44 @@ int scenExpandNameList(char *pList, void *pEnd, char *pszDir) /* @0x432dd0 */
     (void)pList; (void)pEnd; (void)pszDir;
     return 0;
 }
-int sceneFindByName(int *pOut, int nMax, char *pszSubstr) /* @0x431fd0 */
+/* netIsActive @0x426ed0 — client/server flags ORed; both stay 0 offline. */
+int g_nNetIsClient;   /* @0x45e59c */
+int g_nNetIsServer;   /* @0x45e598 */
+int netIsActive(void) /* @0x426ed0 */
 {
-    (void)pOut; (void)nMax; (void)pszSubstr;
-    return 0;
+    return g_nNetIsClient | g_nNetIsServer;
 }
 
-int sceneNodeSetHiddenFlag(int pNode, int nMode) /* @0x4305c0 */
+/* objShotListFree @0x406110 — free a world node's shot list (+0x10). The
+ * shot object model is deferred; playerSetupRound sub-objects never set
+ * the field, so this is a safe no-op. */
+void objShotListFree(void *pShotList) /* @0x406110 */
 {
-    if (nMode == 2) {
-        if (0) sceneNodeSetHiddenFlag(0, 2);
-        if (pNode) *(unsigned char *)(pNode + 2) = 1;
-        return 1;
-    }
-    if (nMode == 1) {
-        if (pNode) *(unsigned char *)(pNode + 2) = 1;
-        return 1;
-    }
-    if (nMode == 3) {
-        if (pNode) *(unsigned char *)(pNode + 2) = 2;
-    }
-    return 1;
+    (void)pShotList;
+}
+
+/* objTurretListFree @0x402b40 — free a turret sub-struct list (node +0x08
+ * embedded list at +0x48). Turret objects are deferred; safe no-op. */
+void objTurretListFree(int nMode) /* @0x402b40 */
+{
+    (void)nMode;
+}
+
+/* objTurretListFree2 @0x402b70 — free the second turret sub-struct list
+ * (node +0x0c, embedded list at +0x18). Deferred; safe no-op. */
+void objTurretListFree2(int nMode) /* @0x402b70 */
+{
+    (void)nMode;
 }
 
 /* aiNavNodeCtorScene @0x428cf0 — documented TODO stub, see stubs.h. The
- * original (thiscall, 0x48-byte node from levelSceneTexturesLoad): zeroes
- * +0x38/+0x3c/+0x40/+0x44, sceneNodeGetPos(node,0,this+0x2a,4), copies
- * *(float*)(this+0x2e) to +0x00, g_pNavMeshData = *(mesh+0x14) via
- * sceneNodeGetMesh, clears g_nNavTriIdx/g_pNavTriCur, then aiNavNodeUpdate.
- * Deferred with the AI navigation subsystem (docs/16-rebuild.md step 2). */
-void aiNavNodeCtorScene(void *pNavNode, int nSceneNode) /* @0x428cf0 */
+ * original (thiscall, 0x48-byte AiNavNode from levelSceneTexturesLoad):
+ * zeroes pConnList/pEdgeList/pNext/pPrev, sceneNodeGetPos(node,0,
+ * &node->nPosX,4), node->flAvgY = (float)node->nPosY, g_pNavMeshData =
+ * *(mesh+0x14) via sceneNodeGetMesh, clears g_nNavTriIdx/g_pNavTriCur,
+ * then aiNavNodeUpdate. Deferred with the AI navigation subsystem
+ * (docs/16-rebuild.md step 2). */
+void aiNavNodeCtorScene(AiNavNode *pNavNode, int nSceneNode) /* @0x428cf0 */
 {
     (void)pNavNode; (void)nSceneNode;
 }
@@ -197,4 +196,27 @@ void aiNavNodeCtorScene(void *pNavNode, int nSceneNode) /* @0x428cf0 */
  * Deferred with the zone/AI subsystem; no-op while the nav list is empty. */
 void zoneWallListBuild(void) /* @0x42a650 */
 {
+}
+
+/* zoneAvoidWalls @0x4023e0 — documented TODO stub, see stubs.h. Original
+ * walks the zone-wall segment list (zoneWallListBuild output) and pushes
+ * pPoint out of any wall within flRadius of the pRef->pPoint path. Deferred
+ * until the wall lists exist; cameraFollowUpdate treats a 0 return as "no
+ * wall contact" and keeps the untouched point. */
+int zoneAvoidWalls(GxVec2 *pPoint, GxVec2 *pRef, float flRadius) /* @0x4023e0 */
+{
+    (void)pPoint; (void)pRef; (void)flRadius;
+    return 0;
+}
+
+/* objSegListIntersectTest @0x414ce0 — documented TODO stub, see stubs.h.
+ * Original tests the (flX1,flY1)->(flX2,flY2) segment against pObj's zone
+ * line segments (+0x04 line list) and returns nonzero on a crossing.
+ * Deferred until c_di objects carry line lists; cameraFollowUpdate treats
+ * a 0 return as "no height clamp". */
+int objSegListIntersectTest(EventObject *pObj, float flX1, float flY1,
+                            float flX2, float flY2) /* @0x414ce0 */
+{
+    (void)pObj; (void)flX1; (void)flY1; (void)flX2; (void)flY2;
+    return 0;
 }

@@ -48,34 +48,56 @@ typedef struct SceneObjTypeDef {
     void *pD;            /* +0x30  relocated */
 } SceneObjTypeDef;
 
-/* --- render-info sub-struct pointed to by SceneObjTypeDef.pRender (+0x14).
+/* --- SceneObjRenderInfo sub-struct pointed to by SceneObjTypeDef.pRender (+0x14).
  * Layout verified by parsing menu\CHARACTERS.SEN (ROLAND mesh at 0x4b30,
  * pRender=0xe8) and the sceneNodeRender @0x42f8c0 / sceneMeshFixup @0x4320f0
  * / sceneMorphInterp @0x4300d0 disassembly. Offsets are file offsets
- * relocated by sceneMeshFixup (pVerts, pGroups etc become absolute).
+ * relocated by sceneMeshFixup (pVerts, pPolyA etc become absolute).
  *  nVerts/pVerts at +0x04/+0x08 (sceneMorphInterp), nPolyA/pPolyA at
- *  +0x14/+0x18, nGroups/pGroups at +0x1c/+0x20, nPolyB at +0x24,
- *  pPolyB at +0x2c. */
+ *  +0x14/+0x18 (aiNavNodeUpdate), nGroups/pGroups at +0x1c/+0x20,
+ *  nPolyB at +0x24, pPolyB at +0x2c. sceneMeshFixup relocates pVerts,
+ *  pPolyA, pGroups, pPolyB and (nPolyA + nPolyB) consecutive pointers at
+ *  pPolyA against pMesh (or *(g_pMapGeom+0x10) = g_pSubObjData when a
+ *  MAPI chunk is present). g_pNavMeshData points at this struct. */
 typedef struct SceneGroupInfo {
     int nVerts;          /* +0x00 vertices in group */
     int _pad04;          /* +0x04 */
     int nChanIdx;        /* +0x08 channel index for group */
 } SceneGroupInfo;        /* 0x0c */
 
+/* One indexed-primitive record stored in the SceneObjRenderInfo.pPolyA
+ * pointer array. Shared by the renderer (meshDrawPoly @0x42e940) and the
+ * AI nav-mesh scan (aiNavNodeUpdate @0x428d50): nFans entries of
+ * bFanIdxCount shorts each; the first bType shorts of each entry carry
+ * the vertex indices (only their low bytes are used as vertex indices,
+ * the rest is per-fan payload). SceneMeshPrim lives in the SUBO chunk
+ * data in the .sen file; prim pointers are offsets from g_pSubObjData
+ * until sceneMeshFixup relocates them. */
+typedef struct __attribute__((packed)) SceneMeshPrim {
+    unsigned char bFans;         /* +0x00 fan/entry count (end = prim + bFans*bFanIdxCount*2 + 8) */
+    unsigned char bType;         /* +0x01 1=points 2=lines 3=tri fans 4=quad list */
+    unsigned short wFlags;       /* +0x02 renderer flags (gxSetOrigin low word; bit2 pal-idx, bit3 tex-color idx) */
+    byte bReserved04;            /* +0x04 */
+    byte bReserved05;            /* +0x05 */
+    unsigned char bFanIdxCount;  /* +0x06 shorts per fan entry; cursor step = this * 2 */
+    unsigned char bReserved07;   /* +0x07 */
+    byte abFans[1];              /* +0x08 fan entries: first bType bytes = vertex indices */
+} SceneMeshPrim;                 /* header + first fan byte (fans continue per bFanIdxCount*2 bytes) */
+
 typedef struct SceneObjRenderInfo {
-    int field_00;        /* +0x00 */
-    int nVerts;          /* +0x04 vertex count (sceneMorphInterp) */
-    void *pVerts;        /* +0x08 pointer to vertex frames (x,y,z,w) */
-    int field_0c;        /* +0x0c */
+    int field_00;        /* +0x00 constant 10000000 (0x989680) in shipped meshes */
+    int nVerts;          /* +0x04 vertex count (sceneMorphInterp, sceneMeshFixup size stat) */
+    short *pVerts;       /* +0x08 short[4] vertex frames {x,y,z,pad}, stride 8 */
+    int field_0c;        /* +0x0c if != 0 then +0x10 is a relocated pointer */
     int field_10;        /* +0x10 */
-    int nPolyA;          /* +0x14 poly group A count */
-    void *pPolyA;        /* +0x18 poly group A ptr (relocated) */
+    int nPolyA;          /* +0x14 prim group A count */
+    struct SceneMeshPrim **pPolyA; /* +0x18 prim pointer array A (relocated) */
     int nGroups;         /* +0x1c group count for sceneNodeRender loop */
     SceneGroupInfo *pGroups; /* +0x20 pointer to group array (relocated) */
     int nPolyB;          /* +0x24 poly group B count */
     int field_28;        /* +0x28 */
-    void *pPolyB;        /* +0x2c poly group B ptr (relocated) */
-} SceneObjRenderInfo;
+    struct SceneMeshPrim **pPolyB; /* +0x2c poly group B ptr (relocated) */
+} SceneObjRenderInfo;    /* 0x30 */
 
 /* --- channel record: 0x70 bytes. Layout verified from disassembly of
  * chanBuildRotMatrix @0x42f030, chanCalcWorldTransform @0x42f6e0 and
@@ -143,7 +165,30 @@ typedef struct __attribute__((packed)) SceneNode {
  * menuInit's sceneNodeAlloc @0x4318e0). The original passes it directly to
  * sceneObjSetPos/sceneNodeFacePos/sceneRender (e.g. 0x41f7b8), so it is a
  * SceneNode*. Declared after the typedef because of the type. */
-extern SceneNode *g_pSceneRoot;   /* @0x4588f8 */
+/* --- CameraFollowBlock @0x4588f8 — the scene-render/camera-follow block.
+ * The four node pointers ARE the globals g_pSceneRoot (+0), 0x4588fc
+ * (follow node), g_pCamPosNode (+8, 0x458900) and g_pCamAimNode (+0xc,
+ * 0x458904); +0x10/+0x14 (0x458908/0x45890c) hold the follow divisor and
+ * snap distance loaded from config objects/camera rot_max/rot_speed by
+ * levelObjectsCartsCameraInit @0x411b70. sceneRender @0x42f1c0 receives
+ * *(void**)0x4588f8 = pNode (the root node doubles as the camera block:
+ * its nId==2 short is the render-mode gate and +0x20..0x30 hold the
+ * virtual-rect shorts and width/height/renderT floats written by
+ * sceneNodeAlloc @0x4318e0). */
+typedef struct CameraFollowBlock {
+    SceneNode *pNode;        /* +0x00 camera root node (= g_pSceneRoot) */
+    SceneNode *pFollowNode;  /* +0x04 local player char node (cameraSetClassMeshes) */
+    SceneNode *pPosNode;     /* +0x08 = g_pCamPosNode */
+    SceneNode *pAimNode;     /* +0x0c = g_pCamAimNode */
+    int        nDiv;         /* +0x10 cfg objects/camera rot_max (0x458908) */
+    int        nSnapDist;    /* +0x14 cfg objects/camera rot_speed (0x45890c) */
+} CameraFollowBlock;         /* 0x18 */
+
+extern CameraFollowBlock g_camFollowBlock; /* @0x4588f8..0x45890f */
+#define g_pSceneRoot     (g_camFollowBlock.pNode)     /* @0x4588f8 */
+#define g_pCamFollowNode (g_camFollowBlock.pFollowNode) /* @0x4588fc */
+#define g_pCamPosNode    (g_camFollowBlock.pPosNode)  /* @0x458900 */
+#define g_pCamAimNode    (g_camFollowBlock.pAimNode)  /* @0x458904 */
 
 /* Current scene-object context used by sceneNodeGetPos mode 6 (relative
  * positions). Written by sceneSetCurrentObj @0x430d98 (called from
@@ -244,6 +289,7 @@ void *sceneryObjAlloc(SceneNode *pParent, int nChanPtr, int nChanPtr2, int nChan
                       short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef);
 int  scenNameToId(LPCSTR pszName);
 int  sceneCollectMeshHandles(int *pOut, int nMax, const char *pszFilter); /* @0x42b360 */
+int  sceneFindByName(int *pOut, int nMax, const char *pszFilter); /* @0x431fd0 */
 int  scenNameToIdEx(LPCSTR pszName); /* @0x431e20 */
 int  sceneObjSetPos(SceneNode *pObj, int nX, int nY, int nZ, int nMode); /* @0x430660 */
 int  sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll, byte nMode); /* @0x4307d0 */
@@ -251,11 +297,19 @@ int  sceneObjSetSubPos(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, 
 int  sceneObjSetSubOrient(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll); /* @0x431110 */
 int  sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode); /* @0x430e80 */
 int  sceneNodeGetPos(SceneNode *pNode, int nChannel, int *pOutXYZ, int nMode); /* @0x431270 */
-unsigned int sceneNodeGetMesh(SceneNode *pNode); /* @0x431ae0 */
+int  sceneNodeSetPos(SceneNode *pNode, void *pXYZ, int nMode); /* @0x431590 — raw 32-bit copy (int channel storage) */
+int  sceneNodeSetPosShorts(SceneNode *pNode, short *pAngles, byte nMode); /* @0x431850 */
+int  sceneNodeGetChannelPos(SceneNode *pNode, int nChannel, short *pOutAngles,
+                            uint nMode, short *pOutAngles2); /* @0x4315e0 */
+SceneObjTypeDef *sceneNodeGetMesh(SceneNode *pNode); /* @0x431ae0 */
 int  sceneSetCurrentObj(SceneNode *pNodeHead, int nCurrentObj); /* @0x430d98 */
 void sceneMeshBBox(SceneNode *pNode, int *pOutBBox); /* @0x42ba40 */
 void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
                           int nRows, int nCellSize); /* @0x42ad00 */
+void sceneDetailGridSetRoot(SceneDetailGrid *pGrid, SceneNode *pRootNode); /* @0x42b350 */
+void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount); /* @0x42b000 */
+int  sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMode); /* @0x430db0 */
+int  sceneNodeSetHiddenFlag(SceneNode *pNode, int nMode); /* @0x4305c0 */
 int  sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float flZ, int nMode); /* @0x431030 */
 void sceneNodeFree(SceneNode *pNode, int nFreeChildren); /* @0x430460 */
 void sceneNodeUpdateBounds(SceneNode *pNode); /* @0x4303c0 */

@@ -35,7 +35,7 @@ GUI and single-player functionality.
   multiple programs are open.
 - Save the Ghidra program periodically; do not commit unless asked.
 - To run ghidra scripts, follow `Ghidra_scripts.md`.
-- Inspect assembly closely enough for the reconstructed source to match the original.
+- Inspect assembly closely enough for the reconstructed source to match the original. It should be logically equivalent, simplifications are accepted.
 - Follow established patterns and code format and comment structures.
 
 ## Rules
