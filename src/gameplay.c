@@ -11,6 +11,7 @@
 #include "obj.h"
 #include "player.h"
 #include "pool.h"
+#include "quest.h"
 #include "scene.h"
 #include "scenetext.h"
 #include "sen.h"
@@ -51,9 +52,10 @@ int g_nMoviePlay;        /* @0x455e90 */
  * behind a "%s\hud\load.tga" presentFrame flash; the second
  * (scenNameTableInit 4000/4000) owns configMasterLoad + levelSetup and the
  * live game world. This increment implements both cycles through levelSetup.
- * The zone-connection objects, HUD fonts/graphics, per-object item slots,
- * player/quest/sound/music/camera startup blocks are still documented
- * TODO boundaries after levelSetup. */
+ * The zone-connection objects, HUD fonts/graphics, the per-object item slot
+ * pass and the questLoad startup block are live below; the per-player
+ * animation kick, walk-anim table and snd/music/camera-director startup
+ * remain documented TODO boundaries. */
 void roundStartInit(void) /* @0x40a4d0 */
 {
     GxMode mode;
@@ -122,10 +124,10 @@ void roundStartInit(void) /* @0x40a4d0 */
             }
         }
     }
-    /* Original order after the zone-connection pass (@0x40a727..0x40a7f7):
+    /* Original order after the zone-connection pass (@0x40a727..0x40a8bd):
      * fontPoolCreate, the three HUD font loads (per-level descriptor +
-     * texture pairs), then hudLoadGraphics; the per-object item slot loop
-     * follows (still a TODO boundary). The player round setup
+     * texture pairs), hudLoadGraphics and the per-object item slot loop
+     * (implemented above). The player round setup
      * (playerSetupRound @0x410e90 + playerSetupSceneObjects @0x411550) is
      * live below. */
     fontPoolCreate();                                      /* @0x408f90 @0x40a727 */
@@ -146,6 +148,39 @@ void roundStartInit(void) /* @0x40a4d0 */
                                   (void *)gxLoadTpgFile(szPath), 0, 0, 0);
     }
     hudLoadGraphics();                                     /* @0x412700 @0x40a7f7 */
+    /* Per-object item slot pass (@0x40a7fc..0x40a8bd): for slot ids 1..30
+     * find the mall EventObject with that id (mode 4 uses ids 200+id for
+     * the CHECKFLAG items), store it in slot[id-1].pEventObj and move the
+     * slot's scenery node to the event origin. x = originZ, y = heightA,
+     * z = originX per the disassembly; the non-mode-4 branch drops y by
+     * 1000 (event origins sit 1000 above the floor). */
+    {
+        int i;
+        for (i = 1; i <= LEVEL_ITEM_SLOT_COUNT; i++) {
+            LevelItemSlot *pSlot = &g_apLevelItemSlots[i - 1];
+            EventObject *pEvent;
+
+            if (g_nGameMode == 4) {
+                pEvent = objFindById(i + 200, 0);          /* @0x40a867 */
+                pSlot->pEventObj = pEvent;                 /* @0x40a8a7 */
+                if (pEvent != NULL) {
+                    sceneObjSetPos((SceneNode *)pSlot->pSubObj,  /* @0x430660 @0x40a89f */
+                                   (int)pEvent->flOriginZ,
+                                   (int)pEvent->flHeightA,
+                                   (int)pEvent->flOriginX, 2);
+                }
+            } else {
+                pEvent = objFindById(i, 0);                /* @0x40a810 */
+                pSlot->pEventObj = pEvent;                 /* @0x40a84f */
+                if (pEvent != NULL) {
+                    sceneObjSetPos((SceneNode *)pSlot->pSubObj,  /* @0x40a847 */
+                                   (int)pEvent->flOriginZ - 1000, /* @0x40a837 */
+                                   (int)pEvent->flHeightA,
+                                   (int)pEvent->flOriginX, 2);
+                }
+            }
+        }
+    }
     playerSetupRound();                                    /* @0x410e90 @0x40a74c */
     playerSetupSceneObjects();                             /* @0x411550 @0x40a751 */
     levelObjectsCartsCameraInit();                         /* @0x411b70 @0x40a756 */
@@ -160,10 +195,12 @@ void roundStartInit(void) /* @0x40a4d0 */
             sceneNodeSetHiddenFlag(apHideNodes[i], 3);               /* @0x4305c0 @0x40a77f */
         }
     }
-    /* TODO: the per-player sceneObjectAnimStep(+0x2c4)
-     * kick, walkAnimTableEntryCalc, questLoad, snd/music startup,
-     * levelDirectorInits, mciPlayCdaudio and winmmInitTimerRes; the
-     * cameraFollowUpdate call lands at the end (original @0x40a9ce). */
+    /* TODO: the per-player sceneObjectAnimStep(+0x2c4) kick,
+     * walkAnimTableEntryCalc, snd/music startup, levelDirectorInits,
+     * mciPlayCdaudio and winmmInitTimerRes; the cameraFollowUpdate call
+     * lands at the end (original @0x40a9ce). questLoad runs here in the
+     * original (after walkAnimTableEntryCalc, before sndInitSystem). */
+    questLoad("quest.txt");                                /* @0x40ffa0 @0x40a9a6 */
     cameraFollowUpdate(&g_camFollowBlock);                 /* @0x4020d0 @0x40a9ce */
     g_nRoundStartTime = getGameTime();
     g_nGameTime = getGameTime();

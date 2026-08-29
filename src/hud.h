@@ -32,9 +32,8 @@ extern int  g_nConsoleLineCount;        /* @0x455d34 */
  * phase-5/wait overlays — empty unless something wrote it). */
 extern char g_acScratchText[256];
 
-/* Item name table @0x45839c: 0x2c-byte name slots indexed by the shopping
- * list item id (record.anListIds). Filled by questLoad (TODO boundary). */
-extern char g_acItemNames[64][0x2c];
+/* Item names are g_levelItemSlots[id-1].szName (name area @0x45839c,
+ * 0x2c stride shared with the item slot table — see level.h). */
 
 void hudLoadGraphics(void);   /* @0x412700 */
 void renderGameHud(void);     /* @0x412810 */

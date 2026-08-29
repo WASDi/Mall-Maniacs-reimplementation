@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+#include "obj.h"
+
 /* level.h — per-level setup (levelSetup @0x4108a0). Reads the selected
  * "levels[%d]" block from g_configEnvMaster, loads the mall scene,
  * objects scene and characters scene, allocates the scene detail grid,
@@ -29,12 +31,12 @@ typedef struct LevelItemSlot {
     int  nMeshId;            /* +0x1c scenNameToId of items[%d]/mesh */
     void *pSceneObj;         /* +0x20 sceneryObjAlloc result */
     void *pSubObj;           /* +0x24 sceneNodeAllocChild result */
-    int  _pad28;             /* +0x28 */
+    EventObject *pEventObj;  /* +0x28 objFindById(id) (roundStartInit @0x40a84f) */
 } LevelItemSlot;             /* 0x2c */
 
 #define LEVEL_ITEM_SLOT_COUNT 30
 
-extern LevelItemSlot g_levelItemSlots[LEVEL_ITEM_SLOT_COUNT]; /* @0x4583c8 */
+extern LevelItemSlot g_apLevelItemSlots[LEVEL_ITEM_SLOT_COUNT]; /* @0x4583c8 */
 
 extern char g_szLevelScenePath[];  /* @0x457db0 "scene_path\scene_file" */
 extern char g_szObjScenePath[];    /* @0x457fb0 "scene_path\obj_scene_file" */

@@ -70,6 +70,7 @@ Log markers to expect along the way: `[menu] row 0 'Spela' selected`,
 `[menu] game type 0 'Varujakten' selected`, `[charselect] Enter ->
 stateCharSelectOk`, `[gameplay] round <level> initialized`.
 
+Never sleep more than 5 seconds for anything, it's enough for actions to have an effect.
 Please also close the window as soon as you don't need it anymore.
 
 ## 4. Other navigations

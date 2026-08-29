@@ -51,8 +51,14 @@ int  g_nConsoleLineCount;       /* @0x455d34 */
 /* --- shared scratch string buffer @0x4550d8 (drawn by wait overlays) --- */
 char g_acScratchText[256];
 
-/* --- item name table @0x45839c: 0x2c-byte slots, filled by questLoad --- */
-char g_acItemNames[64][0x2c];
+/* Item name lookup (original @0x412fc0 / @0x41347c): the name area at
+ * 0x45839c is indexed with 0x2c stride, i.e. g_apLevelItemSlots[id-1].szName
+ * (config items[id-1]/name, filled by levelSetup). Ids outside 1..30 (the
+ * mode-4 CHECKFLAG ids 200+) read zeroed/foreign .bss in the original; the
+ * rebuild draws an empty name there. */
+#define HUD_ITEM_NAME(nId) \
+    (((nId) >= 1 && (nId) <= LEVEL_ITEM_SLOT_COUNT) \
+         ? g_apLevelItemSlots[(nId) - 1].szName : "")
 
 /* format/name strings used by the HUD (verbatim, with addresses) */
 #define SZ_TIME_FMT        "%02d:%02d:%02d"                /* @0x44ff94 */
@@ -261,7 +267,7 @@ void renderGameHud(void)
             if (g_playerRecords[g_nLocalPlayerIdx].nListProgress < 5) { /* @0x412f8f */
                 gxDrawQuadColor(g_hHudGfx2Tpg, 0xc0, 0x32, 0x1bf, 0x65, 0, 0, 0xff, 0x32);
                 textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x44,
-                                 g_acItemNames[g_nCurrentItemId]); /* @0x412fc0 */
+                                 HUD_ITEM_NAME(g_nCurrentItemId)); /* @0x412fc0 */
                 memset(&cu, 0, sizeof(cu));
                 cu.pTexture = g_hHudGfx2Tpg;                 /* @0x413068 */
                 cu.V = 0x7d00;  cu.V2 = 0x7d00;              /* @0x412fe1 */
@@ -347,7 +353,7 @@ void renderGameHud(void)
                 if (g_playerRecords[g_nLocalPlayerIdx].abListTaken[i] == 0) {
                     textDraw(g_hHudFont, 0x2004, 5,
                              (j - g_nInvBarTarget) + 5 + g_nInvBarCur,
-                             g_acItemNames[g_playerRecords[g_nLocalPlayerIdx].anListIds[i]]);
+                             HUD_ITEM_NAME(g_playerRecords[g_nLocalPlayerIdx].anListIds[i]));
                     j += 0x16;                               /* @0x4134b3 */
                 }
             }

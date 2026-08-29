@@ -40,7 +40,7 @@ const char *g_aszLevelDirs[5] = {      /* @0x44f0d8 pointer table */
     "scene_future",                    /* [4] @0x44f0f0 */
 };
 
-LevelItemSlot g_levelItemSlots[LEVEL_ITEM_SLOT_COUNT]; /* @0x4583c8 */
+LevelItemSlot g_apLevelItemSlots[LEVEL_ITEM_SLOT_COUNT]; /* @0x4583c8 */
 
 char g_szLevelScenePath[256];  /* @0x457db0 */
 char g_szObjScenePath[256];    /* @0x457fb0 */
@@ -241,7 +241,7 @@ void levelSetup(void) /* @0x4108a0 */
 
     /* Item slots: mesh field base 0x4583e4, stride 0x2c, bound 0x45890c. */
     for (i = 0; i < LEVEL_ITEM_SLOT_COUNT; i++) {
-        pSlot = &g_levelItemSlots[i];
+        pSlot = &g_apLevelItemSlots[i];
         wsprintf(szPath, "items[%d]", i);                    /* @0x44f818 */
         pCur = configEnvGetValue(&g_configEnvMaster, NULL, szPath);
         if (pCur == NULL) {
