@@ -791,11 +791,11 @@ void menuInit(int nRestartMode)
             sceneNodeFacePos(g_pSceneRoot, 0, -2100.0f, 0.0f, 1000.0f, 2);
         }
         {
-            int anHandles[0x400];
-            int n = sceneFindByName(anHandles, 0x400, NULL);   /* @0x431fd0 */
+            SceneNode *apNodes[0x400];
+            int n = sceneFindByName(apNodes, 0x400, NULL);   /* @0x431fd0 */
             int i;
             for (i = 0; i < n; i++) {
-                sceneNodeSetHiddenFlag(anHandles[i], 3);       /* @0x4305c0 */
+                sceneNodeSetHiddenFlag(apNodes[i], 3);       /* @0x4305c0 */
             }
             appLog("[menu] hid %d scene nodes (sceneFindByName @0x431fd0)", n);
         }
@@ -884,9 +884,9 @@ void menuInit(int nRestartMode)
     if (0) {
         scenNameTableInit(4000, 4000);
         {
-            int tmp[1024];
-            int n = sceneFindByName(tmp, 1024, NULL);
-            for (int k = 0; k < n; k++) sceneNodeSetHiddenFlag(tmp[k], 3);
+            SceneNode *apTmp[1024];
+            int n = sceneFindByName(apTmp, 1024, NULL);
+            for (int k = 0; k < n; k++) sceneNodeSetHiddenFlag(apTmp[k], 3);
         }
         {
             MString a, b;

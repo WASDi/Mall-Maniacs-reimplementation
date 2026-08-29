@@ -64,8 +64,9 @@ typedef struct PlayerRecord {
     int field_40;                /* +0x40 */
     SceneNode *pCartChildA;      /* +0x44 cart child node (sceneNodeAllocChild) */
     SceneNode *pCartChildB;      /* +0x48 cart child node */
-    char szCharName[0x104];      /* +0x4c unbounded strcpy of g_apCharNames[idx]
-                                  * (netIsActive()==0 path); spans 0x4c..0x14f */
+    char szCharName[0x100];      /* +0x4c unbounded strcpy of g_apCharNames[idx]
+                                  * (netIsActive()==0 path); spans 0x4c..0x14b */
+    int nStartPosIdx;            /* +0x14c start_positions[%d] index (player slot) */
     int nCharIdx;           /* +0x150 selected character 0..9 */
     int nCartIdx;                /* +0x154 selected cart 0..23 */
     int field_158_pad[2];        /* +0x158 */
@@ -160,6 +161,7 @@ int aiControllerCtor(AiController *pCtrl, PlayerRecord *pRecord); /* @0x401090 *
  * objects/characters[%d]/carts[%d] config: physics constants, shopping
  * list, names, stats and the three WorldNode sub-objects, then
  * aiControllersInit. */
+void playerSetupCharacters(void);               /* @0x41b6e0 */
 void playerSetupRound(void);                    /* @0x410e90 */
 
 /* playerSetupSceneObjects @0x411550 — create the per-player scene objects

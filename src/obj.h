@@ -130,8 +130,8 @@ int eloadCmd(int nContext, LPCSTR pszArgs);
 typedef struct WorldNode {
     struct WorldNode *pPrev;    /* +0x00 list link toward the head */
     struct WorldNode *pNext;    /* +0x04 list link toward the tail */
-    void *pTurretList;          /* +0x08 sub-struct (+0x48 -> objTurretListFree) */
-    void *pTurretList2;         /* +0x0c sub-struct (+0x18 -> objTurretListFree2) */
+    void *pChildMeshHead;       /* +0x08 ObjChildMesh entry list (nodeAddChildMesh) */
+    void *pTurretHead;          /* +0x0c ObjTurret entry list (objTurretAdd) */
     void *pShotList;            /* +0x10 shot list (objShotListFree) */
     int field_14;               /* +0x14 */
     int field_18;               /* +0x18 */
@@ -151,6 +151,65 @@ typedef char WorldNodeSizeMustBe0x48[(sizeof(WorldNode) == 0x48) ? 1 : -1];
 
 /* objListPush @0x4055c0 — head-insert a world node into g_pObjHead. */
 void objListPush(WorldNode *pNode);
+
+/* ObjTurret is the 0x1c-byte turret entry built by objTurretAdd @0x405280
+ * (levelObjectsCartsCameraInit collision cluster for each player's cart and
+ * body). Layout from the objTurretAdd disassembly. */
+typedef struct ObjTurret {
+    int nTypeId;         /* +0x00 caller id (the owning record's scene node) */
+    float flAngle;       /* +0x04 nAngle*g_flPi*g_dblAngleScale (radians) */
+    GxVec2 vPolar;       /* +0x08 polar({flZ, flX}) of the position */
+    GxVec2 vPos;         /* +0x10 {flZ, flX} copy */
+    struct ObjTurret *pNext; /* +0x18 head at WorldNode.pTurretHead (+0x0c) */
+} ObjTurret;             /* 0x1c */
+
+typedef char ObjTurretSizeMustBe0x1c[(sizeof(ObjTurret) == 0x1c) ? 1 : -1];
+
+/* ObjChildMesh is the 0x4c-byte child-mesh/collision entry built by
+ * nodeAddChildMesh @0x4053a0 and updated by nodeSetTransformFromChannels
+ * @0x404e00. Layout from the nodeAddChildMesh disassembly. */
+typedef struct ObjChildMesh {
+    int nMeshId;         /* +0x00 caller mesh tag (1 in the player clusters) */
+    int nValue1;         /* +0x04 written by objTurretSetValue */
+    int nValue2;         /* +0x08 written by objTurretSetValue */
+    int nChannelKey;     /* +0x0c match key for objTurretSetValue (owner node) */
+    float flExtentB;     /* +0x10 raw arg5 (75.0/A/B per row) */
+    float flExtentA;     /* +0x14 raw arg4 (270/300/230/20 per row) */
+    float flExtentC;     /* +0x18 raw arg7 (240.0/300.0) */
+    GxVec2 vPolar;       /* +0x1c polar({flKeyZ, flX}) */
+    GxVec2 vPos;         /* +0x24 {flKeyZ, flX} copy */
+    GxVec2 vWorldA;      /* +0x2c fromPolar({polar.x, polar.y+flScaleA}) */
+    GxVec2 vWorldB;      /* +0x34 copy of vWorldA */
+    void *pSurface;      /* +0x3c sceneRayFindNearest hit node */
+    float flHeight;      /* +0x40 raycast query height */
+    int field_44;        /* +0x44 zeroed */
+    struct ObjChildMesh *pNext; /* +0x48 head at WorldNode.pChildMeshHead (+0x08) */
+} ObjChildMesh;          /* 0x4c */
+
+typedef char ObjChildMeshSizeMustBe0x4c[(sizeof(ObjChildMesh) == 0x4c) ? 1 : -1];
+
+/* objTurretAdd @0x405280 — allocate a turret entry for pNode, polarize
+ * {flPosZ, flPosX}, scale nAngle to radians and head-insert at +0x0c. */
+void objTurretAdd(WorldNode *pNode, int nPosX, int nPosY, int nPosZ,
+                  short nAngle, int nTypeId);
+
+/* objTurretSetValue @0x405370 — for every child mesh of pNode whose
+ * nChannelKey matches nKey, write nValue1/nValue2 over +0x04/+0x08. */
+void objTurretSetValue(WorldNode *pNode, int nKey, int nValue1, int nValue2);
+
+/* nodeAddChildMesh @0x4053a0 — allocate a 0x4c child-mesh entry for pNode:
+ * polarized {flKeyZ, flX} position, raw extents, channel key and mesh tag,
+ * plus the fromPolar world coords offset by pNode->flScaleA; head-insert
+ * at +0x08. */
+void nodeAddChildMesh(WorldNode *pNode, int nX, int nY, int nKeyZ,
+                      float flExtentA, float flExtentB, int nChannelKey,
+                      float flExtentC, int nMeshId);
+
+/* nodeSetTransformFromChannels @0x404e00 — place pNode at {nPosZ, nPosX}
+ * (vPos/vPosB), rotate by nAngle, then recompute every child mesh's world
+ * coords and raycast its surface with sceneRayFindNearest @0x42a750. */
+void nodeSetTransformFromChannels(WorldNode *pNode, int nPosX, int nPosY,
+                                  int nPosZ, int nUnk, short nAngle);
 
 /* worldNodeCtor @0x402a20 — init a 0x48-byte world node: zero links,
  * vPos = {z, x} (both copies), scale = nScale*g_flPi*g_dblAngleScale into

@@ -132,11 +132,11 @@ void roundStartInit(void) /* @0x40a4d0 */
      * object name contains "__HIDE_ME__" ("__HIDE_ME__" @0x44f23c) gets
      * bType=2 via sceneNodeSetHiddenFlag 3 so sceneNodeRender skips it. */
     {
-        int anHideHandles[0x400];
-        int n = sceneFindByName(anHideHandles, 0x400, "__HIDE_ME__");  /* @0x431fd0 @0x40a770 */
+        SceneNode *apHideNodes[0x400];
+        int n = sceneFindByName(apHideNodes, 0x400, "__HIDE_ME__");  /* @0x431fd0 @0x40a770 */
         int i;
         for (i = 0; i < n; i++) {
-            sceneNodeSetHiddenFlag((SceneNode *)(uintptr_t)anHideHandles[i], 3);  /* @0x4305c0 @0x40a77f */
+            sceneNodeSetHiddenFlag(apHideNodes[i], 3);               /* @0x4305c0 @0x40a77f */
         }
     }
     /* TODO: the per-player sceneObjectAnimStep(+0x2c4)

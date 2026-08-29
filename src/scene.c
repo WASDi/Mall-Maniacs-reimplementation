@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include "scene.h"
 #include "gx.h"
+#include "zone.h"
 #include "pool.h"
 #include "sen.h"
 #include "stubs.h"
@@ -58,8 +59,6 @@ float g_sceneRenderT = 0.0f;      /* @0x450f7c camera-block renderT float bits; 
 float g_flSceneYScale = 0.0f;     /* @0x450f80 */
 int   g_nSceneDistMax = 0x7fffffff;
 int   g_nSceneDrawCount = 0;
-int   g_nDbgRendArm = 0;      /* TEMP DEBUG: arm [rendbg] logging */
-static int g_nDbgCull = 0;    /* TEMP DEBUG: [culldbg] per-frame counter */
 int   g_nNodePoolSize = 0;
 int   g_nSceneBufSize = 0;
 int   g_nSortBufCount = 0;
@@ -468,14 +467,14 @@ int sceneCollectMeshHandles(int *pOut, int nMax, const char *pszFilter) /* @0x42
  * the number stored, capped at nMax. menuInit hides every menu-scene node
  * through this (sceneNodeSetHiddenFlag mode 3); roundStartInit uses the
  * filter form to hide "HIDE ME!" meshes. */
-int sceneFindByName(int *pOut, int nMax, const char *pszFilter) /* @0x431fd0 */
+int sceneFindByName(SceneNode **pOut, int nMax, const char *pszFilter) /* @0x431fd0 */
 {
     int i = 0;
 
     if (pszFilter == NULL) {
         int n = 0;
         while (g_pScenObjTable[i].nId != 0) {
-            pOut[n] = g_pScenObjTable[i].nId;
+            pOut[n] = (SceneNode *)(uintptr_t)g_pScenObjTable[i].nId;
             n++;
             i++;
             if (n >= nMax) return n;
@@ -487,7 +486,7 @@ int sceneFindByName(int *pOut, int nMax, const char *pszFilter) /* @0x431fd0 */
         do {
             if (n >= nMax) return n;
             if (strstr(g_pScenObjTable[i].pszName, pszFilter) != NULL) {
-                pOut[n] = g_pScenObjTable[i].nId;
+                pOut[n] = (SceneNode *)(uintptr_t)g_pScenObjTable[i].nId;
                 n++;
             }
             i++;
@@ -1715,16 +1714,6 @@ int sceneNodeRender(SceneNode *pNode) /* @0x42f8c0 */
         float flLateral;
         int nDist;
 
-        {   /* TEMP DEBUG: cull data for the first nodes each frame */
-            if (g_nDbgCull < 8) {
-                g_nDbgCull++;
-                appLog("[culldbg] node=%p nId=%d bType=%d w=(%.0f,%.0f,%.0f) rA=%d rB=%d rT=%.0f",
-                       (void *)node, (int)node->nId, (int)node->bType,
-                       (double)ch0->wx, (double)ch0->wy, (double)ch0->wz,
-                       node->nBoundingRadiusA, node->nBoundingRadiusB,
-                       (double)flRenderT);
-            }
-        }
         if (!(0.0f < flRadiusB + ch0->wz)) return 1;               /* @0x42f920 */
         if (ch0->wz - flRadiusB > flRenderT) return 1;             /* @0x42f940 */
         flLateral = sqrtf(ch0->wy * ch0->wy + ch0->wx * ch0->wx);
@@ -1738,11 +1727,6 @@ int sceneNodeRender(SceneNode *pNode) /* @0x42f8c0 */
             (float)node->nBoundingRadiusA + ch0->wz <= 0.0f ||     /* @0x42f9a1 */
             flRenderT < ch0->wz - (float)node->nBoundingRadiusA) { /* @0x42f9b3 */
             bDoRender = 0;
-        }
-        if (g_nDbgCull < 12) {   /* TEMP DEBUG: verdict */
-            g_nDbgCull++;
-            appLog("[culldbg] verdict node=%p nId=%d dist=%d draw=%d",
-                   (void *)node, (int)node->nId, nDist, (int)bDoRender);
         }
     }
     if ((char)node->nChannelCount > 1) {
@@ -1898,7 +1882,6 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     int y1;
     g_nSceneDistMax = 0x7fffffff;
     g_nSceneDrawCount = 0;
-    g_nDbgCull = 0; /* TEMP DEBUG */
     if (!cb || cb->mode != 2) return 0;
     if (!g_pSceneNodeList) return 1;
 
@@ -1948,37 +1931,9 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     if (viewport[0] > viewport[2] || viewport[1] > viewport[3]) return 1;
 
     gxSetViewport(viewport);
-    {   /* TEMP DEBUG: camera state on the first two frames after arming */
-        static int nDbgRend = 0;
-        if (g_nDbgRendArm != 0 && nDbgRend < 2) {
-            nDbgRend++;
-            sceneBuildRootMatrix(pCameraBlock);
-            sceneCameraBasisCalc();
-            appLog("[rendbg] cb=%p nId=%d nodes=%p cam=(%.0f,%.0f,%.0f)",
-                   (void *)cb, (int)((SceneNode *)pCameraBlock)->nId,
-                   (void *)g_pSceneNodeList,
-                   (double)g_camPos[0], (double)g_camPos[1], (double)g_camPos[2]);
-        }
-    }
     /* TODO: pre-render MusicSlot callbacks 0x45e650..0x45e81c */
     sceneBuildRootMatrix(pCameraBlock); /* @0x42f520 */
     sceneCameraBasisCalc(); /* @0x42f460 */
-    {   /* TEMP DEBUG: root channel + camera block after build */
-        static int nDbgRoot = 0;
-        if (nDbgRoot < 4) {
-            nDbgRoot++;
-            SceneChannel *rc = &g_rootNode.pChannels[0];
-            SceneCameraBlock *cbd = (SceneCameraBlock *)pCameraBlock;
-            unsigned int *pd = (unsigned int *)cbd;
-            appLog("[rootdbg] cb=%p mode=%d rT=%.0f W=%.0f H=%.0f root w=(%.0f,%.0f,%.0f) m0=(%.3f,%.3f,%.3f)",
-                   (void *)cbd, (int)cbd->mode, (double)cbd->renderT,
-                   (double)cbd->nWidth, (double)cbd->nHeight,
-                   (double)rc->wx, (double)rc->wy, (double)rc->wz,
-                   (double)rc->wmat[0], (double)rc->wmat[1], (double)rc->wmat[2]);
-            appLog("[rootdbg] raw +14..34: %08x %08x %08x %08x %08x %08x %08x %08x",
-                   pd[5], pd[6], pd[7], pd[8], pd[9], pd[10], pd[11], pd[12]);
-        }
-    }
     for (void *p = g_pSceneNodeList; p != NULL;
          p = (void *)(uintptr_t)((SceneNode *)p)->pNextSib) {
         sceneNodeRender(p);
@@ -2178,4 +2133,26 @@ int sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMod
         sceneNodeUpdateBounds(pObjNode->pParent);         /* @0x430e46 */
     }
     return 1;
+}
+
+/* sceneRayFindNearest @0x42a750 — walk g_pNavNodeList and return the first
+ * floor node whose walkable plane height at (flX, flZ) is at most
+ * flMaxDist above flHeight and whose walls collide with (flX, flZ) at
+ * radius flRadius (zoneWallCircleHit @0x42aac0). NULL when no node fits. */
+void *sceneRayFindNearest(float flZ, float flX, float flHeight,
+                          float flMaxDist, float flRadius) /* @0x42a750 */
+{
+    AiNavNode *pNode;
+
+    for (pNode = g_pNavNodeList; pNode != NULL; pNode = pNode->pNext) {
+        float flPlaneY = (flX - (float)pNode->nRefX) * pNode->flSlopeX +
+                         (flZ - (float)pNode->nRefZ) * pNode->flSlopeZ +
+                         (float)pNode->nRefY;            /* @0x42a790 */
+
+        if (flHeight - flPlaneY <= flMaxDist &&          /* @0x42a7ad */
+            zoneWallCircleHit(pNode, flZ, flX, flRadius) != 0) { /* @0x42a7c0 */
+            return pNode;
+        }
+    }
+    return NULL;
 }

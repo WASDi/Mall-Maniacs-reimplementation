@@ -9,6 +9,8 @@
 #include "menu.h"
 #include "obj.h"
 #include "options.h"
+#include "levelselect.h"
+#include "record.h"
 #include "pool.h"
 #include "stubs.h"
 #include "time.h"
@@ -120,6 +122,68 @@ int aiControllerCtor(AiController *pCtrl, PlayerRecord *pRecord) /* @0x401090 */
     pCtrl->field_5c = 0;
     pCtrl->nCtrlSpeed = (int)g_aflAiCtrlSpeed[g_nModeSel];
     return 1;
+}
+
+/* g_kModePlayerCounts @0x44b610 — players per round, indexed
+ * g_nLevelIdx*3 + g_nModeSel (rows by level, columns by difficulty). */
+static const int g_kModePlayerCounts[12] = { /* @0x44b610 */
+    2, 3, 4,   /* level 0 */
+    2, 3, 4,   /* level 1 */
+    3, 3, 4,   /* level 2 */
+    3, 4, 4    /* level 3 */
+};
+
+/* playerSetupCharacters @0x41b6e0 — assign characters to all players before a
+ * round starts (called by the stateLevelInit0..4 handlers). The player count
+ * comes from g_kModePlayerCounts when not already decided. getGameTime()%150
+ * rand() calls are burned first so the rolls below do not correlate with
+ * menu-time rolls. The local player keeps its charselect pick and gets
+ * nControlType 0 with cart 1; every other slot rolls a unique character
+ * rand()%(g_nLevelCount+6) (re-rolled above 9 and on collision with an
+ * earlier player), gets nControlType 2 (AI) and cart 0. Every record's
+ * start-position index is its slot. */
+void playerSetupCharacters(void) /* @0x41b6e0 */
+{
+    int i;
+
+    if (g_nPlayerCount == 0) {                                             /* @0x41b6e0 */
+        g_nPlayerCount = g_kModePlayerCounts[g_nLevelIdx * 3 + g_nModeSel]; /* @0x41b6f9 */
+    }
+
+    {
+        int nBurn = getGameTime() % 150;                                   /* @0x40dfe0 @0x41b707 */
+
+        while (nBurn-- > 0) {
+            rand();                                                        /* @0x43ea7c @0x41b71a */
+        }
+    }
+
+    for (i = 0; i < g_nPlayerCount; i++) {                                 /* @0x41b731 */
+        PlayerRecord *pRec = &g_playerRecords[i];
+
+        if (i == g_nLocalPlayerIdx) {                                      /* @0x41b73b */
+            pRec->nControlType = 0;                                        /* @0x41b786 */
+            pRec->nCartIdx = 1;                                            /* @0x41b78c */
+        } else {
+            int nCharIdx;
+            int j;
+
+            do {
+                do {
+                    nCharIdx = rand() % (g_nLevelCount + 6);               /* @0x45a6f4 @0x41b74e */
+                } while (nCharIdx > 9);                                    /* @0x41b753 */
+                for (j = 0; j < i; j++) {                                  /* @0x41b765 */
+                    if (nCharIdx == g_playerRecords[j].nCharIdx) {
+                        break;                                             /* @0x41b76c */
+                    }
+                }
+            } while (j != i);                                              /* @0x41b77b */
+            pRec->nCharIdx = nCharIdx;                                     /* @0x41b75d */
+            pRec->nControlType = 2;                                        /* @0x41b798 */
+            pRec->nCartIdx = 0;                                            /* @0x41b79e */
+        }
+        pRec->nStartPosIdx = i;                                            /* @0x41b7ae */
+    }
 }
 
 /* playerSetupRound @0x410e90 — per-player round setup. Reads the [master]
@@ -445,6 +509,187 @@ void levelObjectsCartsCameraInit(void) /* @0x411b70 */
     int anAimCfg[3];
     short nAng[3];
     int anPos[3];
+    int i;
+
+    /* Per-player pass @0x411b9c..0x41241d (runs only when players exist):
+     * cart + character collision turret/mesh clusters from the config
+     * object_pos entries, handle_pos onto the cart child nodes, the +0x1c
+     * walkability flags and the levels[%d]/start_positions[%d] placement
+     * of all three WorldNode sub-objects. */
+    for (i = 0; i < g_nPlayerCount; i++) {                                /* @0x411b9c */
+        PlayerRecord *pRec = &g_playerRecords[i];
+        ConfigNode *pCfg;
+        ConfigNode *pVal;
+        char szKey[0x40];
+        int anObjPos[3];
+        short anObjRot[3];
+        float flExtentA;
+        float flExtentB;
+
+        wsprintfA(szKey, "objects/carts[%d]", pRec->nCartIdx);   /* @0x44fd84 @0x411bba */
+        pCfg = configEnvGetValue(&g_configEnvMaster, NULL, szKey);        /* @0x411b6a */
+        if (pCfg == NULL) {
+            fatalError("'objects/carts[%d]' not found in cfg.",           /* @0x44f990 */
+                       pRec->nCartIdx);
+        }
+        pVal = configEnvGetValue(&g_configEnvMaster, pCfg, "object_pos"); /* @0x44fd78 @0x411be8 */
+        if (pVal == NULL) {
+            fatalError("'objects/carts[%d]/object_pos' not found in cfg.", /* @0x44fd44 */
+                       pRec->nCartIdx);
+        }
+        anObjPos[0] = (int)configEnvGetDouble(pVal);                      /* @0x4369f0 @0x411c16 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x436870 @0x411c2a */
+        anObjPos[1] = (int)configEnvGetDouble(pVal);                      /* @0x411c37 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x411c4b */
+        anObjPos[2] = (int)configEnvGetDouble(pVal);                      /* @0x411c58 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x411c6c */
+        anObjRot[0] = (short)(int)configEnvGetDouble(pVal);               /* @0x411c79 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x411c8e */
+        anObjRot[1] = (short)(int)configEnvGetDouble(pVal);               /* @0x411c9a */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x411cb0 */
+        anObjRot[2] = (short)(int)configEnvGetDouble(pVal);               /* @0x411cbb */
+
+        /* collision half-extents from strength @0x411cc5 (0.333333/75/90 +
+         * 1.0 constants @0x44b5a8/a4/a0/260) */
+        flExtentA = (float)pRec->nStatStrength * 0.333333f * 75.0f + 90.0f;
+        flExtentB = ((float)pRec->nStatStrength * 0.333333f + 1.0f) * 75.0f;
+
+        /* cart body cluster on pSubObjB (parent = cart scene object) @0x411cd3 */
+        objTurretAdd((WorldNode *)pRec->pSubObjB, 0, 0, 0, 0,             /* @0x405280 @0x411d09 */
+                     (int)pRec->pCartSceneObj);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjB, 0, 0, 150, 270.0f, 75.0f,      /* @0x4053a0 @0x411d31 */
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjB, 0, 0, -150, 300.0f, 75.0f,     /* @0x411d59 */
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjB, 190, 0, 300, 20.0f, 75.0f,     /* @0x411d84 */
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjB, -190, 0, 300, 20.0f, 75.0f,    /* @0x411daf */
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjB, 240, 0, -300, 20.0f, 75.0f,    /* @0x411dda */
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjB, -240, 0, -300, 20.0f, 75.0f,   /* @0x411e05 */
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        objTurretSetValue((WorldNode *)pRec->pSubObjB, (int)pRec->pCartSceneObj,     /* @0x405370 @0x411e17 */
+                          1, 2);
+
+        /* cart world cluster on pSubObjC at carts[%d]/object_pos @0x411e39 */
+        objTurretAdd((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],          /* @0x411e39 */
+                     anObjPos[2], anObjRot[1], (int)pRec->pCartSceneObj);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],      /* @0x411e6d */
+                         anObjPos[2] + 150, 270.0f, flExtentB,
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],      /* @0x411e9d */
+                         anObjPos[2] - 150, 300.0f, flExtentB,
+                         (int)pRec->pCartSceneObj, 300.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[2] + 190, anObjPos[1],/* @0x411ed2 */
+                         anObjPos[2] + 300, 20.0f, flExtentB,
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[2] - 190, anObjPos[1],/* @0x411f07 */
+                         anObjPos[2] + 300, 20.0f, flExtentB,
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[2] + 240, anObjPos[1],/* @0x411f3d */
+                         anObjPos[2] - 300, 20.0f, flExtentB,
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[2] - 240, anObjPos[1],/* @0x411f72 */
+                         anObjPos[2] - 300, 20.0f, flExtentB,
+                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        objTurretSetValue((WorldNode *)pRec->pSubObjC, (int)pRec->pCartSceneObj,     /* @0x411f84 */
+                          1, 2);
+
+        /* carts[%d]/handle_pos — two {x,y,z} triples onto the cart children @0x411f89 */
+        pCfg = configEnvGetValue(&g_configEnvMaster, pCfg, "handle_pos"); /* @0x44fd38 @0x411f89 */
+        if (pCfg == NULL) {
+            fatalError("'objects/carts[%d]/handle_pos' not found in cfg.", /* @0x44fd04 */
+                       pRec->nCartIdx);
+        }
+        anObjPos[0] = (int)configEnvGetDouble(pCfg);                      /* @0x411fb7 */
+        pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x411fcb */
+        anObjPos[1] = (int)configEnvGetDouble(pCfg);                      /* @0x411fd8 */
+        pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x411fec */
+        anObjPos[2] = (int)configEnvGetDouble(pCfg);                      /* @0x411ff9 */
+        pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x41200d */
+        sceneNodeSetPos(pRec->pCartChildB, anObjPos, 2);                  /* @0x431590 @0x41201f */
+        anObjPos[0] = (int)configEnvGetDouble(pCfg);                      /* @0x41202d */
+        pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x412041 */
+        anObjPos[1] = (int)configEnvGetDouble(pCfg);                      /* @0x41204e */
+        pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x412062 */
+        anObjPos[2] = (int)configEnvGetDouble(pCfg);                      /* @0x41206f */
+        pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x412083 */
+        sceneNodeSetPos(pRec->pCartChildA, anObjPos, 2);                  /* @0x412093 */
+
+        /* objects/characters[nCharIdx]/object_pos @0x412098 */
+        wsprintfA(szKey, "objects/characters[%d]", pRec->nCharIdx);       /* @0x44fcec @0x412098 */
+        pCfg = configEnvGetValue(&g_configEnvMaster, NULL, szKey);        /* @0x4120ba */
+        if (pCfg == NULL) {
+            fatalError("'objects/characters[%d]' not found in cfg.",      /* @0x44f9d0 */
+                       pRec->nCharIdx);
+        }
+        pVal = configEnvGetValue(&g_configEnvMaster, pCfg, "object_pos"); /* @0x44fd78 @0x4120d9 */
+        anObjPos[0] = (int)configEnvGetDouble(pVal);                      /* @0x4120f1 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x412105 */
+        anObjPos[1] = (int)configEnvGetDouble(pVal);                      /* @0x412112 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x412126 */
+        anObjPos[2] = (int)configEnvGetDouble(pVal);                      /* @0x412133 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x412147 */
+        anObjRot[0] = (short)(int)configEnvGetDouble(pVal);               /* @0x412154 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x412169 */
+        anObjRot[1] = (short)(int)configEnvGetDouble(pVal);               /* @0x412176 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x41218b */
+        anObjRot[2] = (short)(int)configEnvGetDouble(pVal);               /* @0x412196 */
+        configNextNode(&g_configEnvMaster, pVal);                         /* @0x41218b' */
+
+        /* character body cluster on pSubObjA + world cluster on pSubObjC @0x4121a0 */
+        objTurretAdd((WorldNode *)pRec->pSubObjA, 0, 0, 0, 0,             /* @0x4121b7 */
+                     (int)pRec->pCharSceneNode);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjA, 0, 0, 0, flExtentA, 230.0f,    /* @0x4121dd */
+                         (int)pRec->pCharSceneNode, 300.0f, 1);
+        objTurretAdd((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],          /* @0x412200 */
+                     anObjPos[2], anObjRot[1], (int)pRec->pCharSceneNode);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],      /* @0x41222b */
+                         anObjPos[2], 230.0f, flExtentA,
+                         (int)pRec->pCharSceneNode, 300.0f, 1);
+
+        if (pRec->field_174 == 0) {                                           /* @0x412230 */
+            ((WorldNode *)pRec->pSubObjA)->field_1c = 1;                      /* @0x412245 */
+            ((WorldNode *)pRec->pSubObjB)->field_1c = 1;                      /* @0x41224e */
+        } else {
+            ((WorldNode *)pRec->pSubObjC)->field_1c = 1;                      /* @0x412259 */
+        }
+
+        /* levels[%d]/start_positions[nStartPosIdx] placement @0x412260 */
+        wsprintfA(szKey, "levels[%d]", g_nLevelIdx);                      /* @0x44f7b4 @0x412260 */
+        pCfg = configEnvGetValue(&g_configEnvMaster, NULL, szKey);        /* @0x412281 */
+        if (pCfg == NULL) {
+            fatalError("'levels[%d]' not found in cfg.", g_nLevelIdx);    /* @0x44f794 */
+        }
+        wsprintfA(szKey, "start_positions[%d]", pRec->nStartPosIdx);      /* @0x44fcd8 @0x41229a */
+        pVal = configEnvGetValue(&g_configEnvMaster, pCfg, szKey);        /* @0x4122bb */
+        if (pVal == NULL) {
+            fatalError("'levels[%d]/start_positions[%d]' not found in cfg.", /* @0x44fca4 */
+                       g_nLevelIdx, pRec->nStartPosIdx);
+        }
+        anObjPos[0] = (int)configEnvGetDouble(pVal);                      /* @0x4122e1 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x4122f5 */
+        anObjPos[1] = (int)configEnvGetDouble(pVal);                      /* @0x412302 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x412316 */
+        anObjPos[2] = (int)configEnvGetDouble(pVal);                      /* @0x412323 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x412337 */
+        anObjRot[0] = (short)(int)configEnvGetDouble(pVal);               /* @0x412344 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x412359 */
+        anObjRot[1] = (short)(int)configEnvGetDouble(pVal);               /* @0x412366 */
+        pVal = configNextNode(&g_configEnvMaster, pVal);                  /* @0x41237b */
+        anObjRot[2] = (short)(int)configEnvGetDouble(pVal);               /* @0x412388 */
+        configNextNode(&g_configEnvMaster, pVal);                         /* @0x41239d */
+        nodeSetTransformFromChannels((WorldNode *)pRec->pSubObjB,          /* @0x404e00 @0x4123be */
+                                     anObjPos[0], anObjPos[1], anObjPos[2],
+                                     0, anObjRot[1]);
+        nodeSetTransformFromChannels((WorldNode *)pRec->pSubObjA,          /* @0x4123df */
+                                     anObjPos[0], anObjPos[1], anObjPos[2],
+                                     0, anObjRot[1]);
+        nodeSetTransformFromChannels((WorldNode *)pRec->pSubObjC,          /* @0x412400 */
+                                     anObjPos[0], anObjPos[1], anObjPos[2],
+                                     0, anObjRot[1]);
+    }
 
     /* @0x412556 cameraSetClassMeshes(&block, record->pCharSceneNode) — the
      * record field is NULL until players exist; sceneObjSetClassMesh treats
@@ -503,21 +748,6 @@ void levelObjectsCartsCameraInit(void) /* @0x411b70 */
     }
     g_camFollowBlock.nSnapDist = (int)configEnvGetDouble2(&g_configEnvMaster, pNode, "rot_speed"); /* 0x436a20 @0x4126c5 -> 0x45890c */
     g_camFollowBlock.nDiv = (int)configEnvGetDouble2(&g_configEnvMaster, pNode, "rot_max");        /* 0x436a20 @0x4126df -> 0x458908 */
-
-    {   /* TEMP DEBUG: dump the placed camera state */
-        extern int g_nDbgRendArm; /* scene.c */
-        int anChkI[3];
-        g_nDbgRendArm = 1;    /* arm [rendbg] for the first gameplay frames */
-        sceneNodeGetPos(g_pCamAimNode, 0, anChkI, 4);
-        appLog("[camdbg] aimNode=%08x %08x %08x", anChkI[0], anChkI[1], anChkI[2]);
-        sceneNodeGetPos(g_pCamPosNode, 0, anChkI, 4);
-        appLog("[camdbg] posNode=%08x %08x %08x", anChkI[0], anChkI[1], anChkI[2]);
-        sceneNodeGetPos(g_pSceneRoot, 0, anChkI, 4);
-        appLog("[camdbg] root=%08x %08x %08x", anChkI[0], anChkI[1], anChkI[2]);
-        appLog("[camdbg] root rot=%d %d %d", (int)((SceneNode *)g_pSceneRoot)->pChannels[0].rot[0],
-               (int)((SceneNode *)g_pSceneRoot)->pChannels[0].rot[1],
-               (int)((SceneNode *)g_pSceneRoot)->pChannels[0].rot[2]);
-    }
 }
 
 /* cameraSetClassMeshes @0x4023b0 — attach pMesh as the class mesh of the

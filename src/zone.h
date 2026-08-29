@@ -136,4 +136,12 @@ void *zoneConnCtor(ZoneConn *pConn, EventObject *pInZone, EventObject *pArZone,
  * (pFill != 0) or store (pFill == 0) the matching cell indices. */
 void zoneConnCollectMeshes(ZoneConn *pConn, EventObject *pArZone, int nFill);
 
+/* zoneWallPointSide @0x42a870 — nearest-wall side test over both edge
+ * lists of a nav node (1 = inner side). */
+int  zoneWallPointSide(AiNavNode *pMesh, float flX, float flZ);
+
+/* zoneWallCircleHit @0x42aac0 — point/radius collision against a nav
+ * node's connection walls (used by sceneRayFindNearest). */
+int  zoneWallCircleHit(AiNavNode *pMesh, float flX, float flZ, float flRadius);
+
 #endif /* ZONE_H */

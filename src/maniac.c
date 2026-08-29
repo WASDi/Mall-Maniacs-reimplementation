@@ -38,9 +38,6 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     case WM_KEYDOWN:                      /* 0x100 */
     case WM_KEYUP:                        /* 0x101 */
     case WM_CHAR:                         /* 0x102 */
-        appLog("[input] msg=0x%04x wParam=0x%08x lParam=0x%08x",
-               (unsigned)uMsg, (unsigned)wParam, (unsigned)lParam);  /* TEMP DEBUG */
-        break;
     default:
         break;
     }

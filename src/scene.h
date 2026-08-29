@@ -289,7 +289,7 @@ void *sceneryObjAlloc(SceneNode *pParent, int nChanPtr, int nChanPtr2, int nChan
                       short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef);
 int  scenNameToId(LPCSTR pszName);
 int  sceneCollectMeshHandles(int *pOut, int nMax, const char *pszFilter); /* @0x42b360 */
-int  sceneFindByName(int *pOut, int nMax, const char *pszFilter); /* @0x431fd0 */
+int  sceneFindByName(SceneNode **pOut, int nMax, const char *pszFilter); /* @0x431fd0 */
 int  scenNameToIdEx(LPCSTR pszName); /* @0x431e20 */
 int  sceneObjSetPos(SceneNode *pObj, int nX, int nY, int nZ, int nMode); /* @0x430660 */
 int  sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll, byte nMode); /* @0x4307d0 */
@@ -328,5 +328,12 @@ void gxSortPushKey(void *pMesh, void *pVerts, void *pNormals, int pTex, int pPal
 void mat3x3Mul(float *a, float *b, float *out);
 void chanBuildRotMatrix(SceneChannel *ch);
 int  sceneCacheLocalVerts(SceneNode *pNode); /* @0x42ffa0 */
+
+/* sceneRayFindNearest @0x42a750 — walk g_pNavNodeList and return the first
+ * floor node whose plane height at (flX, flZ) is within flMaxDist above
+ * flHeight and whose walls collide with point (flX, flZ) at radius
+ * flRadius (zoneWallCircleHit). */
+void *sceneRayFindNearest(float flZ, float flX, float flHeight,
+                          float flMaxDist, float flRadius);
 
 #endif /* SCENE_H */

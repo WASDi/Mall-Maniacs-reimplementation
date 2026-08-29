@@ -3,6 +3,7 @@
 #include <string.h>
 #include "obj.h"
 #include "gx.h"
+#include "scene.h"
 #include "config.h"
 #include "util.h"
 #include "pool.h"
@@ -402,8 +403,8 @@ WorldNode *worldNodeCtor(void *pMem, int nX, int nY, int nZ, short nScale,
     pNode->pNext = NULL;                    /* @0x402a42 */
     pNode->vPos.y = (float)nX;              /* +0x24 @0x402a57 */
     pNode->pShotList = NULL;                /* +0x10 @0x402a54 */
-    pNode->pTurretList = NULL;              /* +0x08 @0x402a51 */
-    pNode->pTurretList2 = NULL;             /* +0x0c @0x402a4e */
+    pNode->pChildMeshHead = NULL;            /* +0x08 @0x402a51 */
+    pNode->pTurretHead = NULL;               /* +0x0c @0x402a4e */
     pNode->field_3c = 0;                    /* @0x402a4b */
     pNode->field_14 = 0;                    /* @0x402a75 */
     pNode->field_1c = 0;                    /* @0x402a7b */
@@ -438,18 +439,137 @@ void objDtor(WorldNode *pNode) /* @0x402ab0 */
         objShotListFree(pNode->pShotList);           /* @0x406110 @0x402ae6 */
         memFreeDirect(pNode->pShotList);             /* @0x43dd37 @0x402aeb */
     }
-    pSub = pNode->pTurretList;                       /* +0x08 @0x402af4 */
+    pSub = pNode->pChildMeshHead;                    /* +0x08 @0x402af4 */
     if (pSub != NULL) {
         if (*(void **)((char *)pSub + 0x48) != NULL) { /* @0x402afb */
             objTurretListFree(1);                    /* @0x402b40 @0x402b04 */
         }
         memFreeDirect(pSub);                         /* @0x402b0a */
     }
-    pSub = pNode->pTurretList2;                      /* +0x0c @0x402b12 */
+    pSub = pNode->pTurretHead;                       /* +0x0c @0x402b12 */
     if (pSub != NULL) {
         if (*(void **)((char *)pSub + 0x18) != NULL) { /* @0x402b1a */
             objTurretListFree2(1);                   /* @0x402b70 @0x402b23 */
         }
         memFreeDirect(pSub);                         /* @0x402b29 */
+    }
+}
+
+/* --- player collision clusters (levelObjectsCartsCameraInit @0x411b70) --- */
+
+
+/* objTurretAdd @0x405280 — allocate a 0x1c turret entry, zero both polar
+ * vectors, store the polarized {nPosZ, nPosX} position twice, scale nAngle
+ * to radians (nAngle*g_flPi*g_dblAngleScale, i.e. 15-bit binary angle) and
+ * head-insert into pNode's +0x0c turret list. nTypeId is the caller's id
+ * (levelObjectsCartsCameraInit passes the record's scene node). */
+void objTurretAdd(WorldNode *pNode, int nPosX, int nPosY, int nPosZ,
+                  short nAngle, int nTypeId) /* @0x405280 */
+{
+    ObjTurret *pTurret = (ObjTurret *)malloc(sizeof(ObjTurret)); /* operator_new @0x43dd42 */
+    GxVec2 vIn;
+
+    (void)nPosY;
+    if (pTurret != NULL) {
+        gxVec2SetAngleZero(&pTurret->vPolar);                /* @0x434f90 @0x4052ba */
+        gxVec2SetAngleZero(&pTurret->vPos);                  /* @0x4052c2 */
+    }
+    gxVec2Set(&vIn, (float)nPosZ, (float)nPosX);             /* @0x434fa0 @0x4052f4 */
+    pTurret->vPos = vIn;                                     /* @0x4052fc */
+    mathVec2Polar(&pTurret->vPolar, &vIn);                   /* @0x435060 @0x405314 */
+    pTurret->flAngle = (float)(int)nAngle * g_flPi * (float)g_dblAngleScale; /* @0x405338 */
+    pTurret->nTypeId = nTypeId;                              /* @0x40533e */
+    pTurret->pNext = (ObjTurret *)pNode->pTurretHead;        /* @0x405349 */
+    pNode->pTurretHead = pTurret;                            /* @0x405353 */
+}
+
+/* objTurretSetValue @0x405370 — walk pNode's child-mesh list and write
+ * nValue1/nValue2 into every entry whose nChannelKey matches nKey. */
+void objTurretSetValue(WorldNode *pNode, int nKey, int nValue1, int nValue2) /* @0x405370 */
+{
+    ObjChildMesh *pMesh;
+
+    for (pMesh = (ObjChildMesh *)pNode->pChildMeshHead; pMesh != NULL;
+         pMesh = pMesh->pNext) {                             /* @0x40538f */
+        if (pMesh->nChannelKey == nKey) {                    /* @0x405384 */
+            pMesh->nValue1 = nValue1;                        /* @0x405389 */
+            pMesh->nValue2 = nValue2;                        /* @0x40538c */
+        }
+    }
+}
+
+/* nodeAddChildMesh @0x4053a0 — allocate a 0x4c child-mesh entry, zero the
+ * four polar vectors, store the polarized {nKeyZ, nX} position twice plus
+ * its polar form, the raw extents/channel key/mesh tag, then head-insert
+ * into pNode's +0x08 list. Finally the world coords are fromPolar of the
+ * entry's polar position rotated by pNode->flScaleA, stored twice. */
+void nodeAddChildMesh(WorldNode *pNode, int nX, int nY, int nKeyZ,
+                      float flExtentA, float flExtentB, int nChannelKey,
+                      float flExtentC, int nMeshId) /* @0x4053a0 */
+{
+    ObjChildMesh *pMesh = (ObjChildMesh *)malloc(sizeof(ObjChildMesh)); /* @0x43dd42 */
+    GxVec2 vIn;
+    GxVec2 vOut;
+
+    (void)nY;
+    if (pMesh != NULL) {
+        gxVec2SetAngleZero(&pMesh->vPolar);                  /* @0x4053da */
+        gxVec2SetAngleZero(&pMesh->vPos);                    /* @0x4053e2 */
+        gxVec2SetAngleZero(&pMesh->vWorldA);                 /* @0x4053ea */
+        gxVec2SetAngleZero(&pMesh->vWorldB);                 /* @0x4053f2 */
+    }
+    gxVec2Set(&vIn, (float)nKeyZ, (float)nX);                /* @0x405424 */
+    pMesh->vPos = vIn;                                       /* @0x40542c */
+    mathVec2Polar(&pMesh->vPolar, &vIn);                     /* @0x405444 */
+    pMesh->flExtentA = flExtentA;                            /* +0x14 @0x405463 */
+    pMesh->flExtentB = flExtentB;                            /* +0x10 @0x40546a */
+    pMesh->flExtentC = flExtentC;                            /* +0x18 @0x40546d */
+    pMesh->nChannelKey = nChannelKey;                        /* +0x0c @0x405476 */
+    pMesh->field_44 = 0;                                     /* +0x44 @0x405479 */
+    pMesh->nMeshId = nMeshId;                                /* +0x00 @0x40547c */
+    pMesh->nValue1 = 0;                                      /* +0x04 @0x40547e */
+    pMesh->nValue2 = 0;                                      /* +0x08 @0x405481 */
+    pMesh->pNext = (ObjChildMesh *)pNode->pChildMeshHead;    /* @0x405488 */
+    pNode->pChildMeshHead = pMesh;                           /* @0x40548b */
+    gxVec2Set(&vIn, pMesh->vPolar.x, pMesh->vPolar.y + pNode->flScaleA); /* @0x40549f */
+    gxVec2FromPolar(&vOut, &vIn);                            /* @0x434fc0 @0x4054a9 */
+    pMesh->vWorldA = vOut;                                   /* @0x4054b1 */
+    pMesh->vWorldB = vOut;                                   /* @0x4054bc */
+}
+
+/* nodeSetTransformFromChannels @0x404e00 — place pNode at {nPosZ, nPosX}
+ * (vPos and the vPosB copy), store nUnk at +0x3c, rotate by nAngle (same
+ * 15-bit scaling as objTurretAdd) into flScaleA/flScaleB, then recompute
+ * every child mesh's world coords from its polar form and raycast the
+ * floor with sceneRayFindNearest @0x42a750 (1000.0 search distance,
+ * flExtentA as the wall radius). */
+void nodeSetTransformFromChannels(WorldNode *pNode, int nPosX, int nPosY,
+                                  int nPosZ, int nUnk, short nAngle) /* @0x404e00 */
+{
+    ObjChildMesh *pMesh;
+    GxVec2 vIn;
+    GxVec2 vOut;
+
+    pNode->vPos.x = (float)nPosZ;                            /* +0x20 @0x404e18 */
+    pNode->field_3c = nUnk;                                  /* +0x3c @0x404e22 */
+    pNode->vPos.y = (float)nPosX;                            /* +0x24 @0x404e27 */
+    pNode->vPosB = pNode->vPos;                              /* @0x404e34 */
+    pNode->flScaleA = (float)(int)nAngle * g_flPi * (float)g_dblAngleScale; /* @0x404e46 */
+    pNode->flScaleB = pNode->flScaleA;                       /* +0x34 @0x404e49 */
+    for (pMesh = (ObjChildMesh *)pNode->pChildMeshHead; pMesh != NULL;
+         pMesh = pMesh->pNext) {                             /* @0x404e85 */
+        gxVec2Set(&vIn, pMesh->vPolar.x, pMesh->vPolar.y + pNode->flScaleA); /* @0x404e60 */
+        gxVec2FromPolar(&vOut, &vIn);                        /* @0x404e6a */
+        pMesh->vWorldA = vOut;                               /* @0x404e71 */
+        pMesh->vWorldB = vOut;                               /* @0x404e7c */
+    }
+    for (pMesh = (ObjChildMesh *)pNode->pChildMeshHead; pMesh != NULL;
+         pMesh = pMesh->pNext) {                             /* @0x404edc */
+        pMesh->pSurface = sceneRayFindNearest(               /* @0x42a750 @0x404ebe */
+            pMesh->vWorldA.x + pNode->vPos.x,
+            pMesh->vWorldA.y + pNode->vPos.y,
+            (float)nPosY, 1000.0f, pMesh->flExtentA);        /* @0x447a000=1000.0 @0x404eaa */
+        pMesh->flHeight = (float)nPosY;                      /* +0x40 @0x404eca */
+        pMesh->field_44 = 0;                                 /* +0x44 @0x404ecd */
     }
 }

@@ -370,3 +370,45 @@ void gxVec2FromPolar(GxVec2 *pOut, const GxVec2 *pPolar) /* @0x434fc0 */
     pOut->x = pPolar->x * (float)cos((double)pPolar->y);
     pOut->y = pPolar->x * (float)sin((double)pPolar->y);
 }
+
+/* mathSegIntersect @0x406130 — intersect the infinite lines through
+ * (ax,ay)-(bx,by) and (cx,cy)-(dx,dy). Writes the intersection into
+ * pOut[0]/pOut[1] and returns 1, or writes the ab midpoint and returns 0
+ * when the lines are parallel/coincident (vertical-line special cases
+ * first). g_flHalf @0x44b274 = 0.5f. */
+int mathSegIntersect(float flAx, float flAy, float flBx, float flBy,
+                     float flCx, float flCy, float flDx, float flDy,
+                     float *pOut) /* @0x406130 */
+{
+    static const float g_flHalf = 0.5f; /* @0x44b274 (bytes 00 00 00 3F) */
+    float flSlopeA;
+    float flSlopeC;
+    float flBaseC;
+
+    if (flCx == flDx) {
+        if (flBx != flAx) {
+            flSlopeA = (flAy - flBy) / (flAx - flBx);
+            pOut[0] = flCx;
+            pOut[1] = flSlopeA * flCx + (flBy - flSlopeA * flBx);
+            return 1;                                    /* @0x406183 */
+        }
+    } else if (flBx == flAx) {                           /* @0x406189 */
+        flSlopeC = (flDy - flCy) / (flDx - flCx);
+        pOut[0] = flBx;
+        pOut[1] = flSlopeC * flBx + (flCy - flSlopeC * flCx);
+        return 1;                                        /* @0x4061bf */
+    } else {
+        flSlopeA = (flBy - flAy) / (flBx - flAx);        /* @0x4061c5 */
+        flSlopeC = (flDy - flCy) / (flDx - flCx);
+        flBaseC = flCy - flSlopeC * flCx;
+        if (flSlopeC != flSlopeA) {                      /* @0x406207 */
+            flSlopeA = (flBaseC - (flBy - flSlopeA * flBx)) / (flSlopeA - flSlopeC); /* @0x40624c */
+            pOut[0] = flSlopeA;
+            pOut[1] = flSlopeA * flSlopeC + flBaseC;
+            return 1;                                    /* @0x40625f */
+        }
+    }
+    pOut[0] = (flAx + flBx) * g_flHalf;                  /* @0x406214 */
+    pOut[1] = (flBy + flAy) * g_flHalf;
+    return 0;                                            /* @0x406239 */
+}

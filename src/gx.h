@@ -146,4 +146,9 @@ void gxDrawQuad(void *v0, void *v1, void *v2, void *v3, int color,
                  void *uv);                 /* @0x433670 */
 void gxDrawQuadColor(void *tex,int x0,int y0,int x1,int y1,int u0,int v0,int u1,int v1); /* @0x414470 */
 
+/* mathSegIntersect @0x406130 — line/line intersection (see gx.c). */
+int  mathSegIntersect(float flAx, float flAy, float flBx, float flBy,
+                      float flCx, float flCy, float flDx, float flDy,
+                      float *pOut);
+
 #endif /* GX_H */

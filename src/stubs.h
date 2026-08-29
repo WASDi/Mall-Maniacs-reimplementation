@@ -27,7 +27,6 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
 /* Gameplay entry contracts used by stateLevelInit0..4. Player/world setup is
  * still deferred; commandDispatch routes the original run command to runCmd
  * and level startup scripts' "eload <file>.eo" to eloadCmd (src/obj.c). */
-void playerSetupCharacters(void);                            /* @0x41b760 */
 void unloadGameWorld(void);                                  /* gameplay teardown */
 unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand); /* @0x408b60 */
 void sndEmitterUpdateAll(void);                              /* @0x42bf40 */
