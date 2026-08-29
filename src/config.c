@@ -198,7 +198,7 @@ static void configLinkNode(ConfigEnv *pEnv, ConfigNode *pParent, ConfigNode *pNo
 }
 
 /* configNodeDtor @0x435700 — recursive child/sibling teardown. */
-static void configNodeDtor(ConfigNode *pNode) /* @0x435700 */
+void configNodeDtor(ConfigNode *pNode) /* @0x435700 */
 {
     pNode->nType = CONFIG_NODE_BLOCK;
     if (pNode->pChild != NULL) {
@@ -537,7 +537,7 @@ error:
 
 /* configFindNode @0x4367e0 — find a sibling named pKey: start at pNode's
  * parent's first child (or the env root when pNode has no parent). */
-static ConfigNode *configFindNode(ConfigEnv *pEnv, ConfigNode *pNode, const char *pKey) /* @0x4367e0 */
+ConfigNode *configFindNode(ConfigEnv *pEnv, ConfigNode *pNode, const char *pKey) /* @0x4367e0 */
 {
     ConfigNode *pCur;
     if (pNode == NULL || pNode->pParent == NULL) {
@@ -550,6 +550,17 @@ static ConfigNode *configFindNode(ConfigEnv *pEnv, ConfigNode *pNode, const char
             return pCur;
         }
         pCur = pCur->pNext;
+    }
+    return NULL;
+}
+
+/* configNodeGetId @0x436850 — first child of pNode (the block's id token
+ * in the .sol grammar). NULL when pNode is NULL. Used by nloadCmd to
+ * descend from a top-level "0001" block into its key/value children. */
+ConfigNode *configNodeGetId(ConfigNode *pNode) /* @0x436850 */
+{
+    if (pNode != NULL) {
+        return pNode->pChild;
     }
     return NULL;
 }

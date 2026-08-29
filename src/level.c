@@ -9,6 +9,7 @@
 #include "levelselect.h"
 #include "menu.h"
 #include "mstring.h"
+#include "nav.h"
 #include "pool.h"
 #include "scene.h"
 #include "sen.h"
@@ -136,7 +137,7 @@ void levelSceneTexturesLoad(void) /* @0x4104b0 */
         for (i = 0; i < n; i++) {
             AiNavNode *pNav = malloc(sizeof(AiNavNode));          /* operator_new @0x43dd42 @0x41083a */
             if (pNav != NULL) {
-                aiNavNodeCtorScene(pNav, anHandles[i]);           /* @0x428cf0 @0x410857 */
+                aiNavNodeCtorScene(pNav, (SceneNode *)(size_t)anHandles[i]); /* @0x428cf0 @0x410857 */
             }
         }
     }

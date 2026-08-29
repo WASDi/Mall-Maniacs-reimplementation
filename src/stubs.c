@@ -6,6 +6,7 @@
 #include "pool.h"
 #include "player.h"
 #include "obj.h"
+#include "nav.h"
 #include "custom_helpers.h"
 
 extern HWND g_hWnd;
@@ -97,7 +98,8 @@ void sndStopAllVoices(void *pVoiceList)
 /* commandDispatch — original command/config query contract. Returning NULL
  * is safe for callers that only use the result as optional text. The level
  * startup scripts run "eload <file>.eo" (EventObject zones) and "nload
- * <file>.ai" (AI nav mesh, still deferred). */
+ * <file>.ai" (AI nav buoys). The original dispatches through a name table
+ * @0x44b3xx; the rebuild hardcodes the commands in use. */
 unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
 {
     (void)nCommand;
@@ -106,6 +108,9 @@ unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
     }
     else if (pszCommand != NULL && strncmp(pszCommand, "eload ", 6) == 0) {
         eloadCmd(0, pszCommand + 6);     /* @0x406cb0 */
+    }
+    else if (pszCommand != NULL && strncmp(pszCommand, "nload ", 6) == 0) {
+        nloadCmd(0, pszCommand + 6);     /* @0x407e10 */
     }
     return NULL;
 }
@@ -154,27 +159,6 @@ void objTurretListFree(int nMode) /* @0x402b40 */
 void objTurretListFree2(int nMode) /* @0x402b70 */
 {
     (void)nMode;
-}
-
-/* aiNavNodeCtorScene @0x428cf0 — documented TODO stub, see stubs.h. The
- * original (thiscall, 0x48-byte AiNavNode from levelSceneTexturesLoad):
- * zeroes pConnList/pEdgeList/pNext/pPrev, sceneNodeGetPos(node,0,
- * &node->nPosX,4), node->flAvgY = (float)node->nPosY, g_pNavMeshData =
- * *(mesh+0x14) via sceneNodeGetMesh, clears g_nNavTriIdx/g_pNavTriCur,
- * then aiNavNodeUpdate. Deferred with the AI navigation subsystem
- * (docs/16-rebuild.md step 2). */
-void aiNavNodeCtorScene(AiNavNode *pNavNode, int nSceneNode) /* @0x428cf0 */
-{
-    (void)pNavNode; (void)nSceneNode;
-}
-
-/* zoneWallListBuild @0x42a650 — documented TODO stub, see stubs.h. Original
- * pass over g_pNavNodeList: zoneConnMergeDupesInMesh per node, zoneWall
- * CalcPlane per node, zoneConnMergeDupesCrossMesh per node, a doubly-linked
- * wall-list resort (+0x10/+0x44), zoneWallMergeDupesSameDir per node.
- * Deferred with the zone/AI subsystem; no-op while the nav list is empty. */
-void zoneWallListBuild(void) /* @0x42a650 */
-{
 }
 
 /* zoneAvoidWalls @0x4023e0 — documented TODO stub, see stubs.h. Original

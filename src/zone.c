@@ -231,3 +231,380 @@ int zoneWallCircleHit(AiNavNode *pMesh, float flX, float flZ, float flRadius) /*
     }
     return 0;                                            /* @0x42acea */
 }
+
+/* =====================================================================
+ * Nav-mesh wall-list passes (zoneWallListBuild @0x42a650 cluster over
+ * the AiNavNode list built by aiNavNodeUpdate @0x428d50).
+ * ===================================================================== */
+
+static const float g_flHalfPi = 1.5707964f;      /* @0x44b270 */
+static const float g_flPlaneSentinel = 1.17549435e-38f; /* @0x44b720 (FLT_MIN, value-compared) */
+
+/* zoneConnLink @0x429c90 — insert pConn into pMesh's cross-mesh
+ * connection list (+0x38, head insert, pPrev = NULL) with pPeerMesh set,
+ * then derive the float block exactly like aiNavNodeAddEdge: flV0Z/
+ * flV0X/flV1Z/flV1X from the raw coords and (+0x1c/+0x20) the unit
+ * direction of V0->V1 in (Z,X) rotated -90 degrees (polar angle -= pi/2,
+ * polar length forced to 1.0). Called by zoneConnMergeDupesCrossMesh. */
+void zoneConnLink(AiNavNode *pMesh, AiNavNode *pPeerMesh, AiNavEdge *pConn) /* @0x429c90 */
+{
+    GxVec2 vDir;
+    GxVec2 vPolar;
+    GxVec2 vUnit;
+
+    pConn->pPrev = NULL;                              /* +0x04 */
+    pConn->pPeerMesh = pPeerMesh;                     /* +0x08 */
+    pConn->pNext = pMesh->pConnList;                  /* +0x00 */
+    if (pMesh->pConnList != NULL) {
+        pMesh->pConnList->pPrev = pConn;
+    }
+    pMesh->pConnList = pConn;
+    pConn->flV0Z = (float)pConn->nV0z;                /* +0x0c */
+    pConn->flV0X = (float)pConn->nV0x;                /* +0x10 */
+    pConn->flV1Z = (float)pConn->nV1z;                /* +0x14 */
+    pConn->flV1X = (float)pConn->nV1x;                /* +0x18 */
+    gxVec2Set(&vDir, pConn->flV1Z - pConn->flV0Z,
+              pConn->flV1X - pConn->flV0X);           /* @0x434fa0 */
+    mathVec2Polar(&vPolar, &vDir);                    /* @0x435060 */
+    vPolar.y -= g_flHalfPi;
+    vPolar.x = 1.0f;
+    gxVec2FromPolar(&vUnit, &vPolar);                 /* @0x434fc0 */
+    pConn->flUnitX = vUnit.x;                         /* +0x1c */
+    pConn->flUnitNegZ = vUnit.y;                      /* +0x20 */
+}
+
+/* Endpoints of two nav edges overlap within nTol on X/Z and nYTol on Y
+ * (12-comparison AABB test from zoneConnMergeDupesInMesh; the endpoint
+ * order is orientation-independent). */
+static int zoneConnBoxesOverlap(AiNavEdge *pA, AiNavEdge *pB, int nTol, int nYTol)
+{
+    return pA->nV1x <= pB->nV0x + nTol &&
+           pA->nV1y <= pB->nV0y + nYTol &&
+           pA->nV1z <= pB->nV0z + nTol &&
+           pB->nV0x - nTol <= pA->nV1x &&
+           pB->nV0y - nYTol <= pA->nV1y &&
+           pB->nV0z - nTol <= pA->nV1z &&
+           pA->nV0x <= pB->nV1x + nTol &&
+           pA->nV0y <= pB->nV1y + nYTol &&
+           pA->nV0z <= pB->nV1z + nTol &&
+           pB->nV1x - nTol <= pA->nV0x &&
+           pB->nV1y - nYTol <= pA->nV0y &&
+           pB->nV1z - nTol <= pA->nV0z;
+}
+
+/* zoneConnMergeDupesInMesh @0x429d60 — merge duplicate AABB-overlapping
+ * edges (tolerance +-2 on all three axes) within one mesh's pEdgeList
+ * (+0x3c): both records are unlinked (doubly-linked, head fixup) and
+ * freed; the outer scan continues from the pre-captured successor. */
+void zoneConnMergeDupesInMesh(AiNavNode *pMesh) /* @0x429d60 */
+{
+    AiNavEdge *pA = pMesh->pEdgeList;
+
+    while (pA != NULL) {
+        AiNavEdge *pNextA = pA->pNext;
+        AiNavEdge *pB;
+
+        for (pB = pNextA; pB != NULL; pB = pB->pNext) {
+            if (zoneConnBoxesOverlap(pA, pB, 2, 2)) {
+                if (pA->pPrev != NULL) {              /* unlink pA */
+                    pA->pPrev->pNext = pA->pNext;
+                }
+                if (pA->pNext != NULL) {
+                    pA->pNext->pPrev = pA->pPrev;
+                }
+                if (pA == pMesh->pEdgeList) {
+                    pMesh->pEdgeList = pA->pNext;
+                }
+                if (pB->pPrev != NULL) {              /* unlink pB */
+                    pB->pPrev->pNext = pB->pNext;
+                }
+                if (pB->pNext != NULL) {
+                    pB->pNext->pPrev = pB->pPrev;
+                }
+                if (pB == pMesh->pEdgeList) {
+                    pMesh->pEdgeList = pB->pNext;
+                }
+                free(pA);                             /* memFreeDirect @0x43dd37 */
+                free(pB);
+                break;
+            }
+        }
+        pA = pNextA;                                  /* pre-captured before the merge */
+    }
+}
+
+/* zoneConnMergeDupesCrossMesh @0x429e90 — two sweeps over this mesh's
+ * pEdgeList against every other mesh's pEdgeList: sweep 1 with +-2 on
+ * all axes, sweep 2 with +-2 on X/Z but +-2500 (0x9c4) on Y (floors one
+ * ramp-step apart). On a match both records are unlinked (NOT freed)
+ * and re-linked through zoneConnLink into the owners' +0x38 conn lists
+ * with the peer mesh recorded. */
+void zoneConnMergeDupesCrossMesh(AiNavNode *pMesh) /* @0x429e90 */
+{
+    int nPass;
+
+    for (nPass = 0; nPass < 2; nPass++) {
+        int nYTol = (nPass == 0) ? 2 : 2500;
+        AiNavEdge *pA = pMesh->pEdgeList;
+
+        while (pA != NULL) {
+            AiNavEdge *pNextA = pA->pNext;
+            AiNavNode *pPeer;
+            int bMerged = 0;
+
+            for (pPeer = g_pNavNodeList; pPeer != NULL && !bMerged;
+                 pPeer = pPeer->pNext) {
+                AiNavEdge *pB;
+
+                if (pPeer == pMesh) {
+                    continue;
+                }
+                for (pB = pPeer->pEdgeList; pB != NULL; pB = pB->pNext) {
+                    if (zoneConnBoxesOverlap(pA, pB, 2, nYTol)) {
+                        if (pA->pPrev != NULL) {      /* unlink pA from pMesh */
+                            pA->pPrev->pNext = pA->pNext;
+                        }
+                        if (pA->pNext != NULL) {
+                            pA->pNext->pPrev = pA->pPrev;
+                        }
+                        if (pA == pMesh->pEdgeList) {
+                            pMesh->pEdgeList = pA->pNext;
+                        }
+                        if (pB->pPrev != NULL) {      /* unlink pB from pPeer */
+                            pB->pPrev->pNext = pB->pNext;
+                        }
+                        if (pB->pNext != NULL) {
+                            pB->pNext->pPrev = pB->pPrev;
+                        }
+                        if (pB == pPeer->pEdgeList) {
+                            pPeer->pEdgeList = pB->pNext;
+                        }
+                        zoneConnLink(pMesh, pPeer, pA);   /* @0x429c90 */
+                        zoneConnLink(pPeer, pMesh, pB);
+                        bMerged = 1;
+                        break;
+                    }
+                }
+            }
+            pA = pNextA;
+        }
+    }
+}
+
+/* zoneWallCalcPlane @0x42a1c0 — compute pMesh's walkable plane from its
+ * pEdgeList: reference point (+0xc/+0x10/+0x14) = V0 of the first edge
+ * whose endpoints differ in Y (first edge's V0 otherwise), flAvgY
+ * (+0x00) = mean of the per-edge (nV1y+nV0y)/2 midpoints, and the
+ * slopes +0x04/+0x08 = tan(polar(normal.*, normal.y) - pi/2) per axis
+ * (i.e. -Nz/Ny and -Nx/Ny via the gxVec2 polar round-trip), each guarded
+ * by the rotated unit vector's X being non-zero. Returns without
+ * touching the slopes when the list is empty or every edge is vertical
+ * (the 1.17549435e-38f sentinel @0x44b720 is value-compared). */
+void zoneWallCalcPlane(AiNavNode *pMesh) /* @0x42a1c0 */
+{
+    AiNavEdge *pEdge = pMesh->pEdgeList;
+    AiNavEdge *pCur;
+    float flFound;
+    float flCount;
+    GxVec2 vDir;
+    GxVec2 vPolarA;
+    GxVec2 vPolarB;
+    GxVec2 vUnitA;
+    GxVec2 vUnitB;
+
+    if (pEdge == NULL) {
+        return;
+    }
+    pMesh->nRefX = pEdge->nV0x;                       /* +0x0c @0x42a1da */
+    pMesh->nRefY = pEdge->nV0y;                       /* +0x10 */
+    pMesh->nRefZ = pEdge->nV0z;                       /* +0x14 */
+    flFound = 1.17549435e-38f;                        /* sentinel @0x44b720 */
+    for (pCur = pEdge; pCur != NULL; pCur = pCur->pNext) {
+        if (pCur->nV1y != pCur->nV0y) {               /* first non-vertical edge @0x42a205 */
+            pMesh->nRefX = pCur->nV0x;
+            pMesh->nRefY = pCur->nV0y;
+            pMesh->nRefZ = pCur->nV0z;
+            flFound = (float)pCur->nV1y;
+            break;
+        }
+    }
+    pMesh->flAvgY = 0.0f;                             /* @0x42a224 */
+    flCount = 0.0f;
+    for (pCur = pEdge; pCur != NULL; pCur = pCur->pNext) {
+        int nMid = (pCur->nV1y + pCur->nV0y) / 2;     /* signed div, trunc toward 0 */
+
+        pMesh->flAvgY += (float)nMid;
+        flCount += 1.0f;                              /* @0x44b260 */
+    }
+    pMesh->flAvgY = pMesh->flAvgY / flCount;          /* @0x42a24e */
+    if (flFound == g_flPlaneSentinel) {               /* all edges vertical @0x42a25c */
+        return;
+    }
+    pMesh->flSlopeZ = 0.0f;                           /* +0x04 @0x42a252 */
+    pMesh->flSlopeX = 0.0f;                           /* +0x08 */
+    gxVec2Set(&vDir, pMesh->flNormalZ, pMesh->flNormalY); /* (Nz, Ny) @0x42a26d */
+    mathVec2Polar(&vPolarA, &vDir);                   /* @0x435060 */
+    vPolarA.y -= g_flHalfPi;
+    gxVec2Set(&vDir, pMesh->flNormalX, pMesh->flNormalY); /* (Nx, Ny) @0x42a288 */
+    mathVec2Polar(&vPolarB, &vDir);
+    vPolarB.y -= g_flHalfPi;
+    gxVec2FromPolar(&vUnitA, &vPolarA);               /* @0x434fc0 guard probe */
+    if (vUnitA.x != 0.0f) {
+        gxVec2FromPolar(&vUnitA, &vPolarA);
+        gxVec2FromPolar(&vUnitB, &vPolarA);
+        pMesh->flSlopeZ = vUnitA.y / vUnitB.x;        /* = -Nz/Ny via tan @0x42a2ff */
+    }
+    gxVec2FromPolar(&vUnitA, &vPolarB);
+    if (vUnitA.x != 0.0f) {
+        gxVec2FromPolar(&vUnitA, &vPolarB);
+        gxVec2FromPolar(&vUnitB, &vPolarB);
+        pMesh->flSlopeX = vUnitA.y / vUnitB.x;        /* = -Nx/Ny via tan @0x42a343 */
+    }
+}
+
+/* zoneWallMergeDupesSameDir @0x42a360 — merge pEdgeList (+0x3c) and then
+ * pConnList (+0x38) records that share the same polar direction
+ * (+0x1c/+0x20 float-compared; the conn pass also requires the same
+ * pPeerMesh) and have touching endpoints (tolerance +-1): the survivor
+ * extends over the duplicate (case 1: takes the duplicate's V0, case 2:
+ * its V1, float endpoint fields updated alongside) and the duplicate is
+ * unlinked and freed. The outer cursor always advances to the
+ * pre-captured successor. */
+void zoneWallMergeDupesSameDir(AiNavNode *pMesh) /* @0x42a360 */
+{
+    int nPass;
+
+    for (nPass = 0; nPass < 2; nPass++) {
+        AiNavEdge *pA = (nPass == 0) ? pMesh->pEdgeList : pMesh->pConnList;
+
+        while (pA != NULL) {
+            AiNavEdge *pNextA = pA->pNext;
+            AiNavEdge *pB;
+
+            for (pB = pNextA; pB != NULL; pB = pB->pNext) {
+                if (pA->flUnitX == pB->flUnitX &&
+                    pA->flUnitNegZ == pB->flUnitNegZ &&
+                    (nPass == 0 || pA->pPeerMesh == pB->pPeerMesh)) {
+                    int bMerged = 0;
+
+                    if (pA->nV1x <= pB->nV0x + 1 &&   /* case 1: A.v1 near B.v0 */
+                        pA->nV1y <= pB->nV0y + 1 &&
+                        !(pB->nV0z + 1 < pA->nV1z) &&
+                        !(pA->nV1x < pB->nV0x - 1) &&
+                        !(pA->nV1y < pB->nV0y - 1) &&
+                        !(pA->nV1z < pB->nV0z - 1)) {
+                        pB->nV0x = pA->nV0x;          /* survivor takes A's V0 */
+                        pB->nV0y = pA->nV0y;
+                        pB->nV0z = pA->nV0z;
+                        pB->flV0Z = pA->flV0Z;
+                        pB->flV0X = pA->flV0X;
+                        bMerged = 1;
+                    } else if (pA->nV0x <= pB->nV1x + 1 &&   /* case 2: A.v0 near B.v1 */
+                               pA->nV0y <= pB->nV1y + 1 &&
+                               pA->nV0z <= pB->nV1z + 1 &&
+                               pB->nV1x - 1 <= pA->nV0x &&
+                               pB->nV1y - 1 <= pA->nV0y &&
+                               pB->nV1z - 1 <= pA->nV0z) {
+                        pB->nV1x = pA->nV1x;          /* survivor takes A's V1 */
+                        pB->nV1y = pA->nV1y;
+                        pB->nV1z = pA->nV1z;
+                        pB->flV1Z = pA->flV1Z;
+                        pB->flV1X = pA->flV1X;
+                        bMerged = 1;
+                    }
+                    if (bMerged) {
+                        if (pA->pPrev != NULL) {      /* unlink the duplicate */
+                            pA->pPrev->pNext = pA->pNext;
+                        }
+                        if (pA->pNext != NULL) {
+                            pA->pNext->pPrev = pA->pPrev;
+                        }
+                        if (nPass == 0) {
+                            if (pA == pMesh->pEdgeList) {
+                                pMesh->pEdgeList = pA->pNext;
+                            }
+                        } else {
+                            if (pA == pMesh->pConnList) {
+                                pMesh->pConnList = pA->pNext;
+                            }
+                        }
+                        free(pA);                     /* memFreeDirect @0x43dd37 */
+                        break;
+                    }
+                }
+            }
+            pA = pNextA;
+        }
+    }
+}
+
+/* zoneWallListBuild @0x42a650 — the post-load pass over g_pNavNodeList:
+ * zoneConnMergeDupesInMesh per node, zoneWallCalcPlane per node,
+ * zoneConnMergeDupesCrossMesh per node, an ascending insertion sort of
+ * the doubly-linked node list by flAvgY (pulled out of the list and
+ * re-linked after the nearest predecessor with flAvgY <= its own, head
+ * insert when none), then zoneWallMergeDupesSameDir per node. */
+void zoneWallListBuild(void) /* @0x42a650 */
+{
+    AiNavNode *pNode;
+
+    for (pNode = g_pNavNodeList; pNode != NULL; pNode = pNode->pNext) {
+        zoneConnMergeDupesInMesh(pNode);              /* @0x429d60 */
+    }
+    for (pNode = g_pNavNodeList; pNode != NULL; pNode = pNode->pNext) {
+        zoneWallCalcPlane(pNode);                     /* @0x42a1c0 */
+    }
+    for (pNode = g_pNavNodeList; pNode != NULL; pNode = pNode->pNext) {
+        zoneConnMergeDupesCrossMesh(pNode);           /* @0x429e90 */
+    }
+    {
+        AiNavNode *pIns = (g_pNavNodeList != NULL) ? g_pNavNodeList->pNext : NULL;
+
+        while (pIns != NULL) {                        /* sort @0x42a69d..0x42a72d */
+            AiNavNode *pNextIns = pIns->pNext;
+            AiNavNode *pScan = pIns->pPrev;
+            int bMoved = 0;
+
+            if (pScan != NULL) {
+                while (pIns->flAvgY < pScan->flAvgY) {
+                    if (pScan->pPrev == NULL) {
+                        /* pScan is the list head: insert before it. */
+                        if (pIns->pPrev != NULL) {
+                            pIns->pPrev->pNext = pIns->pNext;
+                        }
+                        if (pIns->pNext != NULL) {
+                            pIns->pNext->pPrev = pIns->pPrev;
+                        }
+                        g_pNavNodeList = pIns;
+                        pScan->pPrev = pIns;
+                        pIns->pNext = pScan;
+                        pIns->pPrev = NULL;
+                        bMoved = 1;
+                        break;
+                    }
+                    pScan = pScan->pPrev;
+                }
+                if (!bMoved && pIns->pPrev != pScan) {
+                    /* Insert after pScan (the first node whose flAvgY is
+                     * <= pIns's walking back from pIns's old position). */
+                    if (pIns->pPrev != NULL) {
+                        pIns->pPrev->pNext = pIns->pNext;
+                    }
+                    if (pIns->pNext != NULL) {
+                        pIns->pNext->pPrev = pIns->pPrev;
+                    }
+                    if (pScan->pNext != NULL) {
+                        pScan->pNext->pPrev = pIns;
+                    }
+                    pIns->pPrev = pScan;
+                    pIns->pNext = pScan->pNext;
+                    pScan->pNext = pIns;
+                }
+            }
+            pIns = pNextIns;
+        }
+    }
+    for (pNode = g_pNavNodeList; pNode != NULL; pNode = pNode->pNext) {
+        zoneWallMergeDupesSameDir(pNode);             /* @0x42a360 */
+    }
+}

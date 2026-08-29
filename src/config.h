@@ -75,6 +75,9 @@ void        configEnvGetString(MString *pOut, ConfigNode *pNode, const char *pKe
 double      configEnvGetDouble2(ConfigEnv *pEnv, ConfigNode *pNode, const char *pKey); /* @0x436a20 */
 MString    *configNodeGetValue(MString *pOut, ConfigNode *pNode);              /* @0x436940 */
 double      configEnvGetDouble(ConfigNode *pNode);                             /* @0x4369f0 node-direct */
+ConfigNode *configNodeGetId(ConfigNode *pNode);                                /* @0x436850 first child */
+ConfigNode *configFindNode(ConfigEnv *pEnv, ConfigNode *pNode, const char *pKey); /* @0x4367e0 */
+void        configNodeDtor(ConfigNode *pNode);                                 /* @0x435700 */
 ConfigNode *configNextNode(ConfigEnv *pEnv, ConfigNode *pNode);                /* @0x436870 */
 void        configEnvFreeChildren(ConfigEnv *pEnv);                            /* @0x4368a0 */
 unsigned char *configGetValue(const char *pKey);                               /* @0x408c60 */

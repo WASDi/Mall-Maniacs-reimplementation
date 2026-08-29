@@ -144,4 +144,13 @@ int  zoneWallPointSide(AiNavNode *pMesh, float flX, float flZ);
  * node's connection walls (used by sceneRayFindNearest). */
 int  zoneWallCircleHit(AiNavNode *pMesh, float flX, float flZ, float flRadius);
 
+/* --- nav-mesh wall-list passes (zoneWallListBuild @0x42a650 cluster,
+ * run by levelSceneTexturesLoad after the FLOOR nav nodes are built) --- */
+void zoneConnLink(AiNavNode *pMesh, AiNavNode *pPeerMesh, AiNavEdge *pConn); /* @0x429c90 */
+void zoneConnMergeDupesInMesh(AiNavNode *pMesh);                  /* @0x429d60 */
+void zoneConnMergeDupesCrossMesh(AiNavNode *pMesh);               /* @0x429e90 */
+void zoneWallCalcPlane(AiNavNode *pMesh);                         /* @0x42a1c0 */
+void zoneWallMergeDupesSameDir(AiNavNode *pMesh);                 /* @0x42a360 */
+void zoneWallListBuild(void);                                     /* @0x42a650 */
+
 #endif /* ZONE_H */

@@ -58,23 +58,6 @@ void objTurretListFree2(int nMode);                          /* @0x402b70 */
  * Stub: no copy, returns 1. */
 int scenSetDir(LPCSTR pszDir);
 
-/* aiNavNodeCtorScene @0x428cf0 — documented TODO stub (see stubs.c). The
- * original is a thiscall ctor over a 0x48-byte node allocated by
- * levelSceneTexturesLoad for every "FLOOR" mesh of the ph scene: zeroes
- * pConnList/pEdgeList/pNext/pPrev, reads the node position into
- * +0x2a..+0x34 and flAvgY, grabs the mesh triangle data and runs
- * aiNavNodeUpdate. The AI navigation subsystem is deferred; the node is
- * intentionally left unlinked (the original links it through
- * zoneWallListBuild's g_pNavNodeList pass). */
-void aiNavNodeCtorScene(AiNavNode *pNavNode, int nSceneNode);
-
-/* zoneWallListBuild @0x42a650 — documented TODO stub (see stubs.c). The
- * original walks g_pNavNodeList (+0x40 next) running zoneConnMergeDupes
- * InMesh, zoneWallCalcPlane, zoneConnMergeDupesCrossMesh, a link-list
- * resort and zoneWallMergeDupesSameDir. Deferred with the zone/AI
- * subsystem; safe no-op while the nav-node list stays empty. */
-void zoneWallListBuild(void);
-
 /* zoneAvoidWalls @0x4023e0 — documented TODO stub (see stubs.c). The
  * original pushes pPoint away from the zone-wall segment list built by
  * zoneWallListBuild (needs the wall lists + zoneWallCalcPlane cluster).
