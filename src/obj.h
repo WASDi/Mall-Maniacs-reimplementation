@@ -141,7 +141,7 @@ typedef struct WorldNode {
     float flScaleA;             /* +0x30 nScale*g_flPi*g_dblAngleScale */
     float flScaleB;             /* +0x34 */
     float flScaleC;             /* +0x38 */
-    int field_3c;               /* +0x3c */
+    float field_3c;             /* +0x3c (polar length written by objMovePolar) */
     int _pad40;                 /* +0x40 untouched in worldNodeCtor */
     void *pParent;              /* +0x44 parent node (or the name MString ptr
                                  * as passed by playerSetupRound) */
@@ -182,7 +182,8 @@ typedef struct ObjChildMesh {
     GxVec2 vWorldB;      /* +0x34 copy of vWorldA */
     void *pSurface;      /* +0x3c sceneRayFindNearest hit node */
     float flHeight;      /* +0x40 raycast query height */
-    int field_44;        /* +0x44 zeroed */
+    float flVertVel;     /* +0x44 vertical velocity (float, walked by the
+                          * support-point passes; zeroed by nodeAddChildMesh) */
     struct ObjChildMesh *pNext; /* +0x48 head at WorldNode.pChildMeshHead (+0x08) */
 } ObjChildMesh;          /* 0x4c */
 
@@ -196,6 +197,56 @@ void objTurretAdd(WorldNode *pNode, int nPosX, int nPosY, int nPosZ,
 /* objTurretSetValue @0x405370 — for every child mesh of pNode whose
  * nChannelKey matches nKey, write nValue1/nValue2 over +0x04/+0x08. */
 void objTurretSetValue(WorldNode *pNode, int nKey, int nValue1, int nValue2);
+
+/* objDistToPoint @0x405050 — Euclidean ground-plane distance from the
+ * node's vPos to {flA, flB} (components pair in vPos order: flA vs the
+ * z-slot, flB vs the x-slot). */
+float objDistToPoint(WorldNode *pNode, float flA, float flB);
+
+/* nodeChannelAvgFloat @0x4050c0 — average flHeight over the child-mesh
+ * entries whose nChannelKey matches nChannelKey; 0.0f when none match. */
+float nodeChannelAvgFloat(WorldNode *pNode, int nChannelKey);
+
+/* objFindTurret @0x405120 — first child-mesh entry whose nChannelKey
+ * matches nChannelKey (walks the +0x08 ObjChildMesh list), or NULL. */
+ObjChildMesh *objFindTurret(WorldNode *pNode, int nChannelKey);
+
+/* objDistTo @0x404fe0 — Euclidean ground-plane distance between the two
+ * nodes' vPos. */
+float objDistTo(WorldNode *pA, WorldNode *pB);
+
+/* objAngleTo @0x405010 — polar angle (atan2) from pA's vPos to pB's vPos. */
+float objAngleTo(WorldNode *pA, WorldNode *pB);
+
+/* objAngleToPoint @0x405080 — polar angle (atan2) from pNode's vPos to
+ * {flA, flB}. */
+float objAngleToPoint(WorldNode *pNode, float flA, float flB);
+
+/* objMovePolar @0x404f10 — vPosB = vPos; vPos += fromPolar({flLen, flAng});
+ * store flLen/flAng into +0x3c/+0x38. */
+void objMovePolar(WorldNode *pNode, float flLen, float flAng);
+
+/* objSetAngle @0x404f70 — flScaleB = flScaleA; flScaleA = flAngle; rebuild
+ * every child mesh's vWorldA from {vPolar.x, vPolar.y + flScaleA}. */
+void objSetAngle(WorldNode *pNode, float flAngle);
+
+/* objPolarPosLookup @0x405140 — turret entry keyed by nTypeId; return the
+ * (int) world x component of fromPolar({vPolar.x, flScaleA + vPolar.y})
+ * + vPos. */
+int objPolarPosLookup(WorldNode *pNode, int nTypeId);
+
+/* objPolarPosLookup2 @0x4051c0 — same as objPolarPosLookup but returns the
+ * world z component. */
+int objPolarPosLookup2(WorldNode *pNode, int nTypeId);
+
+/* objListFindFloat @0x405240 — turret entry keyed by nTypeId; return its
+ * absolute heading as a 15-bit binary angle
+ * (int)((flScaleA + flAngle) * (65536/π) * 0.5). */
+int objListFindFloat(WorldNode *pNode, int nTypeId);
+
+/* objFindByIdInRange @0x414af0 — (nIndex+1)-th EventObject whose id is in
+ * [nIdMin, nIdMax], scanned in ascending id order; 0 when none. */
+EventObject *objFindByIdInRange(int nIdMin, int nIdMax, int nIndex);
 
 /* nodeAddChildMesh @0x4053a0 — allocate a 0x4c child-mesh entry for pNode:
  * polarized {flKeyZ, flX} position, raw extents, channel key and mesh tag,
@@ -220,5 +271,10 @@ WorldNode *worldNodeCtor(void *pMem, int nX, int nY, int nZ, short nScale,
 /* objDtor @0x402ab0 — unlink from g_pObjHead, free the shot list (+0x10)
  * and the two turret sub-structs (+0x08/+0x0c) when present. */
 void objDtor(WorldNode *pNode);
+
+/* objUpdateAll @0x4055f0 — clear every world node's +0x40 scratch and
+ * +0x18 channels-dirty flag, then objUpdatePhysics/objUpdateFire/
+ * objUpdatePhysics (stubs while the world-item subsystem is rebuilt). */
+void objUpdateAll(void);
 
 #endif /* OBJ_H */

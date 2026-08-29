@@ -50,6 +50,8 @@ int g_nClearColor;       /* @0x45892c */
 void *g_pSceneDetailGrid;/* @0x45838c */
 void *g_pGameVoiceList;  /* @0x45f0e0 */
 int g_bCollisionEnabled; /* @0x458354 */
+int g_nGameUpdateTick;   /* @0x45e5dc */
+ThrownItemStub *g_pThrownItemHead; /* @0x45896c */
 int g_nMovieRecord;      /* @0x455e8c */
 int g_nMoviePlay;        /* @0x455e90 */
 
@@ -423,8 +425,8 @@ void roundLogicUpdate(void) /* @0x40beb0 */
             g_nRoundElapsedTicks++;                        /* @0x455e94 @0x40c009 */
         }
         for (i = 0; i < g_nPlayerCount; i++) {             /* anim-state zero @0x40c019 */
-            g_playerRecords[i].nAnimationFrame = 0;        /* +0x2e0 */
-            g_playerRecords[i].nAnimationTimer = 0;        /* +0x2e4 */
+            g_playerRecords[i].flInputTurn = 0;        /* +0x2e0 */
+            g_playerRecords[i].flInputAccel = 0;        /* +0x2e4 */
             g_playerRecords[i].field_2e8 = 0;              /* +0x2e8 */
         }
         if (g_nRoundElapsedTicks >
@@ -456,8 +458,8 @@ void roundLogicUpdate(void) /* @0x40beb0 */
         }
     } else if (g_nPlayerCount > 0) {                       /* @0x40c0ef */
         for (i = 0; i < g_nPlayerCount; i++) {             /* @0x40c0fa */
-            g_playerRecords[i].nAnimationFrame = 0;
-            g_playerRecords[i].nAnimationTimer = 0;
+            g_playerRecords[i].flInputTurn = 0;
+            g_playerRecords[i].flInputAccel = 0;
             g_playerRecords[i].field_2e8 = 0;
         }
     }
@@ -618,7 +620,7 @@ void gameWorldUpdate(void)
      * playerAnimSfxUpdate, and gameUpdate. */
     if (g_nResultsScreen == 0 &&
         ((g_nCameraUpdateTick & 3) == 0 ||
-         g_playerRecords[g_nLocalPlayerIdx].nAnimationFrame != 0)) {
+         g_playerRecords[g_nLocalPlayerIdx].flInputTurn != 0)) {
         cameraFollowUpdate(&g_camFollowBlock); /* @0x4020d0 @0x40b503 */
     }
 }

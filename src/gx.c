@@ -371,6 +371,24 @@ void gxVec2FromPolar(GxVec2 *pOut, const GxVec2 *pPolar) /* @0x434fc0 */
     pOut->y = pPolar->x * (float)sin((double)pPolar->y);
 }
 
+/* gxVec2Add @0x434fe0 — component-wise sum via gxVec2Set. */
+void gxVec2Add(GxVec2 *pOut, const GxVec2 *pA, const GxVec2 *pB) /* @0x434fe0 */
+{
+    gxVec2Set(pOut, pA->x + pB->x, pA->y + pB->y); /* @0x434feb..0x434ff7 */
+}
+
+/* gxVec2RotateAdd @0x435090 — add two polar vectors as cartesian offsets
+ * (pA.x along pA.y, pB.x along pB.y) and re-polarize the sum. */
+void gxVec2RotateAdd(GxVec2 *pOut, const GxVec2 *pA, const GxVec2 *pB) /* @0x435090 */
+{
+    GxVec2 vSum;
+
+    gxVec2Set(&vSum,
+              pB->x * (float)cos((double)pB->y) + pA->x * (float)cos((double)pA->y),
+              pB->x * (float)sin((double)pB->y) + pA->x * (float)sin((double)pA->y));
+    mathVec2Polar(pOut, &vSum); /* @0x4350d9 */
+}
+
 /* mathSegIntersect @0x406130 — intersect the infinite lines through
  * (ax,ay)-(bx,by) and (cx,cy)-(dx,dy). Writes the intersection into
  * pOut[0]/pOut[1] and returns 1, or writes the ab midpoint and returns 0

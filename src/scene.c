@@ -2050,6 +2050,22 @@ int sceneNodeSetHiddenFlag(SceneNode *pNode, int nMode) /* @0x4305c0 */
     return 1;
 }
 
+/* sceneObjResetFlags @0x430620 — clear the node's renderer flag byte
+ * (+0x02 low byte); when nRecursive == 2 also clear the whole child list
+ * (children at +0x0c, siblings chained via +0x08). */
+int sceneObjResetFlags(SceneNode *pNode, int nRecursive) /* @0x430620 */
+{
+    SceneNode *pChild;
+
+    pNode->bType = 0;                              /* byte +0x02 @0x430626 */
+    if (nRecursive == 2) {                          /* @0x43062a */
+        for (pChild = pNode->pChild; pChild != NULL; pChild = pChild->pNextSib) {
+            sceneObjResetFlags(pChild, 2);          /* @0x430636 */
+        }
+    }
+    return 1;
+}
+
 /* sceneDetailGridSetRoot @0x42b350 — store the viewer/root scene node into
  * grid +4. Called from playerSetupSceneObjects with g_pSceneRoot. */
 void sceneDetailGridSetRoot(SceneDetailGrid *pGrid, SceneNode *pRootNode) /* @0x42b350 */

@@ -161,6 +161,56 @@ void objTurretListFree2(int nMode) /* @0x402b70 */
     (void)nMode;
 }
 
+/* sndPlaySfx3D @0x42bcd0 — 3D positional sound emitter. Documented TODO
+ * stub: the 0x1c emitter block handed over by the caller is linked into
+ * g_pSndEmitterHead/Tail @0x45e5f0/.f4 and driven by the music module
+ * (musicEmitterAlloc), which is deferred with the audio subsystem. The
+ * stub frees the block immediately so the fire-and-forget callers (walk
+ * physics hazard sfx) do not leak; no sound plays. The original also
+ * takes a 10th nFlags argument that only reaches the emitter setup. */
+int sndPlaySfx3D(void *pEmitter, unsigned int nBank, unsigned int nIdx,
+                 unsigned int nVol, int nSndId, int pPosNode,
+                 int nEmitParam6, int nX, int nY, int nZ) /* @0x42bcd0 */
+{
+    (void)nBank; (void)nIdx; (void)nVol; (void)nSndId; (void)pPosNode;
+    (void)nEmitParam6; (void)nX; (void)nY; (void)nZ;
+    memFreeDirect(pEmitter);
+    return 0;
+}
+
+/* objUpdatePhysics @0x405680 — world-item physics pass called twice by
+ * objUpdateAll @0x4055f0. Documented TODO stub: the world-item physics
+ * subsystem (loose item bobbing/settling) is the next rebuild step; the
+ * per-frame world-node state it consumes is zeroed by objUpdateAll, so a
+ * no-op is safe. */
+void objUpdatePhysics(void) /* @0x405680 */
+{
+}
+
+/* objUpdateFire @0x405e10 — world-item fire/hazard pass called between the
+ * two objUpdatePhysics runs. Documented TODO stub, same contract as
+ * objUpdatePhysics. */
+void objUpdateFire(void) /* @0x405e10 */
+{
+}
+
+/* itemThrowUpdate @0x40f950 — step one thrown item (g_pThrownItemHead
+ * list, next at +0x04). Documented TODO stub: the thrown-item cluster
+ * (playerThrowItemCtor/itemThrowUpdate/itemMeshFollowUpdate) is the next
+ * rebuild step; the list is empty until then, so gameUpdate never
+ * reaches this stub. */
+void itemThrowUpdate(void *pItem) /* @0x40f950 */
+{
+    (void)pItem;
+}
+
+/* itemMeshFollowUpdate @0x40fde0 — second thrown-item pass (mesh follow).
+ * Documented TODO stub, same contract as itemThrowUpdate. */
+void itemMeshFollowUpdate(void *pItem) /* @0x40fde0 */
+{
+    (void)pItem;
+}
+
 /* zoneAvoidWalls @0x4023e0 — documented TODO stub, see stubs.h. Original
  * walks the zone-wall segment list (zoneWallListBuild output) and pushes
  * pPoint out of any wall within flRadius of the pRef->pPoint path. Deferred

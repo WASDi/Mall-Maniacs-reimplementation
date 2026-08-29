@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "obj.h"
 #include "gx.h"
 #include "scene.h"
@@ -9,6 +10,8 @@
 #include "pool.h"
 #include "time.h"
 #include "stubs.h"
+
+extern WorldNode *g_pObjHead; /* @0x4550d4 (defined below) */
 
 /* =====================================================================
  * obj.c — EventObject registry: creation (.eo load), id-hash and
@@ -48,6 +51,52 @@ EventObject *objFindById(int nId, int nIndex) /* @0x414a90 */
         }
     }
     return NULL;
+}
+
+/* objUpdateAll @0x4055f0 — clear every world node's per-frame state
+ * (+0x40 scratch and +0x18 channels-dirty flag), then run the world
+ * physics/fire passes (physics twice, matching the original order; the
+ * g_nMovieFrame 399..500 guards only wrap nopDebugStub no-ops). */
+void objUpdateAll(void) /* @0x4055f0 */
+{
+    WorldNode *pNode;
+
+    for (pNode = g_pObjHead; pNode != NULL; pNode = pNode->pPrev) { /* +0x00 walk toward tail @0x4055f6 */
+        pNode->_pad40 = 0;    /* +0x40 @0x4055fc */
+        pNode->field_18 = 0;  /* +0x18 @0x405601 */
+    }
+    objUpdatePhysics();       /* @0x405680 @0x405611 */
+    objUpdateFire();          /* @0x405e10 @0x405621 */
+    objUpdatePhysics();       /* @0x40562c */
+}
+
+/* objFindByIdInRange @0x414af0 — (nIndex+1)-th EventObject whose id lies in
+ * [nIdMin, nIdMax], scanning ids ascending and each bucket chain in order.
+ * Shares objFindById's lazy bucket initialization. */
+EventObject *objFindByIdInRange(int nIdMin, int nIdMax, int nIndex) /* @0x414af0 */
+{
+    int nId;
+    EventObject *p;
+
+    if (nIndex < 0) {
+        return NULL;                                   /* @0x414b5c */
+    }
+    if (g_nObjHashInit == 0) {
+        g_nObjHashInit = 1;
+        memset(g_apObjHashBuckets, 0, sizeof(g_apObjHashBuckets)); /* @0x414b03 */
+    }
+    for (nId = nIdMin; nId <= nIdMax; nId++) {         /* @0x414b0f */
+        for (p = g_apObjHashBuckets[nId % OBJ_HASH_BUCKETS]; p != NULL;
+             p = p->pHashNext) {                       /* @0x414b17 */
+            if (p->nId == nId) {                       /* +0x08 @0x414b1f */
+                if (nIndex == 0) {
+                    return p;
+                }
+                nIndex--;
+            }
+        }
+    }
+    return NULL;                                       /* @0x414b57 */
 }
 
 /* objHashNextSame @0x414a40 — next EventObject with the same 4-byte id in
@@ -455,6 +504,193 @@ void objDtor(WorldNode *pNode) /* @0x402ab0 */
     }
 }
 
+/* --- per-node queries (playerUpdateAI / pickup / camera paths) --- */
+
+static const float g_flZero = 0.0f; /* @0x44b244 */
+static const float g_flOne = 1.0f;  /* @0x44b260 */
+
+/* objDistTo @0x404fe0 — Euclidean ground-plane distance between two nodes'
+ * vPos (x vs x, y vs y slots). */
+float objDistTo(WorldNode *pA, WorldNode *pB) /* @0x404fe0 */
+{
+    float flDx = pB->vPos.y - pA->vPos.y; /* +0x24 @0x404fe7 */
+    float flDz = pB->vPos.x - pA->vPos.x; /* +0x20 @0x404fee */
+    return sqrtf(flDx * flDx + flDz * flDz); /* @0x404ff5..0x404ffb */
+}
+
+/* objAngleTo @0x405010 — polar angle (atan2) of the vector from pA's vPos
+ * to pB's vPos (mathVec2Polar .y over the {x, y} component delta). */
+float objAngleTo(WorldNode *pA, WorldNode *pB) /* @0x405010 */
+{
+    GxVec2 vDelta;
+    GxVec2 vPolar;
+
+    gxVec2Set(&vDelta, pB->vPos.x - pA->vPos.x, pB->vPos.y - pA->vPos.y);
+    mathVec2Polar(&vPolar, &vDelta); /* .y keeps the angle @0x405028 */
+    return vPolar.y;
+}
+
+/* objAngleToPoint @0x405080 — polar angle (atan2) from pNode's vPos to the
+ * point {flA, flB} (flA vs the +0x20 slot, flB vs the +0x24 slot). */
+float objAngleToPoint(WorldNode *pNode, float flA, float flB) /* @0x405080 */
+{
+    GxVec2 vDelta;
+    GxVec2 vPolar;
+
+    gxVec2Set(&vDelta, flA - pNode->vPos.x, flB - pNode->vPos.y);
+    mathVec2Polar(&vPolar, &vDelta); /* @0x405098 */
+    return vPolar.y;
+}
+
+/* objMovePolar @0x404f10 — save vPos into vPosB, advance vPos by
+ * fromPolar({flLen, flAng}) and store flLen/flAng into +0x3c/+0x38. */
+void objMovePolar(WorldNode *pNode, float flLen, float flAng) /* @0x404f10 */
+{
+    GxVec2 vPolar;
+    GxVec2 vCart;
+    GxVec2 vSum;
+
+    pNode->vPosB = pNode->vPos; /* +0x28 @0x404f24 */
+    gxVec2Set(&vPolar, flLen, flAng);
+    gxVec2FromPolar(&vCart, &vPolar);                 /* @0x404f2b */
+    gxVec2Add(&vSum, &pNode->vPos, &vCart);           /* @0x404f3b */
+    pNode->vPos = vSum;                               /* @0x404f45 */
+    pNode->field_3c = flLen;   /* +0x3c @0x404f55 (raw float store) */
+    pNode->flScaleC = flAng;   /* +0x38 @0x404f58 (raw float store) */
+}
+
+/* objSetAngle @0x404f70 — set the node heading: flScaleB = flScaleA,
+ * flScaleA = flAngle, then recompute every child mesh's vWorldA from
+ * {vPolar.x, vPolar.y + flScaleA} (saving the old one into vWorldB). */
+void objSetAngle(WorldNode *pNode, float flAngle) /* @0x404f70 */
+{
+    ObjChildMesh *pMesh;
+    GxVec2 vIn;
+
+    pNode->flScaleB = pNode->flScaleA; /* +0x34 @0x404f83 */
+    pNode->flScaleA = flAngle;         /* +0x30 @0x404f86 */
+    for (pMesh = (ObjChildMesh *)pNode->pChildMeshHead; pMesh != NULL;
+         pMesh = pMesh->pNext) {                       /* +0x48 @0x404fc3 */
+        pMesh->vWorldB = pMesh->vWorldA;               /* +0x34 @0x404f94 */
+        gxVec2Set(&vIn, pMesh->vPolar.x, pMesh->vPolar.y + pNode->flScaleA);
+        gxVec2FromPolar(&pMesh->vWorldA, &vIn);        /* +0x2c @0x404fb3 */
+    }
+}
+
+/* objPolarPosLookup @0x405140 — find pNode's turret entry whose nTypeId
+ * matches nTypeId and return (int) of the world x component of
+ * fromPolar({vPolar.x, flScaleA + vPolar.y}) + vPos (the +0x24 slot). */
+int objPolarPosLookup(WorldNode *pNode, int nTypeId) /* @0x405140 */
+{
+    ObjTurret *pTurret;
+    GxVec2 vIn;
+    GxVec2 vCart;
+    GxVec2 vSum;
+
+    for (pTurret = (ObjTurret *)pNode->pTurretHead; pTurret != NULL;
+         pTurret = pTurret->pNext) {                   /* +0x18 @0x405155 */
+        if (pTurret->nTypeId == nTypeId) {             /* @0x405151 */
+            break;
+        }
+    }
+    if (pTurret == NULL) {                             /* @0x40514b */
+        return 0;                                      /* EAX=0 @0x40515c */
+    }
+    gxVec2Set(&vIn, pTurret->vPolar.x, pNode->flScaleA + pTurret->vPolar.y);
+    gxVec2FromPolar(&vCart, &vIn);                     /* @0x405181 */
+    gxVec2Add(&vSum, &vCart, &pNode->vPos);            /* @0x405194 */
+    return (int)vSum.y;                                /* ftol @0x4051ad */
+}
+
+/* objPolarPosLookup2 @0x4051c0 — same as objPolarPosLookup but returns the
+ * world z component (the +0x20 slot of the sum). */
+int objPolarPosLookup2(WorldNode *pNode, int nTypeId) /* @0x4051c0 */
+{
+    ObjTurret *pTurret;
+    GxVec2 vIn;
+    GxVec2 vCart;
+    GxVec2 vSum;
+
+    for (pTurret = (ObjTurret *)pNode->pTurretHead; pTurret != NULL;
+         pTurret = pTurret->pNext) {                   /* @0x4051d5 */
+        if (pTurret->nTypeId == nTypeId) {             /* @0x4051d1 */
+            break;
+        }
+    }
+    if (pTurret == NULL) {                             /* @0x4051cb */
+        return 0;                                      /* @0x4051dc */
+    }
+    gxVec2Set(&vIn, pTurret->vPolar.x, pNode->flScaleA + pTurret->vPolar.y);
+    gxVec2FromPolar(&vCart, &vIn);                     /* @0x405201 */
+    gxVec2Add(&vSum, &vCart, &pNode->vPos);            /* @0x405214 */
+    return (int)vSum.x;                                /* ftol @0x40522d */
+}
+
+/* objListFindFloat @0x405240 — find pNode's turret entry whose nTypeId
+ * matches nTypeId and return its absolute heading scaled to the 15-bit
+ * binary-angle unit: (int)((flScaleA + flAngle) * (65536/π) * 0.5). */
+int objListFindFloat(WorldNode *pNode, int nTypeId) /* @0x405240 */
+{
+    static const float g_flRadToBin = 20860.455078125f; /* @0x44b2f0 (65536/π) */
+    static const double g_dblHalf = 0.5;                /* @0x44b2e8 */
+    ObjTurret *pTurret;
+
+    for (pTurret = (ObjTurret *)pNode->pTurretHead; pTurret != NULL;
+         pTurret = pTurret->pNext) {                   /* @0x40524f */
+        if (pTurret->nTypeId == nTypeId) {             /* @0x40524b */
+            return (int)((pNode->flScaleA + pTurret->flAngle) * g_flRadToBin *
+                         g_dblHalf);                   /* @0x40526e */
+        }
+    }
+    return 0;                                          /* XOR AX,AX @0x405256 */
+}
+
+/* objDistToPoint @0x405050 — Euclidean ground-plane distance from the
+ * node's vPos {x=z, y=x} to {flA, flB} (components pair in vPos order). */
+float objDistToPoint(WorldNode *pNode, float flA, float flB) /* @0x405050 */
+{
+    float flDx = flA - pNode->vPos.x; /* @0x405050 */
+    float flDy = flB - pNode->vPos.y; /* @0x405057 */
+    return sqrtf(flDx * flDx + flDy * flDy); /* @0x40505e..0x405068 */
+}
+
+/* nodeChannelAvgFloat @0x4050c0 — average flHeight over pNode's child-mesh
+ * entries whose nChannelKey matches nChannelKey; 0.0f when there is none. */
+float nodeChannelAvgFloat(WorldNode *pNode, int nChannelKey) /* @0x4050c0 */
+{
+    ObjChildMesh *pMesh;
+    float flSum = 0.0f;    /* @0x4050c3 */
+    float flCount = 0.0f;  /* @0x4050c9 */
+
+    for (pMesh = (ObjChildMesh *)pNode->pChildMeshHead; pMesh != NULL;
+         pMesh = pMesh->pNext) {                         /* @0x4050d3 */
+        if (pMesh->nChannelKey == nChannelKey) {         /* @0x4050d7 */
+            flSum += pMesh->flHeight;                    /* +0x40 @0x4050dc */
+            flCount += g_flOne;                          /* @0x4050e1 */
+        }
+    }
+    if (flCount == g_flZero) {                           /* @0x4050f2 */
+        return g_flZero;                                 /* @0x405103 */
+    }
+    return flSum / flCount;                              /* FDIVRP @0x40510c */
+}
+
+/* objFindTurret @0x405120 — return the first child-mesh entry of pNode
+ * whose nChannelKey matches nChannelKey (despite the name this walks the
+ * +0x08 ObjChildMesh list, not the turret list), or NULL. */
+ObjChildMesh *objFindTurret(WorldNode *pNode, int nChannelKey) /* @0x405120 */
+{
+    ObjChildMesh *pMesh;
+
+    for (pMesh = (ObjChildMesh *)pNode->pChildMeshHead; pMesh != NULL;
+         pMesh = pMesh->pNext) {                         /* @0x40512b */
+        if (pMesh->nChannelKey == nChannelKey) {         /* @0x40512e */
+            return pMesh;                                /* @0x405139 */
+        }
+    }
+    return NULL;                                         /* @0x405137 */
+}
+
 /* --- player collision clusters (levelObjectsCartsCameraInit @0x411b70) --- */
 
 
@@ -525,7 +761,7 @@ void nodeAddChildMesh(WorldNode *pNode, int nX, int nY, int nKeyZ,
     pMesh->flExtentB = flExtentB;                            /* +0x10 @0x40546a */
     pMesh->flExtentC = flExtentC;                            /* +0x18 @0x40546d */
     pMesh->nChannelKey = nChannelKey;                        /* +0x0c @0x405476 */
-    pMesh->field_44 = 0;                                     /* +0x44 @0x405479 */
+    pMesh->flVertVel = 0.0f;                                 /* +0x44 @0x405479 */
     pMesh->nMeshId = nMeshId;                                /* +0x00 @0x40547c */
     pMesh->nValue1 = 0;                                      /* +0x04 @0x40547e */
     pMesh->nValue2 = 0;                                      /* +0x08 @0x405481 */
@@ -570,6 +806,6 @@ void nodeSetTransformFromChannels(WorldNode *pNode, int nPosX, int nPosY,
             pMesh->vWorldA.y + pNode->vPos.y,
             (float)nPosY, 1000.0f, pMesh->flExtentA);        /* @0x447a000=1000.0 @0x404eaa */
         pMesh->flHeight = (float)nPosY;                      /* +0x40 @0x404eca */
-        pMesh->field_44 = 0;                                 /* +0x44 @0x404ecd */
+        pMesh->flVertVel = 0.0f;                             /* +0x44 @0x404ecd */
     }
 }

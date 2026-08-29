@@ -130,4 +130,22 @@ void levelEventDirector_L2_Init(void);                       /* @0x417dc0 */
 void levelEventDirector_L3_Init(void);                       /* @0x4186c0 */
 void levelEventDirector_L4_Init(void);                       /* @0x418f30 */
 
+/* sndPlaySfx3D @0x42bcd0 — 3D positional emitter stub (see stubs.c). */
+int sndPlaySfx3D(void *pEmitter, unsigned int nBank, unsigned int nIdx,
+                 unsigned int nVol, int nSndId, int pPosNode,
+                 int nEmitParam6, int nX, int nY, int nZ);
+
+/* objUpdatePhysics @0x405680 / objUpdateFire @0x405e10 — world-item
+ * physics/fire passes driven by objUpdateAll @0x4055f0. Documented TODO
+ * stubs (see stubs.c): the world-item subsystem is the next rebuild step. */
+void objUpdatePhysics(void);
+void objUpdateFire(void);
+
+/* itemThrowUpdate @0x40f950 / itemMeshFollowUpdate @0x40fde0 — thrown-item
+ * passes over the g_pThrownItemHead list (next link at +0x04). Documented
+ * TODO stubs (see stubs.c); the list stays empty until the thrown-item
+ * cluster (playerThrowItemCtor @0x40f720) is rebuilt. */
+void itemThrowUpdate(void *pItem);
+void itemMeshFollowUpdate(void *pItem);
+
 #endif /* STUBS_H */

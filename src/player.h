@@ -91,43 +91,62 @@ typedef struct PlayerRecord {
     /* +0x1e8 walk physics block (16 dwords; refreshed from the shared block) */
     float flAccSpeed;            /* +0x1e8 (speed*0.7+100)*[master]/acc */
     float flFriction;            /* +0x1ec [master]/friction */
-    float flAccFric;             /* +0x1f0 flAccSpeed/(1-flFriction) */
-    float flFrictionB;           /* +0x1f4 duplicate friction */
+    float flAccFric;             /* +0x1f0 max per-frame speed step acc/(1-fric) */
+    float flCurSpeed;            /* +0x1f4 runtime walk speed channel (setup: friction copy) */
     float flRotAccSpeed;         /* +0x1f8 (agility*0.1+0.5)*[master]/rotate_acc */
     float flRotAccFric;          /* +0x1fc /(1-flFriction) */
-    float field_200_pad[9];      /* +0x200 */
+    float field_200_pad;         /* +0x200 */
+    float flTurnAccum;           /* +0x204 walk-node turn accumulator */
+    float flVertVel;             /* +0x208 walk-node vertical velocity */
+    float field_20c_pad;         /* +0x20c */
+    float field_210_pad;         /* +0x210 */
+    GxVec2 vAccPolar;            /* +0x214 scratch accel polar {len, heading=+0x218 target} */
+    GxVec2 vVelPolar;            /* +0x21c walk-node velocity {len, heading} */
     void *pSubObjA;              /* +0x224 block dword 15 (WorldNode*, parent = name) */
     /* +0x228 shared physics block (16 dwords; source of both block copies) */
-    float field_228_pad[2];      /* +0x228, +0x22c (zeroed) */
+    float field_228_pad;         /* +0x228 (zeroed) */
+    float flAccFactor;           /* +0x22c on-foot pos-node accel factor (zeroed) */
     float flCurAccFric;          /* +0x230 copy of flAccFric */
-    float flCartFrictionA;       /* +0x234 carts[%d]/friction read 1 (zeroed) */
-    float field_238_pad[2];      /* +0x238, +0x23c (zeroed) */
+    float flPosSpeed;            /* +0x234 pos-node speed channel (setup: carts friction 1) */
+    float field_238_pad;         /* +0x238 (zeroed) */
+    float flRotFactor;           /* +0x23c on-foot pos-node turn factor (zeroed) */
     float flCurRotAccFric;       /* +0x240 copy of flRotAccFric */
-    float flCartFrictionB;       /* +0x244 carts[%d]/friction read 2 (zeroed) */
+    float flPosTurnAccum;        /* +0x244 pos-node turn accumulator (setup: carts friction 2) */
     float field_248;             /* +0x248 (zeroed) */
-    float field_24c_pad[2];      /* +0x24c, +0x250 */
+    short wPosPitch;             /* +0x24c pos-mesh orient yaw channel (support tilt) */
+    short _pad24e;               /* +0x24e */
+    short wPosRoll;              /* +0x250 pos-mesh orient roll channel */
+    short _pad252;               /* +0x252 */
     float field_254;             /* +0x254 (zeroed) */
-    float field_258;             /* +0x258 (zeroed) */
-    float field_25c;             /* +0x25c (zeroed) */
-    float field_260;             /* +0x260 (zeroed) */
+    float flPosHeading;          /* +0x258 pos-node target heading */
+    float flPosVelLen;           /* +0x25c pos-node velocity length (RotateAdd result) */
+    float flPosVelAng;           /* +0x260 pos-node velocity heading */
     void *pSubObjB;              /* +0x264 block dword 15 (WorldNode*, no parent) */
     /* +0x268 cart physics block (16 dwords) */
     float flCartAccSpeed;        /* +0x268 (speed*0.7+100)*[master]/acc_WC */
-    float field_26c_pad;         /* +0x26c */
+    float field_26c_pad;         /* +0x26c cart friction (setup) */
     float flCartFriction;        /* +0x270 avg(flFriction, flCartFrictionA) */
-    float flCartAccFric;         /* +0x274 flCartAccSpeed/(1-flCartFriction) */
+    float flCartCurSpeed;        /* +0x274 runtime cart speed channel (setup: acc/(1-fric)) */
     float flCartRotAccSpeed;     /* +0x278 (agility*0.1+0.5)*[master]/rotate_acc_WC */
-    float flCartFrictionB2;      /* +0x27c avg(flFriction, flCartFrictionB) */
-    float flCartRotAccFric;      /* +0x280 /(1-flCartFrictionB2) */
-    float field_284_pad[8];      /* +0x284 */
+    float flCartFrictionB;       /* +0x27c setup: avg friction; runtime: turn-accum coefficient */
+    float flCartRotAccFric;      /* +0x280 setup: rot acc/(1-fric); runtime: turn-step bound */
+    float flCartTurnAccum;       /* +0x284 cart-node turn accumulator */
+    float flCartBounceIn;        /* +0x288 bounce impulse input (zeroed by cart physics) */
+    short wCartPitch;            /* +0x28c cart-mesh orient yaw channel */
+    short _pad28e;               /* +0x28e */
+    short wCartRoll;             /* +0x290 cart-mesh orient roll channel */
+    GxVec2 vCartAccPolar;        /* +0x294 scratch accel polar {len, heading=+0x298 target} */
+    GxVec2 vCartVelPolar;        /* +0x29c cart-node velocity {len, heading} */
     void *pSubObjC;              /* +0x2a4 block dword 15 (WorldNode*, parent = name) */
     AnmSet *apAnmSets[11];       /* +0x2a8 pick1,pick2,flpick1,flpick2,throw1,throw2,
                                   *       run,stand,grab,oops,winner; +0x2c4 (= stand)
                                   *       is the set stepped by roundStartInit */
-    int field_2d4_pad[2];        /* +0x2d4 */
+    int field_2d4;               /* +0x2d4 (AI: current anim set pointer) */
+    int nChannelsDirty;          /* +0x2d8 gameUpdate sync gate (nonzero = re-sync meshes) */
     int nControlType;            /* +0x2dc 2 = AI-driven (playerUpdateDispatch gate) */
-    int nAnimationFrame;         /* +0x2e0 animation frame (sync target) */
-    int nAnimationTimer;         /* +0x2e4 animation timer (sync target) */
+    float flInputTurn;           /* +0x2e0 turn impulse channel (float; net anim-sync
+                                  * reuse copies raw dwords into it, dead offline) */
+    float flInputAccel;          /* +0x2e4 accel impulse channel (float; same reuse) */
     int field_2e8;               /* +0x2e8 zeroed */
     int _pad2ec;                 /* +0x2ec untouched */
     int field_2f0;               /* +0x2f0 zeroed */
@@ -156,6 +175,33 @@ extern int g_nCurrentItemId;     /* @0x458128 mode 3 target item id (HUD) */
 #define OBJ_ID_C_DI 0x69645f63   /* 'c_di' */
 
 int playerUpdateDispatch(void);                 /* @0x4010e0 */
+
+/* ThrownItemStub — minimal view of a g_pThrownItemHead list entry for
+ * gameUpdate's walks (next link at +0x04). The full 0x30-byte layout
+ * lands with the thrown-item cluster (playerThrowItemCtor @0x40f720). */
+typedef struct ThrownItemStub {
+    int field_00;                    /* +0x00 */
+    struct ThrownItemStub *pNext;    /* +0x04 next list entry */
+} ThrownItemStub;
+
+/* --- gameUpdate player-physics cluster (all __cdecl, PlayerRecord*) --- */
+void playerUpdateWalkPhysics(PlayerRecord *pRec);        /* @0x426fd0 */
+void playerUpdateOnFoot(PlayerRecord *pRec);            /* @0x427730 */
+void playerUpdateCartPhysics(PlayerRecord *pRec);       /* @0x4280b0 */
+void syncWalkNodeChannelsToMesh(PlayerRecord *pRec);    /* @0x428990 */
+void syncPosNodeChannelsToMesh(PlayerRecord *pRec);     /* @0x428840 */
+void syncCartNodeChannelsToMeshes(PlayerRecord *pRec);  /* @0x428a70 */
+void syncCartNodeChannelsToWalkPos(PlayerRecord *pRec); /* @0x40e040 */
+void gameUpdate(void);                                  /* @0x426ee0 */
+
+/* moveStateSetSnapFlag @0x4020c0 — raise the controller zone-snap flag
+ * (+0x51) after a teleport pad moved the node. */
+void moveStateSetSnapFlag(AiController *pCtrl);
+
+/* 4-char EventObject ids of the per-level special zones (@0x450df4/.dec/.e4). */
+extern int g_nObjIdMvnc;   /* "mvnc" */
+extern int g_nObjIdHurl;   /* "hurl" */
+extern int g_nObjIdTele;   /* "tele" */
 int syncAiAnimToSceneObj(AiController *pCtrl);  /* @0x4015a0 */
 void playerAiUpdate(AiController *pCtrl);       /* @0x401160 */
 

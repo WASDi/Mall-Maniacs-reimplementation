@@ -310,6 +310,7 @@ void sceneDetailGridSetRoot(SceneDetailGrid *pGrid, SceneNode *pRootNode); /* @0
 void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount); /* @0x42b000 */
 int  sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMode); /* @0x430db0 */
 int  sceneNodeSetHiddenFlag(SceneNode *pNode, int nMode); /* @0x4305c0 */
+int  sceneObjResetFlags(SceneNode *pNode, int nRecursive); /* @0x430620 */
 int  sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float flZ, int nMode); /* @0x431030 */
 void sceneNodeFree(SceneNode *pNode, int nFreeChildren); /* @0x430460 */
 void sceneNodeUpdateBounds(SceneNode *pNode); /* @0x4303c0 */

@@ -119,6 +119,8 @@ typedef struct GxVec2 {
 /* --- 2D vector helpers (originals verified in Ghidra) --- */
 void gxVec2SetAngleZero(GxVec2 *pVec);   /* @0x434f90 set to unit X {1,0} */
 void gxVec2Set(GxVec2 *pVec, float x, float y);            /* @0x434fa0 */
+void gxVec2Add(GxVec2 *pOut, const GxVec2 *pA, const GxVec2 *pB); /* @0x434fe0 */
+void gxVec2RotateAdd(GxVec2 *pOut, const GxVec2 *pA, const GxVec2 *pB); /* @0x435090 */
 void gxVec2FromPolar(GxVec2 *pOut, const GxVec2 *pPolar);  /* @0x434fc0 */
 void mathVec2Polar(GxVec2 *pOut, const GxVec2 *pIn);       /* @0x435060 (scene.c) */
 

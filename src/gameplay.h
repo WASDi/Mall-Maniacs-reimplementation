@@ -2,6 +2,7 @@
 #define GAMEPLAY_H
 
 #include <windows.h>
+#include "player.h"
 
 /* Gameplay entry and frame driver. The original WinMain @0x4160a0 calls
  * gameRunFrame instead of gameFrameUpdate while g_bGameActive is set. */
@@ -27,6 +28,8 @@ extern unsigned char g_bGameRunning; /* @0x44fdc4 round live flag (HUD/results g
 extern int g_nWorldFrameTick;   /* @0x458944 */
 extern int g_nClearColor;       /* @0x45892c */
 extern int g_bCollisionEnabled; /* @0x458354 */
+extern int g_nGameUpdateTick;   /* @0x45e5dc gameUpdate tick (cart 5-tick snap gate) */
+extern ThrownItemStub *g_pThrownItemHead; /* @0x45896c thrown-item list head (+0x04 next) */
 extern int g_nMovieRecord;      /* @0x455e8c */
 extern int g_nMoviePlay;        /* @0x455e90 */
 
