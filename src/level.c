@@ -206,7 +206,8 @@ void levelSetup(void) /* @0x4108a0 */
 
     g_bMusicTrack = (int)configEnvGetDouble2(&g_configEnvMaster, pLevel, "music"); /* @0x44f8ec */
 
-    scenSetDir("\\HIDE_ME\\");                               /* @0x44f23c */
+    scenSetDir("__HIDE_ME__");                               /* @0x44f23c @0x410b1e
+                                                              * (same "__HIDE_ME__" string the roundStartInit hide pass filters for) */
     pObjects = configEnvGetValue(&g_configEnvMaster, NULL, "objects");   /* @0x44f8e4 */
     if (pObjects == NULL) {
         fatalError("'objects' block not found in cfg.");     /* @0x44f8c0 */

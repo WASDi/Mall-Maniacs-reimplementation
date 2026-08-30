@@ -52,9 +52,8 @@ void objTurretListFree2(int nMode);                          /* @0x402b70 */
  * TrackRebuildDetailed. Real implementations will replace these when
  * the scene / string subsystems land. */
 
-/* scenSetDir @0x432e60 — set scene base directory g_szSceneDir[64].
- * Stub: no copy, returns 1. */
-int scenSetDir(LPCSTR pszDir);
+/* scenSetDir @0x432e60 and scenExpandNameList @0x432dd0 — implemented in
+ * sen.c (sen.h declares them). */
 
 
 /* objSegListIntersectTest @0x414ce0 — documented TODO stub (see stubs.c).

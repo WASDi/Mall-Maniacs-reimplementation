@@ -65,7 +65,72 @@ static int    g_scenesceneLoadSen = 0;        /* @0x45e99c */
 static int    g_nSceneMeshMaxSize = 0;        /* @0x45eb14 */
 static int    g_scenesceneMeshFixup = 0;      /* @0x45eb18 */
 
-extern int scenExpandNameList(char *pList, void *pEnd, char *pszDir); /* @0x432dd0 */
+/* scenSetDir @0x432e60 — copy pszDir into g_szSceneDir @0x45e950 (REP
+ * MOVSD/MOVSB over strlen+1); a NULL pointer clears it. Returns 1. */
+int scenSetDir(LPCSTR pszDir) /* @0x432e60 */
+{
+    if (pszDir != NULL) {
+        size_t d = strlen(pszDir) + 1;       /* SCASB length incl. NUL */
+        if (d > 256) d = 256;
+        memcpy(g_szSceneDir, pszDir, d);
+    } else {
+        g_szSceneDir[0] = '\0';
+    }
+    return 1;
+}
+
+/* scenExpandNameList @0x432dd0 — expand the packed ONAM copy in the scene
+ * name arena by inserting pszDir in front of EVERY name (in-place backward
+ * copy; each entry becomes "<dir><name>\0"). Returns the number of bytes
+ * added (= strlen(dir) * name count); sceneLoadSen advances the arena
+ * cursor by it. The OBJI name walk (@0x00432935) then navigates the
+ * expanded list via its +dir-per-NUL stride, so the per-instance scen-obj
+ * names come out dir-prefixed — roundStartInit's hide pass matches the
+ * loaded objects.sen/characters.sen instances against "__HIDE_ME__"
+ * (@0x44f23c) through exactly these names.
+ * Verified against the original by simulating both the expansion and the
+ * subsequent name walk on scene_ica CHARACTERS.SEN/OBJECTS.SEN: all 78
+ * instances resolve to "__HIDE_ME__<name>". */
+int scenExpandNameList(char *pList, void *pEnd, char *pszDir) /* @0x432dd0 */
+{
+    int d;
+    int nNames;
+    int nExpand;
+    int i;
+    char *pCur;
+    char *pWrite;
+    char *pRead;
+    char *pPrev;
+    char c;
+
+    if (pszDir == NULL || pList == NULL || pEnd == NULL) return 0;
+    d = strlen(pszDir);
+    nNames = 0;
+    for (pCur = pList; pCur < (char *)pEnd; pCur++) {
+        if (*pCur == '\0') nNames++;
+    }
+    nExpand = d * nNames;
+    pWrite = (char *)pEnd + nExpand - 1;
+    pRead = (char *)pEnd - 1;
+    while (pList <= pRead) {
+        *pWrite = *pRead;                    /* the name's NUL */
+        c = (pRead - 1 >= pList) ? pRead[-1] : '\0';
+        pPrev = pRead;
+        for (;;) {
+            pRead = pPrev - 1;
+            pWrite--;
+            if (c == '\0' || pRead < pList) break;
+            *pWrite = c;
+            c = (pPrev - 2 >= pList) ? pPrev[-2] : '\0';
+            pPrev = pRead;
+        }
+        for (i = d - 1; i >= 0; i--) {
+            *pWrite = pszDir[i];
+            pWrite--;
+        }
+    }
+    return nExpand;
+}
 
 /* scenNameTableInit @0x431cb0 — create the pool-backed mesh/name tables used
  * by the SEN loader (pool name "SCENE" @0x450fa8). Four pool allocations in

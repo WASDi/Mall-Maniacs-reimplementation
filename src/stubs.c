@@ -155,21 +155,8 @@ unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
 }
 
 extern char g_szSceneDir[]; /* @0x45e950 defined in sen.c */
-int scenSetDir(LPCSTR pszDir) /* @0x432e60 */
-{
-    if (pszDir) {
-        strncpy(g_szSceneDir, pszDir, 255);
-        g_szSceneDir[255]='\0';
-    } else {
-        g_szSceneDir[0]='\0';
-    }
-    return 1;
-}
-int scenExpandNameList(char *pList, void *pEnd, char *pszDir) /* @0x432dd0 */
-{
-    (void)pList; (void)pEnd; (void)pszDir;
-    return 0;
-}
+/* scenSetDir @0x432e60 and scenExpandNameList @0x432dd0 are implemented in
+ * sen.c (moved out of stubs when the name-expansion mechanism landed). */
 /* netIsActive @0x426ed0 — client/server flags ORed; both stay 0 offline. */
 int g_nNetIsClient;   /* @0x45e59c */
 int g_nNetIsServer;   /* @0x45e598 */

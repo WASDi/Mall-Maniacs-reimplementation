@@ -69,4 +69,16 @@ int scenNameTableInit(int nMeshCount, int nScenObjCap);
 /* scenNameTableFree @0x431e00 — destroy the scene name-table pool. */
 int scenNameTableFree(void);
 
+/* scenSetDir @0x432e60 — copy pszDir into g_szSceneDir @0x45e950 (NULL
+ * clears it). The dir is prefixed to every mesh name (EMAN) and, via
+ * scenExpandNameList, to every object name (ONAM) of subsequently
+ * loaded .sen files. */
+int scenSetDir(LPCSTR pszDir);
+
+/* scenExpandNameList @0x432dd0 — expand the packed ONAM copy in
+ * [pList, pEnd) in place by inserting pszDir in front of every name;
+ * returns the number of bytes added. Called by sceneLoadSen when
+ * g_szSceneDir is non-empty. */
+int scenExpandNameList(char *pList, void *pEnd, char *pszDir);
+
 #endif /* SEN_H */
