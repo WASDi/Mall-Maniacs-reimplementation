@@ -29,7 +29,13 @@ int g_nObjHashInit;                                 /* @0x4598fc */
 
 static const float g_flHalfPi = 1.5707964f;  /* @0x44b270 (bytes DB 0F C9 3F) */
 
-/* objFindById @0x414a90 — bucket = nId % 0xff; walk the +0x48 chain,
+/* g_apGrabbMesh @0x4583b8 — SceneObjTypeDef table indexed by world item
+ * id (0x2c-byte stride, ids 1..0x1e), read by playerAiGrabItem.
+ * TODO: filled by the object loader (not yet decoded); stays zeroed
+ * so pickups allocate a sub-channel-less mesh placeholder. */
+SceneObjTypeDef g_apGrabbMesh[31];                 /* @0x4583b8 */
+
+/* objFindById @0x414a90 — bucket = nId % 0xff; walk the +0x48 chain, walk the +0x48 chain,
  * match +0x08 == nId; the (nIndex+1)-th match is returned. The bucket
  * table is lazily zeroed on first use (g_nObjHashInit @0x4598fc). */
 EventObject *objFindById(int nId, int nIndex) /* @0x414a90 */
@@ -225,6 +231,30 @@ void objHashDtor(EventObject *pObj) /* @0x414760 */
     if (pObj->pHashNext != NULL) {       /* +0x48 chain */
         objHashDtor(pObj->pHashNext);
         memFreeDirect(pObj->pHashNext);
+    }
+}
+
+/* objHashRemoveFree @0x414990 — unlink an EventObject from its bucket
+ * chain (fix the bucket head / +0x48 / +0x4c neighbours), zero both links,
+ * run objHashDtor and free the record itself. */
+void objHashRemoveFree(EventObject *pObj) /* @0x414990 */
+{
+    int nBucket = pObj->nId % OBJ_HASH_BUCKETS;
+
+    if (g_apObjHashBuckets[nBucket] == pObj) {
+        g_apObjHashBuckets[nBucket] = pObj->pHashNext;  /* @0x4149b2 */
+    }
+    if (pObj->pHashNext != NULL) {                      /* +0x48 */
+        pObj->pHashNext->pHashPrev = pObj->pHashPrev;   /* @0x4149c0 */
+    }
+    if (pObj->pHashPrev != NULL) {                      /* @0x4149c6 */
+        pObj->pHashPrev->pHashNext = pObj->pHashNext;   /* @0x4149cd */
+    }
+    if (pObj != NULL) {                                 /* @0x4149d3 */
+        pObj->pHashNext = NULL;                         /* @0x40? @0x4149d5 */
+        pObj->pHashPrev = NULL;                         /* @0x4149d8 */
+        objHashDtor(pObj);                              /* @0x414760 @0x4149df */
+        memFreeDirect(pObj);                            /* @0x43dd37 @0x4149e5 */
     }
 }
 

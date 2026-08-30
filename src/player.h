@@ -61,7 +61,7 @@ typedef struct PlayerRecord {
     int field_28[2];             /* +0x28 */
     SceneNode *pCharSceneObj;    /* +0x30 char scene object */
     SceneNode *apMeshSlots[3];   /* +0x34 char mesh + up to 2 "_%d<name>" sub-meshes */
-    int field_40;                /* +0x40 */
+    SceneNode *pGrabSceneObj;    /* +0x40 held item / burger scene object */
     SceneNode *pCartChildA;      /* +0x44 cart child node (sceneNodeAllocChild) */
     SceneNode *pCartChildB;      /* +0x48 cart child node */
     char szCharName[0x100];      /* +0x4c unbounded strcpy of g_apCharNames[idx]
@@ -81,13 +81,16 @@ typedef struct PlayerRecord {
                                   * checks in roundLogicUpdate; mode 4 also
                                   * uses it as the checkpoint-stage flag */
     int field_178_pad[1];        /* +0x178 */
-    int nHeldItemId;             /* +0x17c */
-    int nListProgress;           /* +0x180 reset each round (checked ==5 in mode 3 AI) */
+    int anHeldSlot[2];           /* +0x17c held item ids (AI works on slot 0);
+                                  * anHeldSlot[1] == +0x180 doubles as the
+                                  * shopping-list progress counter in mode 3 */
     int anListIds[10];           /* +0x184 shopping list item ids */
     int abListTaken[10];         /* +0x1ac taken flags */
-    int field_1d4_pad[2];        /* +0x1d4 */
-    void *pQuestMessage;         /* +0x1dc frog message block (+0x10 = text, HUD) */
-    int field_1e0_pad[2];        /* +0x1e0 */
+    int nQuestFlags;             /* +0x1d4 mode-1 quest flag (-1 while a quest is open) */
+    int nQuestTargetId;          /* +0x1d8 mode-1 last rejected list id (targeting filter) */
+    void *pQuestMessage;         /* +0x1dc frog message block (+0x10 = text, +0x14 = stage) */
+    int nQuestStage;             /* +0x1e0 mode-1 quest stage counter (vs pQuestMessage+0x14) */
+    int nLastThrownItemId;       /* +0x1e4 id of the item this record threw last (mode-1/2 filter) */
     /* +0x1e8 walk physics block (16 dwords; refreshed from the shared block) */
     float flAccSpeed;            /* +0x1e8 (speed*0.7+100)*[master]/acc */
     float flFriction;            /* +0x1ec [master]/friction */
@@ -141,16 +144,19 @@ typedef struct PlayerRecord {
     AnmSet *apAnmSets[11];       /* +0x2a8 pick1,pick2,flpick1,flpick2,throw1,throw2,
                                   *       run,stand,grab,oops,winner; +0x2c4 (= stand)
                                   *       is the set stepped by roundStartInit */
-    int field_2d4;               /* +0x2d4 (AI: current anim set pointer) */
+    void *pAnimSet;              /* +0x2d4 AI: currently selected AnmSet* */
     int nChannelsDirty;          /* +0x2d8 gameUpdate sync gate (nonzero = re-sync meshes) */
     int nControlType;            /* +0x2dc 2 = AI-driven (playerUpdateDispatch gate) */
     float flInputTurn;           /* +0x2e0 turn impulse channel (float; net anim-sync
                                   * reuse copies raw dwords into it, dead offline) */
     float flInputAccel;          /* +0x2e4 accel impulse channel (float; same reuse) */
-    int field_2e8;               /* +0x2e8 zeroed */
+    int nActionSubstate;         /* +0x2e8 action substate: 1 break, 2 jump, 3 grab cart,
+                                  * 4 release cart, 5 get item, 6 drop item, 7 ride cart */
     int _pad2ec;                 /* +0x2ec untouched */
-    int field_2f0;               /* +0x2f0 zeroed */
-    int field_2f4_pad[2];        /* +0x2f4 */
+    int nAiPhase;                /* +0x2f0 AI phase (0 walk, 1 approach, 4 item action,
+                                  * 0xa burger hold, 0xf timer wait) */
+    int nAiPhaseNext;            /* +0x2f4 phase to restore after the 0xf timer */
+    int nAiPhaseTimer;           /* +0x2f8 0xf-phase frame counter */
     int field_2fc;               /* +0x2fc zeroed */
     int field_300_pad[3];        /* +0x300 */
     int nNetReady;               /* +0x30c ==1 while waiting for peers (HUD) */

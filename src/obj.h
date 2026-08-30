@@ -2,6 +2,7 @@
 #define OBJ_H
 
 #include "gx.h"
+#include "scene.h"
 
 /* obj.h — EventObject registry + point-in-zone tests (maniac.exe
  * 0x414xxx). EventObjects are the named zone/trigger objects ("AR00",
@@ -59,6 +60,15 @@ typedef struct EventObject {
 } EventObject;              /* 0x50 */
 
 #define OBJ_HASH_BUCKETS 0xff
+
+/* g_apGrabbMesh @0x4583b8 — SceneObjTypeDef table indexed by world item id
+ * (0x2c-byte stride: index = id * 11 in the original dword addressing). */
+extern SceneObjTypeDef g_apGrabbMesh[31];           /* @0x4583b8 */
+
+/* objHashRemoveFree @0x414990 — unlink the EventObject from its id-hash
+ * bucket (bucket head, +0x48 next and +0x4c prev links), then objHashDtor
+ * and free the object. */
+void objHashRemoveFree(EventObject *pObj);           /* @0x414990 */
 
 /* objFindById @0x414a90 — return the (nIndex+1)-th EventObject with
  * id == nId in the g_apObjHashBuckets table (bucket = id % 0xff, chain

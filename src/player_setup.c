@@ -140,8 +140,8 @@ void playerSetupRound(void) /* @0x410e90 */
         }
         pRec->flInputAccel = 0;                                         /* @0x410f90 */
         pRec->flInputTurn = 0;                                         /* @0x410f93 */
-        pRec->field_2e8 = 0;                                               /* @0x410f95 */
-        pRec->field_2f0 = 0;                                               /* @0x410f98 */
+        pRec->nActionSubstate = 0;                                         /* @0x410f95 */
+        pRec->nAiPhase = 0;                                                /* @0x410f98 */
         pRec->field_2fc = 0;                                               /* @0x410f9b */
         if (pRec->pSubObjA != NULL) {                                      /* @0x410f9e */
             objDtor((WorldNode *)pRec->pSubObjA);                          /* @0x402ab0 @0x410faa */
@@ -162,7 +162,7 @@ void playerSetupRound(void) /* @0x410e90 */
             while (nBurn-- > 0) {                                          /* @0x410fff */
                 rand();                                                    /* @0x43ea7c @0x411001 */
             }
-            pRec->nListProgress = 0;                                       /* @0x41100d */
+            pRec->anHeldSlot[1] = 0;                                       /* @0x41100d */
             for (j = 0; j < 10; j++) {                                     /* @0x411013 */
                 int k;
 
@@ -178,7 +178,7 @@ void playerSetupRound(void) /* @0x410e90 */
         }
         if (g_nGameMode == 3) {                                            /* @0x458120 @0x411063 */
             g_nCurrentItemId = 0;                                          /* @0x458128 @0x41106d */
-            pRec->nListProgress = 0;                                       /* @0x411073 */
+            pRec->anHeldSlot[1] = 0;                                       /* @0x411073 */
             {
                 int j;
 
@@ -199,7 +199,7 @@ void playerSetupRound(void) /* @0x410e90 */
                 pRec->abListTaken[j] = 1;                                  /* @0x4110d6 */
             }
         }
-        pRec->nHeldItemId = 0;                                             /* @0x4110f7 */
+        pRec->anHeldSlot[0] = 0;                                             /* @0x4110f7 */
         pRec->field_248 = 0.0f;                                            /* +0x248 @0x4110f9 */
         pRec->flPosSpeed = 0.0f;                                           /* +0x234 @0x4110ff */
         pRec->field_228_pad = 0.0f;                                        /* +0x228 @0x411105 */

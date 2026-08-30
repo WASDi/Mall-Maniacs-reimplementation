@@ -102,7 +102,9 @@ void sndStopAllVoices(void *pVoiceList)
  * @0x44b3xx; the rebuild hardcodes the commands in use. */
 unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
 {
-    (void)nCommand;
+    if (pszCommand != NULL && strncmp(pszCommand, "action ", 7) == 0) {
+        actionCmd(nCommand, pszCommand + 7); /* @0x4067c0 (table @0x44b308) */
+    }
     if (pszCommand != NULL && strncmp(pszCommand, "run ", 4) == 0) {
         runCmd(0, pszCommand + 4);
     }
@@ -192,6 +194,29 @@ void objUpdatePhysics(void) /* @0x405680 */
  * objUpdatePhysics. */
 void objUpdateFire(void) /* @0x405e10 */
 {
+}
+
+/* thrownItemFree @0x40f8d0 — TODO: unlink a thrown-item record from the
+ * g_pThrownItemHead/Tail list and release its WorldNode mesh (the item
+ * cluster is the next rebuild increment; the record is left allocated and
+ * detached so callers do not dereference freed memory). */
+void thrownItemFree(ThrownItemStub *pItem) /* @0x40f8d0 */
+{
+    (void)pItem;
+}
+
+/* playerAnimSfxUpdate @0x40c800 — TODO stub (next-step #4). */
+void playerAnimSfxUpdate(void) /* @0x40c800 */
+{
+}
+
+/* playerThrowItemCtor @0x40f720 — TODO stub: allocates nothing; the AI
+ * drop-item path simply produces no projectile until the item cluster
+ * lands (contract in stubs.h). */
+void *playerThrowItemCtor(void *pItem, int nItemId) /* @0x40f720 */
+{
+    (void)nItemId;
+    return pItem;
 }
 
 /* itemThrowUpdate @0x40f950 — step one thrown item (g_pThrownItemHead

@@ -45,6 +45,10 @@ int g_bQuitPrompt;       /* @0x45812c */
 int g_nGamePhase;        /* @0x458124 */
 int g_nWinnerIdx;        /* @0x458134 results-screen winner slot */
 unsigned char g_bGameRunning; /* @0x44fdc4 round live flag (HUD/results gate) */
+/* "action get item" @0x44e1f4 — commandDispatch payload for the local
+ * player's blocked-target pickup (gameWorldUpdate tail). */
+#define SZ_ACTION_GET_ITEM "action get item"            /* @0x44e1f4 */
+
 int g_nWorldFrameTick;   /* @0x458944 */
 int g_nClearColor;       /* @0x45892c */
 void *g_pSceneDetailGrid;/* @0x45838c */
@@ -308,7 +312,7 @@ static const int kGoalObjNameId = 0x6C6F6767; /* *(int *)"goal" @0x44f4e4 */
 /* ROUND_CHECK_WIN — per-player win condition inlined by the original at
  * the mode 1 (@0x40c123..0x40c1a1), mode 2 (@0x40c229..0x40c2a9) and
  * mode 3 (@0x40c323..0x40c39a) loops: with the results screen down, a
- * player whose nListProgress (+0x180) reached the target has bStateFlags
+ * player whose anHeldSlot[1] (+0x180) reached the target has bStateFlags
  * |= 0x20, and when its +0x174 gate is set and the player's char node
  * pSubObjC (+0x2a4, position floats +0x20 x / +0x24 y) stands inside the
  * "goal" checkout zone, the ROUND_WIN_TAIL fires. nAnnounce bit0 makes
@@ -320,7 +324,7 @@ static const int kGoalObjNameId = 0x6C6F6767; /* *(int *)"goal" @0x44f4e4 */
         PlayerRecord *pRec = &g_playerRecords[(nIdx)];                   \
         EventObject *pGoal;                                              \
         if (g_nResultsScreen != 0 ||                                     \
-            pRec->nListProgress != (nTarget)) {                          \
+            pRec->anHeldSlot[1] != (nTarget)) {                          \
             break;        /* @0x40c137 @0x40c140 */                      \
         }                                                                \
         pRec->bStateFlags |= 0x20;     /* @0x40c146 */                   \
@@ -369,8 +373,8 @@ static const int kGoalObjNameId = 0x6C6F6767; /* *(int *)"goal" @0x44f4e4 */
  *      animation state is zeroed instead.
  *   4. Mode rules (switch g_nGameMode @0x458120):
  *      mode 1 Frögesporten / mode 2 Varujakten: list complete
- *      (nListProgress +0x180 == 10) + checkout zone -> win; mode 2 skips
- *      the check on clients. mode 3 Matkrig: nListProgress == 5 + zone;
+ *      (anHeldSlot[1] +0x180 == 10) + checkout zone -> win; mode 2 skips
+ *      the check on clients. mode 3 Matkrig: anHeldSlot[1] == 5 + zone;
  *      afterwards the server/offline item spawner keeps g_nSpawnTimer
  *      @0x458950 (forced to 8999 during the first 3 s of player-0
  *      ticks): at 10000 ms it rolls g_nCurrentItemId @0x458128 =
@@ -427,7 +431,7 @@ void roundLogicUpdate(void) /* @0x40beb0 */
         for (i = 0; i < g_nPlayerCount; i++) {             /* anim-state zero @0x40c019 */
             g_playerRecords[i].flInputTurn = 0;        /* +0x2e0 */
             g_playerRecords[i].flInputAccel = 0;        /* +0x2e4 */
-            g_playerRecords[i].field_2e8 = 0;              /* +0x2e8 */
+            g_playerRecords[i].nActionSubstate = 0;        /* +0x2e8 */
         }
         if (g_nRoundElapsedTicks >
             (g_nRoundTimeLimit - 250) / g_nObjUpdateTime) {/* @0x40c030..0x40c041 */
@@ -460,7 +464,7 @@ void roundLogicUpdate(void) /* @0x40beb0 */
         for (i = 0; i < g_nPlayerCount; i++) {             /* @0x40c0fa */
             g_playerRecords[i].flInputTurn = 0;
             g_playerRecords[i].flInputAccel = 0;
-            g_playerRecords[i].field_2e8 = 0;
+            g_playerRecords[i].nActionSubstate = 0;
         }
     }
 
@@ -605,6 +609,7 @@ int runCmd(int nContext, LPCSTR pszArgs)
  * the remaining player, item, animation, game, and camera TODO boundaries. */
 void gameWorldUpdate(void)
 {
+    PlayerRecord *pLocalRec;
     pollKeyboard(dispatchKeyEvent, (int)g_nLastFrameTime);
     if (g_bGameActive == 0 || g_bQuitPrompt != 0) return;
 
@@ -615,9 +620,22 @@ void gameWorldUpdate(void)
 
     netGameUpdate();
     g_nWorldFrameTick++;
+    /* Local-player item pickup on even world ticks while the AI phase is
+     * idle (@0x40b434..0x40b4a1): a blocked target raises the "action get
+     * item" command unless an AI-controlled local player is suppressed by
+     * g_bAiEnabled (0x458358). */
+    pLocalRec = &g_playerRecords[g_nLocalPlayerIdx];
+    /* even-tick gate @0x40b440 */
+    if (pLocalRec->nAiPhase == 0 && (g_nWorldFrameTick & 1) == 0) {
+        if (playerCheckBlocked(pLocalRec) != 0 &&
+            !(pLocalRec->nControlType == 2 && g_bAiEnabled != 0)) {
+            commandDispatch((int)pLocalRec, SZ_ACTION_GET_ITEM);   /* @0x408b60 @0x40b49f */
+        }
+    }
+    playerUpdateAI();                                   /* @0x40b510 @0x40b4a7 */
+    playerAnimSfxUpdate();                              /* @0x40c800 @0x40b4ac */
     sceneTextAnimUpdate(1);
-    /* TODO: playerCheckBlocked item pickup, playerUpdateAI,
-     * playerAnimSfxUpdate, and gameUpdate. */
+    gameUpdate();                                       /* @0x426ee0 @0x40b4bb */
     if (g_nResultsScreen == 0 &&
         ((g_nCameraUpdateTick & 3) == 0 ||
          g_playerRecords[g_nLocalPlayerIdx].flInputTurn != 0)) {

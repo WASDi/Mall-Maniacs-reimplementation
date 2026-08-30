@@ -141,6 +141,24 @@ int sndPlaySfx3D(void *pEmitter, unsigned int nBank, unsigned int nIdx,
 void objUpdatePhysics(void);
 void objUpdateFire(void);
 
+/* thrownItemFree @0x40f8d0 — unlink a thrown-item record from the
+ * g_pThrownItemHead/Tail list and release its WorldNode mesh (0x40f8d0
+ * thiscall). TODO: full item-cluster (playerThrowItemCtor @0x40f720 /
+ * itemThrowUpdate @0x40f950 / itemMeshFollowUpdate @0x40fde0). */
+void thrownItemFree(ThrownItemStub *pItem);          /* @0x40f8d0 */
+
+/* playerAnimSfxUpdate @0x40c800 — per-player animation stepping + gameplay
+ * sfx (footsteps, cart engine, results orbit). TODO: full implementation
+ * tracked as rebuild next-step #4; the world tick still calls it in the
+ * original order, so the stub keeps the frame timing. */
+void playerAnimSfxUpdate(void);                      /* @0x40c800 */
+
+/* playerThrowItemCtor @0x40f720 — thiscall ctor for the 0x30-byte thrown
+ * item record: world node child mesh, turret entry, g_playerRecords[owner]
+ * +0x1e4 = itemId, push onto g_pThrownItemHead (cap 10, frees the oldest).
+ * TODO: implemented with the thrown-item cluster (next-step #2). */
+void *playerThrowItemCtor(void *pItem, int nItemId); /* @0x40f720 */
+
 /* itemThrowUpdate @0x40f950 / itemMeshFollowUpdate @0x40fde0 — thrown-item
  * passes over the g_pThrownItemHead list (next link at +0x04). Documented
  * TODO stubs (see stubs.c); the list stays empty until the thrown-item
