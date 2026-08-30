@@ -259,9 +259,15 @@ void playerSetupRound(void) /* @0x410e90 */
         mStringFree(&mstrValue);                                           /* @0x41138d */
         pRec->flAccFactor = (float)configEnvGetDouble2(&g_configEnvMaster, pNode, "friction");      /* +0x22c @0x4113a2 on-foot pos-node accel factor */
         pRec->flRotFactor = (float)configEnvGetDouble2(&g_configEnvMaster, pNode, "friction");      /* +0x23c @0x4113b8 on-foot pos-node turn factor */
-        /* walk block: acc = (speed*0.7 + 100) * master acc (0x44b59c = 0.7f,
-         * 0x44b598 = 100.0f — the decompiler's "0.06/0.7" naming is wrong). */
-        pRec->flAccSpeed = ((float)pRec->nStatSpeed * 0.7f + 100.0f) * flAcc;          /* @0x4113da */
+        /* walk block: acc = (speed stat * 0.06 + 0.7) * master acc.
+         * Constants verified from the .exe image bytes 2026-08-30:
+         * 0x44b59c = 0.06f (stat multiplier, FMUL @0x4113ca) and
+         * 0x44b598 = 0.7f (base, FADD @0x4113d0). With acc = 64.0 and a
+         * speed stat of 3 this gives flAccSpeed = 56.3 and terminal
+         * flAccFric = 56.3 / (1 - 0.70) = 187.7 units/update; the earlier
+         * (stat*0.7 + 100) reading made every input impulse ~116x too
+         * strong. */
+        pRec->flAccSpeed = ((float)pRec->nStatSpeed * 0.06f + 0.7f) * flAcc;           /* @0x4113da */
         pRec->flRotAccSpeed = ((float)pRec->nStatAgility * 0.1f + 0.5f) * flRotAcc;    /* @0x4113f6 */
         pRec->flFriction = flFriction;                                     /* +0x1ec @0x411402 */
         pRec->flRotAccFric = flFriction;                                   /* +0x1fc @0x411408 friction copy (walk turn decay) */
@@ -270,7 +276,7 @@ void playerSetupRound(void) /* @0x410e90 */
         pRec->flCurAccFric = pRec->flAccFric;                              /* +0x230 @0x41143e */
         pRec->flCurRotAccFric = pRec->flRotAccStep;                        /* +0x240 @0x41144a */
         /* cart block: same shape with the WC constants and averaged friction. */
-        pRec->flCartAccSpeed = ((float)pRec->nStatSpeed * 0.7f + 100.0f) * flAccWC;    /* @0x411456 */
+        pRec->flCartAccSpeed = ((float)pRec->nStatSpeed * 0.06f + 0.7f) * flAccWC;     /* @0x411456 */
         pRec->flCartRotAccSpeed = ((float)pRec->nStatAgility * 0.1f + 0.5f) * flRotAccWC; /* @0x41146f */
         pRec->flCartFrictionB = (flFriction + pRec->flRotFactor) * 0.5f;               /* +0x27c @0x411492 */
         pRec->flCartFriction = (flFriction + pRec->flAccFactor) * 0.5f;                /* +0x26c @0x41149f */

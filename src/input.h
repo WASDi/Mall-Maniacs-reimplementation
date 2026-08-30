@@ -23,6 +23,13 @@ extern char g_abInputKeyHeld[8];
  * pollKeyboard(DispatchKeyEventFn pfnDispatchKeyEvent, int nFrameTime). */
 void pollKeyboard(DispatchKeyEventFn pfnDispatchKeyEvent, int nFrameTime);
 
+/* pollKeyboardGame @0x416820 — Ghidra signature void __stdcall
+ * pollKeyboardGame(DispatchKeyEventFn pfnDispatchKeyEvent) (RET 0x4 — no
+ * time argument). The in-game poll gameWorldUpdate @0x40b3d0 feeds
+ * gameKeyHandler through; movement keys and Enter dispatch every frame
+ * while held, Escape is edge-latched, Space runs the tap/hold machine. */
+void pollKeyboardGame(DispatchKeyEventFn pfnDispatchKeyEvent);
+
 /* dispatchKeyEvent @0x41ade0 — Ghidra signature int __cdecl
  * dispatchKeyEvent(int nKey, int nKeyType). */
 int dispatchKeyEvent(int nKey, int nKeyType);

@@ -11,8 +11,11 @@ Use this to verify menu flows and smoke-test new states after each rebuild.
   (`0x80` on down, `0` on up).
 * `pollKeyboard` (`src/input.c`) runs once per frame (~25 ms) *after* the
   `PeekMessage` batch and dispatches a key only if the held byte is `0x80`
-  **at poll time**. Enter is edge-triggered ("once per press"); the others
-  repeat every 200 ms.
+  **at poll time**. In menu states (pollKeyboard @0x416a10) Enter is
+  edge-triggered ("once per press") and the others repeat every 200 ms; in
+  gameplay (`pollKeyboardGame @0x416820`, since the input fix) movement keys
+  and Enter dispatch **every frame while held** — holding a key in a round
+  works like the original — and Escape is edge-latched once per press.
 * Consequence: `xdotool key` presses and releases within one frame, so the
   byte is set and cleared between two polls and the key is **silently lost**.
 

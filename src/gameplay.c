@@ -788,16 +788,19 @@ void gameKeyHandler(int nKey, int nKeyType) /* @0x40db80 */
 void gameWorldUpdate(void)
 {
     PlayerRecord *pLocalRec;
-    /* The original pushes gameKeyHandler @0x40db80 (@0x40b3d0) into
-     * pollKeyboard, so gameplay (key, 2) events go straight to the in-game
-     * handler and set the flInputTurn/flInputAccel channels; the menu path
-     * (gameFrameUpdate) keeps dispatchKeyEvent -> g_pStateFunc. Ghidra types
-     * gameKeyHandler void __cdecl(int,int) while DispatchKeyEventFn returns
-     * int; pollKeyboard never reads the callback's return, so the pragma just
-     * bridges the two signatures of the same original call site. */
+    /* The original pushes gameKeyHandler @0x40db80 into the IN-GAME poll
+     * pollKeyboardGame @0x416820 (@0x40b3d0: PUSH 0x40db80 / CALL 0x416820,
+     * no time argument): movement keys and Enter dispatch (key, 2) every
+     * frame while held — no debounce — so holding a key keeps feeding the
+     * flInputTurn/flInputAccel channels each world update. The debounced
+     * menu poll pollKeyboard @0x416a10 stays on the gameFrameUpdate path
+     * (dispatchKeyEvent -> g_pStateFunc). Ghidra types gameKeyHandler
+     * void __cdecl(int,int) while DispatchKeyEventFn returns int;
+     * pollKeyboardGame never reads the callback's return, so the pragma
+     * just bridges the two signatures of the same original call site. */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-function-type"
-    pollKeyboard((DispatchKeyEventFn)gameKeyHandler, (int)g_nLastFrameTime);
+    pollKeyboardGame((DispatchKeyEventFn)gameKeyHandler);
 #pragma GCC diagnostic pop
     if (g_bGameActive == 0 || g_bQuitPrompt != 0) return;
 
