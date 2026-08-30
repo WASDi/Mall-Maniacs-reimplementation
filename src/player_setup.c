@@ -37,11 +37,14 @@ int g_nCurrentItemId;
 
 /* g_kModePlayerCounts @0x44b610 — players per round, indexed
  * g_nLevelIdx*3 + g_nModeSel (rows by level, columns by difficulty). */
-static const int g_kModePlayerCounts[12] = { /* @0x44b610 */
+static const int g_kModePlayerCounts[15] = { /* @0x44b610 (15 dwords, 0x44b610..0x44b64b) */
     2, 3, 4,   /* level 0 */
     2, 3, 4,   /* level 1 */
     3, 3, 4,   /* level 2 */
-    3, 4, 4    /* level 3 */
+    3, 4, 4,   /* level 3 */
+    4, 4, 4    /* level 4 — verified from image bytes @0x44b64c-16; the truncated
+                  12-entry table made playerSetupCharacters read out of bounds
+                  and the unique-character retry loop spin forever (level-4 freeze) */
 };
 
 /* playerSetupCharacters @0x41b6e0 — assign characters to all players before a

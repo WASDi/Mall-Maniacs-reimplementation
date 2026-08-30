@@ -365,9 +365,13 @@ void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
         }
     }
     if (count == 3) {
-        gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2], (int)pColor, pUV);
+        /* Original @0x42dabf passes the 4th param (COLS color record) to the
+         * gx color slot and the 5th param (MAPI texture record) to the
+         * gx texture-record slot — the names here follow the original's
+         * (misleading) Ghidra labels, the call order must not swap them. */
+        gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2], (int)pUV, pColor);
     } else if (count >= 4) {
-        gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3], (int)pColor, pUV);
+        gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3], (int)pUV, pColor);
     }
 }
 
@@ -402,9 +406,10 @@ void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
         }
     }
     if (count == 3) {
-        gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2], (int)pColor, pUV);
+        /* Same slot order as meshDrawTriClip @0x42dabf (see note there). */
+        gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2], (int)pUV, pColor);
     } else if (count >= 4) {
-        gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3], (int)pColor, pUV);
+        gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3], (int)pUV, pColor);
     }
 }
 
