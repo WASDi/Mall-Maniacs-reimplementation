@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <math.h>
 
 #include "gameplay.h"
 #include "anim.h"
@@ -693,4 +694,198 @@ void gameRunFrame(int forceRender)
 
     if (g_bGameActive != 0) gameFrameRender();
     sndEmitterUpdateAll();
+}
+/* --- playerAnimSfxUpdate @0x40c800 — per-player animation stepping +
+ * gameplay sfx emitters (verified 2026-08-30 against the disassembly). --- */
+int g_nAnimSfxTick;     /* @0x458954 alternating step gate (toggled each call) */
+float g_playerAnimT;    /* @0x458958 results-screen winner orbit phase */
+
+/* Constants used by playerAnimSfxUpdate (addresses from the disassembly). */
+static const float g_flLimbTurnScale = 5575.0f;   /* @0x44b4a8 (bytes 00 00 AF 45) */
+static const float g_flEngineSpeedHi = 45.0f;     /* @0x44b4a4 (bytes 00 00 34 42) */
+static const float g_flEngineSpeedLo = -45.0f;    /* @0x44b4a0 (bytes 00 00 34 C2) */
+static const double g_dblEngineTurnHi = 0.012;    /* @0x44b498 (bytes FA 7E 6A BC 74 93 88 3F) */
+static const double g_dblEngineTurnLo = -0.012;   /* @0x44b490 (bytes FA 7E 6A BC 74 93 88 BF) */
+static const double g_dblOrbitRadius = -2000.0;   /* @0x44b4b0 (bytes 00 40 9F C0 00 00 00 00) */
+static const float g_flOrbitStep = 0.04f;         /* @0x44b4b8 (bytes 0A D7 23 3D) */
+static const float g_flOrbitAimY = 1000.0f;       /* @0x44b464 (bytes 00 00 7A 44) */
+
+/* playerAnimSfxUpdate @0x40c800 — per-player animation + gameplay sfx pass,
+ * called from gameWorldUpdate (@0x40b4ac). Two halves:
+ *  - g_nResultsScreen == 0: toggle g_nAnimSfxTick, then per player: set
+ *    nChannelsDirty, run the nAiPhase animation-state machine (1/4/7 reset +
+ *    advance, 2/5/8 step + advance, 3/6/9/0xf skip), on-foot/cart idle and
+ *    run anim stepping, the flInputTurn limb sub-pos pass (sub-meshes 1/2
+ *    pitch = turn accum * 5575 / rot-step, doubled on mesh 1), the cart
+ *    limb-aim pass (sub-meshes 6/7 and 3/4 aimed at the two cart children
+ *    via playerAnimOrientFromDir +-16000 roll), and the move/engine
+ *    emitters (bank 1 idx 10 while accelerating, idx 11 while |speed| > 45
+ *    or |turn| > 0.012, freed in the quiet band).
+ *  - results screen: step the winner set (interp on even ticks) and the
+ *    losers' stand set (odd ticks), free every emitter, then orbit the
+ *    scene root around the winner node (t += 0.04, x/z -= +-2000-radius
+ *    sin/cos, y - 2000; facePos aims 1000 above). */
+void playerAnimSfxUpdate(void) /* @0x40c800 */
+{
+    static const float g_flZero = 0.0f;   /* @0x44b244 */
+    PlayerRecord *pRec;
+    AnmSet *pSet;
+    int i;
+
+    g_nAnimSfxTick = (g_nAnimSfxTick == 0);                     /* @0x40c82d */
+    if (g_nResultsScreen != 0) {                                /* @0x40c838 */
+        for (i = 0; i < g_nPlayerCount; i++) {                  /* @0x40c84d */
+            pRec = &g_playerRecords[i];
+            if (i == g_nWinnerIdx) {                            /* @0x40c85f */
+                pSet = (AnmSet *)pRec->apAnmSets[10];           /* +0x2d0 winner set */
+                if (g_nAnimSfxTick == 0) {                      /* @0x40c863 */
+                    sceneObjectAnimStepInterp((SceneObjAnimList *)pSet, 1); /* @0x4347c0 @0x40c892 */
+                } else {
+                    sceneObjectAnimStep((SceneObjAnimList *)pSet, 1); /* @0x434540 @0x40c8a5 */
+                }
+            } else if (g_nAnimSfxTick != 0) {                   /* @0x40c899 */
+                sceneObjectAnimStep((SceneObjAnimList *)pRec->apAnmSets[7], 1); /* stand */
+            }
+            if (pRec->pSndEmitterStep != NULL) {                /* @0x40c8b3 */
+                sndEmitterFree((SndEmitter *)pRec->pSndEmitterStep); /* @0x42bec0 */
+                memFreeDirect(pRec->pSndEmitterStep);
+                pRec->pSndEmitterStep = NULL;
+            }
+            if (pRec->pSndEmitterEngine != NULL) {              /* @0x40c8d0 */
+                sndEmitterFree((SndEmitter *)pRec->pSndEmitterEngine);
+                memFreeDirect(pRec->pSndEmitterEngine);
+                pRec->pSndEmitterEngine = NULL;
+            }
+        }
+        {
+            int anPos[3];
+            pRec = &g_playerRecords[g_nWinnerIdx];
+            sceneNodeGetPosWorld(pRec->pCharSceneNode, (float *)anPos, 2); /* @0x430e80 @0x40c926 */
+            g_playerAnimT += g_flOrbitStep;                     /* @0x40c92b */
+            anPos[2] -= (int)(cos((double)g_playerAnimT) * g_dblOrbitRadius); /* @0x40c945 */
+            anPos[0] -= (int)(sin((double)g_playerAnimT) * g_dblOrbitRadius); /* @0x40c952 */
+            sceneObjSetPos(g_pSceneRoot, anPos[0], anPos[1] - 2000, anPos[2], 2); /* @0x430660 @0x40c984 */
+            sceneNodeFacePos(g_pSceneRoot, 0, (float)anPos[0],  /* @0x431030 @0x40c9b3 */
+                             (float)anPos[1] - g_flOrbitAimY, (float)anPos[2], 2);
+        }
+        return;                                                 /* @0x40cf39 */
+    }
+
+    for (i = 0; i < g_nPlayerCount; i++) {                      /* @0x40c9ce */
+        pRec = &g_playerRecords[i];
+        pRec->nChannelsDirty = 1;                               /* +0x2d8 @0x40c9e9 */
+        if ((pRec->bStateFlags & 4) != 0) {                     /* +0x158 @0x40c9ec */
+            sceneObjectAnimStep((SceneObjAnimList *)pRec->apAnmSets[9], 1); /* oops @0x40c9fb */
+            continue;                                           /* @0x40cf0d */
+        }
+        pSet = (AnmSet *)pRec->pAnimSet;                        /* +0x2d4 */
+        if (pRec->nAiPhase == 1 || pRec->nAiPhase == 4 ||       /* @0x40ca08 */
+            pRec->nAiPhase == 7) {
+            eventAnimReset(pSet->pAnm);                         /* @0x434270 @0x40cedc */
+            pRec->nAiPhase++;                                   /* @0x40cee7 */
+        } else if (pRec->nAiPhase == 2 || pRec->nAiPhase == 5 || /* @0x40ce97 */
+                   pRec->nAiPhase == 8) {
+            if (sceneObjectAnimStep((SceneObjAnimList *)pSet, 1) != 0) { /* @0x40ce9c */
+                pRec->nAiPhase++;                               /* @0x40cecc */
+            }
+        } else if (pRec->nAiPhase != 3 && pRec->nAiPhase != 6 && /* @0x40ca40 */
+                   pRec->nAiPhase != 9 && pRec->nAiPhase != 0xf) {
+            /* idle/move anim + limb + emitter pass */
+            if (pRec->flInputAccel == g_flZero) {               /* +0x2e4 @0x40ca64 */
+                pSet = (AnmSet *)pRec->apAnmSets[6];            /* +0x2c0 run set */
+                if (((AnmFile *)pSet->pAnm)->nFrame != 0) {     /* @0x40ca7c */
+                    eventAnimReset(pSet->pAnm);                 /* @0x434270 @0x40ca84 */
+                }
+                if (g_nAnimSfxTick != 0) {                      /* @0x40ca8c */
+                    sceneObjectAnimStep((SceneObjAnimList *)pRec->apAnmSets[7], 1); /* stand @0x40ca99 */
+                }
+            } else {
+                sceneObjectAnimStep((SceneObjAnimList *)pRec->apAnmSets[6], 1); /* run @0x40ca78 */
+            }
+            if (pRec->flInputTurn != g_flZero) {                /* +0x2e0 @0x40caa1 */
+                short anAngles[3];
+                int nLimbPitch;
+
+                if (pRec->field_174 != 0) {                     /* @0x40cab5 */
+                    nLimbPitch = (int)(pRec->flCartTurnAccum * g_flLimbTurnScale /
+                                       pRec->flCartRotAccFric); /* @0x40cabd */
+                } else {
+                    nLimbPitch = (int)(pRec->flTurnAccum * g_flLimbTurnScale /
+                                       pRec->flRotAccStep);     /* @0x40cacb */
+                }
+                sceneNodeGetChannelPos(pRec->pCharSceneObj, 1, anAngles, 2, NULL); /* @0x4315e0 @0x40caf3 */
+                sceneObjSetSubPos(pRec->pCharSceneObj, 1,       /* @0x430a90 @0x40cb10 */
+                                  anAngles[0], (short)(nLimbPitch * 2), anAngles[2], 2);
+                sceneNodeGetChannelPos(pRec->pCharSceneObj, 2, anAngles, 2, NULL); /* @0x40cb24 */
+                sceneObjSetSubPos(pRec->pCharSceneObj, 2,       /* @0x40cb40 */
+                                  anAngles[0], (short)nLimbPitch, anAngles[2], 2);
+            }
+            if (pRec->field_174 != 0) {                         /* cart limb aim @0x40cb48 */
+                short anAngles[3];
+                short anWalk[3];
+                int anCart[6];
+
+                sceneSetCurrentObj(pRec->pCharSceneObj, 1);     /* @0x430d98 @0x40cb5c */
+                sceneNodeGetPos(pRec->pCartChildB, 0, anCart, 6);   /* @0x431270 @0x40cb70 */
+                sceneNodeGetPos(pRec->pCharSceneObj, 6, anCart + 3, 2); /* @0x40cb85 */
+                playerAnimOrientFromDir(anCart[0] - anCart[3],  /* @0x4336b0 @0x40cbdb */
+                                        anCart[1] - anCart[4],
+                                        anCart[2] - anCart[5],
+                                        anAngles, anWalk, NULL,
+                                        &g_awWalkAnimTable[0][0], 0x1ea, (short)-16000);
+                sceneObjSetSubPos(pRec->pCharSceneObj, 6,       /* @0x40cbfd */
+                                  anAngles[0], anAngles[1], anAngles[2], 2);
+                sceneObjSetSubPos(pRec->pCharSceneObj, 7,       /* @0x40cc1c */
+                                  anWalk[0], anWalk[1], anWalk[2], 2);
+                sceneNodeGetPos(pRec->pCartChildA, 0, anCart, 6);   /* @0x40cc30 */
+                sceneNodeGetPos(pRec->pCharSceneObj, 3, anCart + 3, 2); /* @0x40cc48 */
+                playerAnimOrientFromDir(anCart[0] - anCart[3],  /* @0x40cc98 */
+                                        anCart[1] - anCart[4],
+                                        anCart[2] - anCart[5],
+                                        anAngles, anWalk, NULL,
+                                        &g_awWalkAnimTable[0][0], 0x1ea, (short)16000);
+                sceneObjSetSubPos(pRec->pCharSceneObj, 3,       /* @0x40ccb7 */
+                                  anAngles[0], anAngles[1], anAngles[2], 2);
+                sceneObjSetSubPos(pRec->pCharSceneObj, 4,       /* @0x40ccd9 */
+                                  anWalk[0], anWalk[1], anWalk[2], 2);
+            }
+            /* footstep/move emitter: live while accelerating */
+            if (pRec->flInputAccel == g_flZero) {               /* @0x40cce1 */
+                if (pRec->pSndEmitterStep != NULL) {            /* @0x40cd52 */
+                    sndEmitterFree((SndEmitter *)pRec->pSndEmitterStep);
+                    memFreeDirect(pRec->pSndEmitterStep);
+                    pRec->pSndEmitterStep = NULL;
+                }
+            } else if (pRec->pSndEmitterStep == NULL) {         /* @0x40ccf1 */
+                void *pEmitter = malloc(0x1c);                  /* operator_new @0x43dd42 @0x40ccfb */
+                if (pEmitter != NULL) {
+                    sndPlaySfx3D((SndEmitter *)pEmitter, 1, 10, 65000, 0xff, /* @0x42bcd0 @0x40cd2b */
+                                 pRec->pCharSceneNode, 0, 0, 0, 0, 0x11);
+                }
+                pRec->pSndEmitterStep = pEmitter;
+            }
+            /* engine emitter: live while |speed| > 45 or |turn| > 0.012 */
+            {
+                float flSpeed = (pRec->field_174 != 0) ? pRec->flCartCurSpeed /* @0x40cdc6 */
+                                                       : pRec->flPosSpeed;   /* @0x40cd7c */
+                float flTurn = (pRec->field_174 != 0) ? pRec->flCartTurnAccum /* @0x40cdc6 */
+                                                      : pRec->flPosTurnAccum; /* @0x40cda2 */
+                if (flSpeed > g_flEngineSpeedHi || flSpeed < g_flEngineSpeedLo ||
+                    flTurn > g_dblEngineTurnHi || flTurn < g_dblEngineTurnLo) {
+                    if (pRec->pSndEmitterEngine == NULL) {       /* @0x40ce2f */
+                        void *pEmitter = malloc(0x1c);           /* operator_new @0x40ce3d */
+                        if (pEmitter != NULL) {
+                            sndPlaySfx3D((SndEmitter *)pEmitter, 1, 11, 65000, 0xff, /* @0x40ce6d */
+                                         pRec->pCartSceneObj, 0, 0, 0, 0, 0x11);
+                        }
+                        pRec->pSndEmitterEngine = pEmitter;
+                    }
+                } else if (pRec->pSndEmitterEngine != NULL) {    /* @0x40ce06 */
+                    sndEmitterFree((SndEmitter *)pRec->pSndEmitterEngine);
+                    memFreeDirect(pRec->pSndEmitterEngine);
+                    pRec->pSndEmitterEngine = NULL;
+                }
+            }
+        }
+    }
 }

@@ -29,7 +29,6 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
  * and level startup scripts' "eload <file>.eo" to eloadCmd (src/obj_event.c). */
 void unloadGameWorld(void);                                  /* gameplay teardown */
 unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand); /* @0x408b60 */
-void sndEmitterUpdateAll(void);                              /* @0x42bf40 */
 void playerAiUpdate(AiController *pCtrl);                    /* @0x401160 */
 void movieFrameUpdate(void);                                 /* @0x40af80 */
 void netGameUpdate(void);                                    /* @0x414fa0 */
@@ -57,13 +56,6 @@ void objTurretListFree2(int nMode);                          /* @0x402b70 */
  * Stub: no copy, returns 1. */
 int scenSetDir(LPCSTR pszDir);
 
-/* zoneAvoidWalls @0x4023e0 — documented TODO stub (see stubs.c). The
- * original pushes pPoint away from the zone-wall segment list built by
- * zoneWallListBuild (needs the wall lists + zoneWallCalcPlane cluster).
- * Called from cameraFollowUpdate @0x4020d0 with (pPoint, pRef, flRadius)
- * where flRadius is the camera height; must return nonzero after moving
- * pPoint. Returns 0 (no wall contact) until the wall lists exist. */
-int zoneAvoidWalls(GxVec2 *pPoint, GxVec2 *pRef, float flRadius);
 
 /* objSegListIntersectTest @0x414ce0 — documented TODO stub (see stubs.c).
  * The original tests the (x1,y1)->(x2,y2) segment against an EventObject's
@@ -129,18 +121,6 @@ void levelEventDirector_L2_Init(void);                       /* @0x417dc0 */
 void levelEventDirector_L3_Init(void);                       /* @0x4186c0 */
 void levelEventDirector_L4_Init(void);                       /* @0x418f30 */
 
-/* sndPlaySfx3D @0x42bcd0 — 3D positional emitter stub (see stubs.c).
- * nFlags is 0x24 in the objUpdatePhysics/objUpdateFire impact calls and 0
- * elsewhere. */
-int sndPlaySfx3D(void *pEmitter, unsigned int nBank, unsigned int nIdx,
-                 unsigned int nVol, int nSndId, int pPosNode,
-                 int nEmitParam6, int nX, int nY, int nZ,
-                 unsigned int nFlags);
 
-/* playerAnimSfxUpdate @0x40c800 — per-player animation stepping + gameplay
- * sfx (footsteps, cart engine, results orbit). TODO: full implementation
- * tracked as rebuild next-step #4; the world tick still calls it in the
- * original order, so the stub keeps the frame timing. */
-void playerAnimSfxUpdate(void);                      /* @0x40c800 */
 
 #endif /* STUBS_H */

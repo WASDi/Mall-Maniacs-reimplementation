@@ -7,6 +7,8 @@
 #include <dsound.h>
 
 #include "sound.h"
+#include "scene.h"
+#include "pool.h"
 #include "custom_helpers.h"
 
 /* =====================================================================
@@ -1371,4 +1373,184 @@ int sndShutdown(void)
     sndFreeAllSamples();
     g_nSoundInit = -1;
     return 1;
+}
+
+/* =====================================================================
+ * 3D positional SFX emitters (sndPlaySfx3D @0x42bcd0 cluster)
+ * ===================================================================== */
+
+SndEmitter *g_pSndEmitterHead;  /* @0x45e5f0 (newest) */
+SndEmitter *g_pSndEmitterTail;  /* @0x45e5f4 (oldest) */
+
+/* sndVoiceIsActive @0x437e10 — the voice slot for nHandle (index =
+ * nHandle & 0xffff) is occupied: its stored id matches the handle and the
+ * sample is still queued. Maps onto the rebuild voice table (nHandle at
+ * +0x1c, sample at +0x00; the original reads slot+0 == handle over its own
+ * 0x2e-byte slot layout). */
+int sndVoiceIsActive(unsigned int nHandle) /* @0x437e10 */
+{
+    SndVoiceSlot *v;
+
+    if ((nHandle & 0xffff) >= 0x100) {
+        return 0;   /* safe deviation: the original indexes its 0x100-slot table blindly */
+    }
+    v = (SndVoiceSlot *)s_voiceSet.aSlots + (nHandle & 0xffff);
+    return (unsigned)v->nHandle == nHandle && v->pSample != NULL;
+}
+
+/* sndFreeVoiceByHandle @0x437e40 — stop/release the mixer voice with the
+ * given handle: when the slot matches and is occupied, clear it and push it
+ * back onto the free queue. Returns 1. */
+int sndFreeVoiceByHandle(unsigned int nHandle) /* @0x437e40 */
+{
+    SndVoiceSlot *v;
+    int nIdx = (int)(nHandle & 0xffff);
+
+    if (nIdx >= 0x100) {
+        return 1;
+    }
+    v = (SndVoiceSlot *)s_voiceSet.aSlots + nIdx;
+    if ((unsigned)v->nHandle == nHandle && v->pSample != NULL) {
+        v->pSample = NULL;
+        g_pSndQueue[g_nSndQueueCount] = v;
+        g_nSndQueueCount++;
+    }
+    return 1;
+}
+
+/* sndEmitterFree @0x42bec0 — release an emitter's voice and unlink it from
+ * the list. The caller owns the 0x1c block (memFreeDirect after this).
+ * The +0x10 music-emitter release is deferred with the music module
+ * (pMusicEmitter is always NULL in the rebuild). */
+void sndEmitterFree(SndEmitter *pEmitter) /* @0x42bec0 */
+{
+    if ((pEmitter->nFlags & 2) == 0) {
+        if (pEmitter->nSfxHandle != 0 && sndVoiceIsActive((unsigned)pEmitter->nSfxHandle)) {
+            sndFreeVoiceByHandle((unsigned)pEmitter->nSfxHandle);
+        }
+        /* original: if (!(nFlags & 2) && pMusicEmitter) musicEmitterFree(...);
+         * deferred with the music module. */
+    }
+    if (g_pSndEmitterHead == pEmitter) {
+        g_pSndEmitterHead = pEmitter->pPrev;
+    }
+    if (g_pSndEmitterTail == pEmitter) {
+        g_pSndEmitterTail = pEmitter->pNext;
+    }
+    if (pEmitter->pPrev != NULL) {
+        pEmitter->pPrev->pNext = pEmitter->pNext;
+    }
+    if (pEmitter->pNext != NULL) {
+        pEmitter->pNext->pPrev = pEmitter->pPrev;
+    }
+}
+
+/* sndEmitterUpdateFree @0x42bf60 — free an emitter whose queued voice has
+ * finished, unless the persistent flag (bit 0) is set. */
+static void sndEmitterUpdateFree(SndEmitter *pEmitter) /* @0x42bf60 */
+{
+    if (!sndVoiceIsActive((unsigned)pEmitter->nSfxHandle) &&
+        (pEmitter->nFlags & 1) == 0) {
+        sndEmitterFree(pEmitter);
+        memFreeDirect(pEmitter);
+    }
+}
+
+/* sndEmitterUpdateAll @0x42bf40 — per-frame pass over the emitter list
+ * (head = newest, pPrev walks toward the older end); frees finished
+ * non-persistent emitters. */
+void sndEmitterUpdateAll(void) /* @0x42bf40 */
+{
+    SndEmitter *pEmitter = g_pSndEmitterHead;
+
+    while (pEmitter != NULL) {
+        SndEmitter *pPrev = pEmitter->pPrev;
+        sndEmitterUpdateFree(pEmitter);
+        pEmitter = pPrev;
+    }
+}
+
+/* sndPlaySfx3D @0x42bcd0 — fill + link the caller-allocated 0x1c emitter
+ * block and queue its sample.
+ * nFlags: bit 4 = dedupe scan (skip when a same-id emitter sits within
+ * ~100 units), bit 3 = free the duplicate instead of self, bit 4 = loop
+ * flag 0x200, bit 5 = flag 0x800 + randomized pitch (rand&0x3fff + 0xd000).
+ * musicEmitterAlloc (the 3D music-module registration) is deferred, so
+ * pMusicEmitter stays NULL and the mix voice is queued with owner 0.
+ * TODO: musicEmitterAlloc/musicEmitterFree with the music module. */
+SndEmitter *sndPlaySfx3D(SndEmitter *pEmitter, unsigned int nBank,
+                         unsigned int nIdx, unsigned int nVol, int nSndId,
+                         void *pPosNode, int nEmitParam6, int nX, int nY,
+                         int nZ, unsigned int nFlags) /* @0x42bcd0 */
+{
+    static const float g_flDedupeDist2 = 10000.0f; /* g_fl_10000: squared near-duplicate radius */
+    unsigned int nSndFlags = 0;
+    int nPitch = 0;
+    SndEmitter *pOther;
+    SndEmitter *pNext;
+    int anPos[3];
+
+    (void)nEmitParam6; (void)nX; (void)nY; (void)nZ;
+    if ((nFlags & 0x10) != 0) {
+        nSndFlags = 0x200;
+    }
+    if ((nFlags & 0x20) != 0) {
+        nSndFlags |= 0x800;
+        nPitch = (rand() & 0x3fff) + 0xd000;   /* rand() & 0x80003fff: bit 31 never set */
+    }
+    pEmitter->pPosNode = pPosNode;
+    pEmitter->pMusicEmitter = NULL;
+    pEmitter->nSfxHandle = 0;
+    pEmitter->nFlags = nFlags;
+    pEmitter->nSndId = nSndId;
+    /* link as the new head (pPrev = previous head, pNext = NULL) */
+    if (g_pSndEmitterHead != NULL) {
+        g_pSndEmitterHead->pNext = pEmitter;
+    } else {
+        g_pSndEmitterTail = pEmitter;
+    }
+    pEmitter->pPrev = g_pSndEmitterHead;
+    g_pSndEmitterHead = pEmitter;
+    pEmitter->pNext = NULL;
+    if ((pEmitter->nFlags & 4) != 0) {
+        for (pOther = g_pSndEmitterHead; pOther != NULL; pOther = pOther->pPrev) {
+            if (pOther->nSndId == pEmitter->nSndId) {
+                break;
+            }
+        }
+        if (pOther != NULL) {
+            for (pNext = pOther->pNext; pNext != NULL; pNext = pNext->pNext) {
+                if (pNext->nSndId == pEmitter->nSndId) {
+                    break;
+                }
+            }
+            /* NOTE: the original compares the stored position (sceneNodeGetPos
+             * mode 4 on the other emitter's pos node) against (nX,nY,nZ);
+             * the pos-node read slot in the decompile (+0x10 vs +0x0c) was
+             * ambiguous, so the rebuild tests the caller-supplied coords. */
+            anPos[0] = anPos[1] = anPos[2] = 0;
+            if (pOther->pPosNode != NULL) {
+                sceneNodeGetPos((SceneNode *)pOther->pPosNode, 0, anPos, 4);
+            }
+            if (pOther != pEmitter &&
+                ((float)(nZ - anPos[2]) * (float)(nZ - anPos[2]) +
+                 (float)(nY - anPos[1]) * (float)(nY - anPos[1]) +
+                 (float)(nX - anPos[0]) * (float)(nX - anPos[0])) < g_flDedupeDist2) {
+                /* near-duplicate handling simplified: with bit 3 set the old
+                 * emitter is freed, otherwise this one frees itself. */
+                if ((nFlags & 8) != 0) {
+                    sndEmitterFree(pOther);
+                    memFreeDirect(pOther);
+                } else {
+                    sndEmitterFree(pEmitter);
+                    memFreeDirect(pEmitter);
+                    return pEmitter;
+                }
+            }
+        }
+    }
+    /* musicEmitterAlloc(pPosNode, nEmitParam6, nX, nY, nZ, 0,
+     * g_nMusicModuleHandle) — deferred; owner 0 = plain mixer voice. */
+    pEmitter->nSfxHandle = sndPlaySfx(0, nBank, nIdx, nVol, nPitch, nSndFlags);
+    return pEmitter;
 }

@@ -38,6 +38,7 @@ void levelDirectorInits(void);            /* @0x40bdf0 */
 void roundLogicUpdate(void);              /* @0x40beb0 */
 void gameRunFrame(int forceRender);       /* @0x40ad80 */
 void gameWorldUpdate(void);               /* @0x40b3d0 */
+void playerAnimSfxUpdate(void);           /* @0x40c800 */
 void gameObjectUpdate(void);              /* @0x40cf40 */
 void gameFrameRender(void);               /* @0x40ae30 */
 

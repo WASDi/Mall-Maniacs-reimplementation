@@ -58,7 +58,11 @@ typedef struct PlayerRecord {
     int field_1c;                /* +0x1c */
     SceneNode *pCharShadowNode;  /* +0x20 char SPLASH shadow node (hidden, mode 2) */
     SceneNode *pCartShadowNode;  /* +0x24 cart SPLASH shadow node (hidden, mode 2) */
-    int field_28[2];             /* +0x28 */
+    void *pSndEmitterStep;       /* +0x28 move/footstep sfx emitter (bank 1 idx 10;
+                                  * created while flInputAccel != 0, freed when it
+                                  * clears — playerAnimSfxUpdate @0x40c800) */
+    void *pSndEmitterEngine;     /* +0x2c engine/roll sfx emitter (bank 1 idx 11;
+                                  * lives while |speed| > 45 or |turn| > 0.012) */
     SceneNode *pCharSceneObj;    /* +0x30 char scene object */
     SceneNode *apMeshSlots[3];   /* +0x34 char mesh + up to 2 "_%d<name>" sub-meshes */
     SceneNode *pGrabSceneObj;    /* +0x40 held item / burger scene object */
@@ -95,10 +99,13 @@ typedef struct PlayerRecord {
     float flAccSpeed;            /* +0x1e8 (speed*0.7+100)*[master]/acc */
     float flFriction;            /* +0x1ec [master]/friction */
     float flAccFric;             /* +0x1f0 max per-frame speed step acc/(1-fric) */
-    float flCurSpeed;            /* +0x1f4 runtime walk speed channel (setup: friction copy) */
+    float flCurSpeed;            /* +0x1f4 runtime walk speed channel (setup leaves 0) */
     float flRotAccSpeed;         /* +0x1f8 (agility*0.1+0.5)*[master]/rotate_acc */
-    float flRotAccFric;          /* +0x1fc /(1-flFriction) */
-    float field_200_pad;         /* +0x200 */
+    float flRotAccFric;          /* +0x1fc walk turn-decay coefficient (friction copy,
+                                  * setup @0x411408) */
+    float flRotAccStep;          /* +0x200 walk turn step flRotAccSpeed/(1-flRotAccFric)
+                                  * (setup @0x411432); limb-pitch divisor in
+                                  * playerAnimSfxUpdate, copied to +0x240 */
     float flTurnAccum;           /* +0x204 walk-node turn accumulator */
     float flVertVel;             /* +0x208 walk-node vertical velocity */
     float field_20c_pad;         /* +0x20c */
@@ -113,7 +120,7 @@ typedef struct PlayerRecord {
     float flPosSpeed;            /* +0x234 pos-node speed channel (setup: carts friction 1) */
     float field_238_pad;         /* +0x238 (zeroed) */
     float flRotFactor;           /* +0x23c on-foot pos-node turn factor (zeroed) */
-    float flCurRotAccFric;       /* +0x240 copy of flRotAccFric */
+    float flCurRotAccFric;       /* +0x240 copy of flRotAccStep (turn-step bound) */
     float flPosTurnAccum;        /* +0x244 pos-node turn accumulator (setup: carts friction 2) */
     float field_248;             /* +0x248 (zeroed) */
     short wPosPitch;             /* +0x24c pos-mesh orient yaw channel (support tilt) */

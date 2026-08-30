@@ -257,23 +257,23 @@ void playerSetupRound(void) /* @0x410e90 */
         configEnvGetString(&mstrValue, pNode, "object_name");              /* @0x411360 */
         mStringAssignCopy(&pRec->mstrCartName, &mstrValue);                /* @0x411379 */
         mStringFree(&mstrValue);                                           /* @0x41138d */
-        pRec->flPosSpeed = (float)configEnvGetDouble2(&g_configEnvMaster, pNode, "friction");       /* +0x234 @0x4113a2 */
-        pRec->flPosTurnAccum = (float)configEnvGetDouble2(&g_configEnvMaster, pNode, "friction");   /* +0x244 @0x4113b8 */
+        pRec->flAccFactor = (float)configEnvGetDouble2(&g_configEnvMaster, pNode, "friction");      /* +0x22c @0x4113a2 on-foot pos-node accel factor */
+        pRec->flRotFactor = (float)configEnvGetDouble2(&g_configEnvMaster, pNode, "friction");      /* +0x23c @0x4113b8 on-foot pos-node turn factor */
         /* walk block: acc = (speed*0.7 + 100) * master acc (0x44b59c = 0.7f,
          * 0x44b598 = 100.0f — the decompiler's "0.06/0.7" naming is wrong). */
-        pRec->flAccSpeed = ((float)pRec->nStatSpeed * 0.7f + 100.0f) * flAcc;          /* @0x4113be */
-        pRec->flRotAccSpeed = ((float)pRec->nStatAgility * 0.1f + 0.5f) * flRotAcc;    /* @0x4113e0 */
+        pRec->flAccSpeed = ((float)pRec->nStatSpeed * 0.7f + 100.0f) * flAcc;          /* @0x4113da */
+        pRec->flRotAccSpeed = ((float)pRec->nStatAgility * 0.1f + 0.5f) * flRotAcc;    /* @0x4113f6 */
         pRec->flFriction = flFriction;                                     /* +0x1ec @0x411402 */
-        pRec->flCurSpeed = flFriction;                                     /* +0x1f4 @0x411408 */
-        pRec->flAccFric = pRec->flAccSpeed / (1.0f - pRec->flFriction);    /* @0x411414 */
-        pRec->flRotAccFric = pRec->flRotAccSpeed / (1.0f - pRec->flFriction); /* @0x41142c */
+        pRec->flRotAccFric = flFriction;                                   /* +0x1fc @0x411408 friction copy (walk turn decay) */
+        pRec->flAccFric = pRec->flAccSpeed / (1.0f - pRec->flFriction);    /* +0x1f0 @0x41141a */
+        pRec->flRotAccStep = pRec->flRotAccSpeed / (1.0f - pRec->flRotAccFric); /* +0x200 @0x411432 */
         pRec->flCurAccFric = pRec->flAccFric;                              /* +0x230 @0x41143e */
-        pRec->flCurRotAccFric = pRec->flRotAccFric;                        /* +0x240 @0x41144a */
+        pRec->flCurRotAccFric = pRec->flRotAccStep;                        /* +0x240 @0x41144a */
         /* cart block: same shape with the WC constants and averaged friction. */
         pRec->flCartAccSpeed = ((float)pRec->nStatSpeed * 0.7f + 100.0f) * flAccWC;    /* @0x411456 */
         pRec->flCartRotAccSpeed = ((float)pRec->nStatAgility * 0.1f + 0.5f) * flRotAccWC; /* @0x41146f */
-        pRec->flCartFrictionB = (flFriction + pRec->flPosTurnAccum) * 0.5f;            /* +0x27c @0x41148c */
-        pRec->flCartFriction = (flFriction + pRec->flPosSpeed) * 0.5f;                 /* +0x270 @0x41149f */
+        pRec->flCartFrictionB = (flFriction + pRec->flRotFactor) * 0.5f;               /* +0x27c @0x411492 */
+        pRec->flCartFriction = (flFriction + pRec->flAccFactor) * 0.5f;                /* +0x26c @0x41149f */
         pRec->flCartCurSpeed = pRec->flCartAccSpeed / (1.0f - pRec->flCartFriction);   /* +0x274 @0x4114b0 */
         pRec->flCartRotAccFric = pRec->flCartRotAccSpeed / (1.0f - pRec->flCartFrictionB); /* +0x280 @0x4114c6 */
         appLog(" Player(%d) ch<%s> ca<%s>", i,                             /* @0x44f974 @0x4114e3 */

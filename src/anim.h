@@ -138,4 +138,11 @@ extern short g_awWalkAnimTable[128][2];                                /* @0x458
 void walkAnimTableEntryCalc(short *pOut, float flNormSpeed,
                             int nCircleCenter, int nCircleRadius);  /* @0x433980 */
 
+/* playerAnimOrientFromDir @0x4336b0 — 3-euler aim orientation + walk-table
+ * limb swing (see anim.c; consumed by playerAnimSfxUpdate @0x40c800). */
+int playerAnimOrientFromDir(int nDirX, int nDirY, int nDirZ,
+                            short *pOutAngles, short *pOutWalk, void *pUnused,
+                            const short *pWalkTable, int nWalkGeom,
+                            short nRoll);                            /* @0x4336b0 */
+
 #endif /* ANIM_H */

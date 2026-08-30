@@ -438,3 +438,50 @@ int mathSegIntersect(float flAx, float flAy, float flBx, float flBy,
     pOut[1] = (flBy + flAy) * g_flHalf;
     return 0;                                            /* @0x406239 */
 }
+
+/* mathSegIntersectBounded @0x4028a0 — bounded segment intersection test
+ * (same slope/intercept math as mathSegIntersect @0x406130, strict about
+ * the segment bounds). Writes the intersection into pOut[0]/pOut[1] and
+ * returns 1 only when the point lies within both segment bounds
+ * ((cx <= x < dx || x <= cx && dx <= x) etc.); vertical-line special
+ * cases first, parallel lines return 0. Both out floats are written even
+ * when the bounds test fails. */
+int mathSegIntersectBounded(float flAx, float flAy, float flBx, float flBy,
+                            float flCx, float flCy, float flDx, float flDy,
+                            float *pOut) /* @0x4028a0 */
+{
+    float flSlopeA;
+    float flSlopeC;
+    float flBaseC;
+    float flY;
+
+    if (flCx == flDx) {                                  /* @0x4028a1 */
+        if (flBx == flAx) {
+            return 0;                                    /* @0x4028ba */
+        }
+        flSlopeA = (flAy - flBy) / (flAx - flBx);        /* @0x4028c3 */
+        pOut[0] = flCx;                                  /* @0x4028dd */
+        flY = flSlopeA * flCx + (flBy - flSlopeA * flBx); /* @0x4028e5..0x4028ef */
+    } else if (flBx == flAx) {                           /* @0x4028f6 */
+        flSlopeC = (flDy - flCy) / (flDx - flCx);
+        pOut[0] = flBx;
+        flY = flSlopeC * flBx + (flCy - flSlopeC * flCx);
+    } else {                                             /* @0x40292b */
+        flSlopeA = (flAy - flBy) / (flAx - flBx);
+        flSlopeC = (flDy - flCy) / (flDx - flCx);
+        flBaseC = flCy - flSlopeC * flCx;
+        if (flSlopeA == flSlopeC) {
+            return 0;                                    /* @0x40296c */
+        }
+        pOut[0] = (flBaseC - (flBy - flSlopeA * flBx)) / (flSlopeA - flSlopeC); /* @0x40298a */
+        flY = pOut[0] * flSlopeC + flBaseC;              /* @0x402990 */
+    }
+    pOut[1] = flY;                                       /* @0x402998 */
+    if (((flCx <= pOut[0] && pOut[0] < flDx) ||          /* @0x40299b..0x4029b3 */
+         (pOut[0] <= flCx && flDx <= pOut[0])) &&
+        ((flCy <= flY && flY < flDy) ||
+         (flY <= flCy && flDy <= flY))) {
+        return 1;                                        /* @0x402a0f */
+    }
+    return 0;
+}

@@ -182,8 +182,15 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
     rc->wmat[0] = 1; rc->wmat[4] = 1; rc->wmat[8] = 1;
     rc->matr[0] = 1; rc->matr[4] = 1; rc->matr[8] = 1;
     rc->fUnk6 = 1.0f;
-    rc->bFlagA = 0; rc->bFlagB = 0;
+    rc->bFlagA = 0;
     chanBuildRotMatrix(rc); /* @0x42f030 */
+    /* original @0x42ef20: byte [0x45e823] = 1 — the root channel's bFlagB is
+     * set to 1 HERE and never cleared (the per-frame dirty-clear loops stop
+     * at g_rootNode), which terminates chanCalcWorldTransform's parent walk
+     * at the root. Zeroing it makes the walk recurse (root,0) -> (NULL,0)
+     * forever (stack overflow in the first mode-6 sceneNodeGetPos, e.g.
+     * playerAnimSfxUpdate cart-aim on the first gameplay frame). */
+    rc->bFlagB = 1;
     /* Copy matr → wmat (original copies 9 floats from 0x45e834 to 0x45e858) */
     memcpy(rc->wmat, rc->matr, sizeof(rc->wmat));
     g_pSceneRoot = &g_rootNode; /* @0x4588f8 */

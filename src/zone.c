@@ -5,6 +5,7 @@
 #include "pool.h"
 #include "stubs.h"
 #include "util.h"
+#include "player.h"
 
 /* =====================================================================
  * zone.c — AR/IN zone-connection nodes.
@@ -607,4 +608,148 @@ void zoneWallListBuild(void) /* @0x42a650 */
     for (pNode = g_pNavNodeList; pNode != NULL; pNode = pNode->pNext) {
         zoneWallMergeDupesSameDir(pNode);             /* @0x42a360 */
     }
+}
+
+/* --- zoneAvoidWalls @0x4023e0 — camera wall-avoidance push (verified
+ * 2026-08-30 against the disassembly). --- */
+static const float g_flZero = 0.0f;           /* @0x44b244 (bytes 00 00 00 00) */
+static const float g_flZoneMinusOne = -1.0f;  /* @0x44b25c (bytes 00 00 80 BF) */
+static const float g_flZoneHalf = 0.5f;       /* @0x44b274 (bytes 00 00 00 3F) */
+static const double g_dblZoneMinusOne = -1.0; /* @0x44b280 (loop-2 sentinel compare) */
+static const double g_dblZonePushPad = 100.0; /* @0x44b2b8 (bytes 00 00 59 40) */
+static const float g_flZoneBand = 4000.0f;    /* @0x44b2c0 (bytes 00 00 7A 45) */
+
+/* zoneAvoidWalls @0x4023e0 — push the camera point out of nearby zone walls.
+ * For every nav mesh, walks the walk-edge list (pEdgeList) and the
+ * cross-mesh connection list (pConnList). Edge gates:
+ *   walk edges  — the average plane height of the edge endpoints must lie
+ *                 in [flRadius, flRadius + 4000.0); the average is
+ *                 ((V0X-nRefX)*slopeX + (V1Z-nRefZ)*slopeZ +
+ *                  (V1X-nRefX)*slopeX + (V0Z-nRefZ)*slopeZ + nRefY*2)*0.5;
+ *   conn edges  — same own average >= flRadius and the peer mesh's
+ *                 average <= flRadius (same formula over the peer plane).
+ * Both then require (pPoint - pRef) . unit(Edge) >= 0 (moving toward the
+ * wall) and a bounded segment intersection of the pPoint->pRef segment
+ * with the edge, tested in both argument orders. Each hit is polarized
+ * (mathVec2Polar of hit - pPoint); the shortest length wins
+ * (vBest = {len, angle}, -1.0 sentinel), except hits inside the camera
+ * blocker zone (objContainsPoint on OBJ_ID_C_AC) which are skipped. On a
+ * hit, pPoint += gxVec2FromPolar({len + 100.0, angle}) and 1 is returned;
+ * 0 = no wall contact. Used by cameraFollowUpdate (both wall-avoid
+ * passes). */
+int zoneAvoidWalls(GxVec2 *pPoint, GxVec2 *pRef, float flRadius) /* @0x4023e0 */
+{
+    GxVec2 vBest = { -1.0f, -1.0f };   /* {len, angle}, -1.0 sentinel */
+    GxVec2 vA;
+    GxVec2 vB;
+    GxVec2 vOut;
+    GxVec2 vDelta;
+    GxVec2 vPush;
+    GxVec2 vPushSum;
+    EventObject *pCamObj;
+    AiNavNode *pMesh;
+    AiNavEdge *pEdge;
+
+    pCamObj = objFindById(OBJ_ID_C_AC, 0);                       /* @0x402415 */
+    for (pMesh = g_pNavNodeList; pMesh != NULL; pMesh = pMesh->pNext) {
+        for (pEdge = pMesh->pEdgeList; pEdge != NULL; pEdge = pEdge->pNext) { /* @0x402449 */
+            float flAvg = ((pEdge->flV0X - pMesh->nRefX) * pMesh->flSlopeX +
+                           (pEdge->flV1Z - pMesh->nRefZ) * pMesh->flSlopeZ +
+                           (pEdge->flV1X - pMesh->nRefX) * pMesh->flSlopeX +
+                           (pEdge->flV0Z - pMesh->nRefZ) * pMesh->flSlopeZ +
+                           pMesh->nRefY + pMesh->nRefY) * g_flZoneHalf; /* @0x402454 */
+            if (flAvg < flRadius || flRadius + g_flZoneBand <= flAvg) { /* @0x40249f..0x4024c9 */
+                continue;
+            }
+            if ((pPoint->y - pRef->y) * pEdge->flUnitNegZ +
+                (pPoint->x - pRef->x) * pEdge->flUnitX < g_flZero) { /* @0x4024cf */
+                continue;                                        /* @0x4024ec */
+            }
+            gxVec2Set(&vA, pEdge->flV0Z, pEdge->flV0X);          /* @0x4024fa */
+            gxVec2Set(&vB, pEdge->flV1Z, pEdge->flV1X);          /* @0x40250b */
+            gxVec2SetAngleZero(&vOut);                           /* @0x402514 */
+            if (mathSegIntersectBounded(pPoint->x, pPoint->y, pRef->x, pRef->y,
+                                        vA.x, vA.y, vB.x, vB.y,
+                                        &vOut.x) == 0) {         /* @0x402540 */
+                continue;                                        /* @0x40254a */
+            }
+            if (mathSegIntersectBounded(vA.x, vA.y, vB.x, vB.y,
+                                        pPoint->x, pPoint->y, pRef->x, pRef->y,
+                                        &vOut.x) == 0) {         /* @0x402577 */
+                continue;
+            }
+            gxVec2Set(&vDelta, vOut.x - pPoint->x, vOut.y - pPoint->y); /* @0x402599 */
+            mathVec2Polar(&vPush, &vDelta);                      /* @0x4025b0 */
+            if (vBest.x != g_flZoneMinusOne && vBest.x <= vPush.x) { /* @0x4025b9..0x4025db */
+                continue;                                        /* @0x4025e0 */
+            }
+            if (pCamObj != NULL &&                               /* @0x4025e2 */
+                objContainsPoint(pCamObj, vOut.x, vOut.y) != 0) {
+                continue;                                        /* @0x4025fb */
+            }
+            vBest.x = vPush.x;                                   /* @0x4025fd */
+            vBest.y = vPush.y;                                   /* @0x402601 */
+        }
+        for (pEdge = pMesh->pConnList; pEdge != NULL; pEdge = pEdge->pNext) { /* @0x40261b */
+            float flAvg;
+            AiNavNode *pPeer = pEdge->pPeerMesh;
+            if (pPeer == NULL) {
+                continue;
+            }
+            flAvg = ((pEdge->flV0X - pMesh->nRefX) * pMesh->flSlopeX +
+                     (pEdge->flV1Z - pMesh->nRefZ) * pMesh->flSlopeZ +
+                     (pEdge->flV1X - pMesh->nRefX) * pMesh->flSlopeX +
+                     (pEdge->flV0Z - pMesh->nRefZ) * pMesh->flSlopeZ +
+                     pMesh->nRefY + pMesh->nRefY) * g_flZoneHalf; /* @0x402626 */
+            if (flAvg < flRadius) {
+                continue;                                        /* @0x40266f */
+            }
+            if (pPeer->nRefY * 2 +
+                (pEdge->flV1Z - pPeer->nRefZ) * pPeer->flSlopeZ +
+                (pEdge->flV0X - pPeer->nRefX) * pPeer->flSlopeX +
+                (pEdge->flV0Z - pPeer->nRefZ) * pPeer->flSlopeZ +
+                (pEdge->flV1X - pPeer->nRefX) * pPeer->flSlopeX >
+                flRadius * 2) {
+                continue;                                        /* @0x4026cc */
+            }
+            if ((pPoint->y - pRef->y) * pEdge->flUnitNegZ +
+                (pPoint->x - pRef->x) * pEdge->flUnitX < g_flZero) { /* @0x4026d2 */
+                continue;                                        /* @0x4026ef */
+            }
+            gxVec2Set(&vA, pEdge->flV0Z, pEdge->flV0X);          /* @0x4026fd */
+            gxVec2Set(&vB, pEdge->flV1Z, pEdge->flV1X);
+            gxVec2SetAngleZero(&vOut);                           /* @0x402737 */
+            if (mathSegIntersectBounded(pPoint->x, pPoint->y, pRef->x, pRef->y,
+                                        vA.x, vA.y, vB.x, vB.y,
+                                        &vOut.x) == 0) {         /* @0x40275f */
+                continue;
+            }
+            if (mathSegIntersectBounded(vA.x, vA.y, vB.x, vB.y,
+                                        pPoint->x, pPoint->y, pRef->x, pRef->y,
+                                        &vOut.x) == 0) {         /* @0x402792 */
+                continue;
+            }
+            gxVec2Set(&vDelta, vOut.x - pPoint->x, vOut.y - pPoint->y); /* @0x40279e */
+            mathVec2Polar(&vPush, &vDelta);                      /* @0x4027c1 */
+            if ((double)vBest.x != g_dblZoneMinusOne &&          /* @0x4027ca */
+                vBest.x <= vPush.x) {
+                continue;                                        /* @0x4027f1 */
+            }
+            if (pCamObj != NULL &&                               /* @0x4027f3 */
+                objContainsPoint(pCamObj, vOut.x, vOut.y) != 0) {
+                continue;                                        /* @0x40280c */
+            }
+            vBest.x = vPush.x;                                   /* @0x40280e */
+            vBest.y = vPush.y;                                   /* @0x402812 */
+        }
+    }
+    if ((double)vBest.x == g_dblZoneMinusOne) {                  /* @0x402839 */
+        return 0;                                                /* @0x40288e */
+    }
+    vBest.x += g_dblZonePushPad;                                 /* @0x40284e */
+    gxVec2FromPolar(&vPush, &vBest);                             /* @0x402861 */
+    gxVec2Add(&vPushSum, pPoint, &vPush);                        /* @0x40286d */
+    pPoint->x = vPushSum.x;                                      /* @0x402877 */
+    pPoint->y = vPushSum.y;                                      /* @0x40287c */
+    return 1;                                                    /* @0x40287c */
 }

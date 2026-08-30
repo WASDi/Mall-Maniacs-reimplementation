@@ -41,12 +41,6 @@ void unloadGameWorld(void)
     appLog("[stub TODO] unloadGameWorld");
 }
 
-/* sndEmitterUpdateAll @0x42bf40 — the original walks the positional-emitter
- * list after rendering. The world/emitter ownership model is deferred, so an
- * empty list is the safe temporary contract. */
-void sndEmitterUpdateAll(void)
-{
-}
 
 /* playerAiUpdate @0x401160 — the original AI state machine needs world
  * objects, nav points, item rules, and player commands not reconstructed yet.
@@ -153,41 +147,6 @@ void objTurretListFree(int nMode) /* @0x402b40 */
 void objTurretListFree2(int nMode) /* @0x402b70 */
 {
     (void)nMode;
-}
-
-/* sndPlaySfx3D @0x42bcd0 — 3D positional sound emitter. Documented TODO
- * stub: the 0x1c emitter block handed over by the caller is linked into
- * g_pSndEmitterHead/Tail @0x45e5f0/.f4 and driven by the music module
- * (musicEmitterAlloc), which is deferred with the audio subsystem. The
- * stub frees the block immediately so the fire-and-forget callers (walk
- * physics hazard sfx) do not leak; no sound plays. nFlags (0x24 in the
- * objUpdatePhysics/objUpdateFire impact calls, 0 elsewhere) only reaches
- * the emitter setup in the original. */
-int sndPlaySfx3D(void *pEmitter, unsigned int nBank, unsigned int nIdx,
-                 unsigned int nVol, int nSndId, int pPosNode,
-                 int nEmitParam6, int nX, int nY, int nZ,
-                 unsigned int nFlags) /* @0x42bcd0 */
-{
-    (void)nBank; (void)nIdx; (void)nVol; (void)nSndId; (void)pPosNode;
-    (void)nEmitParam6; (void)nX; (void)nY; (void)nZ; (void)nFlags;
-    memFreeDirect(pEmitter);
-    return 0;
-}
-
-/* playerAnimSfxUpdate @0x40c800 — TODO stub (next-step #4). */
-void playerAnimSfxUpdate(void) /* @0x40c800 */
-{
-}
-
-/* zoneAvoidWalls @0x4023e0 — documented TODO stub, see stubs.h. Original
- * walks the zone-wall segment list (zoneWallListBuild output) and pushes
- * pPoint out of any wall within flRadius of the pRef->pPoint path. Deferred
- * until the wall lists exist; cameraFollowUpdate treats a 0 return as "no
- * wall contact" and keeps the untouched point. */
-int zoneAvoidWalls(GxVec2 *pPoint, GxVec2 *pRef, float flRadius) /* @0x4023e0 */
-{
-    (void)pPoint; (void)pRef; (void)flRadius;
-    return 0;
 }
 
 /* objSegListIntersectTest @0x414ce0 — documented TODO stub, see stubs.h.

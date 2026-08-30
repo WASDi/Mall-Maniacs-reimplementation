@@ -154,4 +154,9 @@ int  mathSegIntersect(float flAx, float flAy, float flBx, float flBy,
                       float flCx, float flCy, float flDx, float flDy,
                       float *pOut);
 
+/* mathSegIntersectBounded @0x4028a0 — bounded segment intersection (see gx.c). */
+int mathSegIntersectBounded(float flAx, float flAy, float flBx, float flBy,
+                            float flCx, float flCy, float flDx, float flDy,
+                            float *pOut);
+
 #endif /* GX_H */

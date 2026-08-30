@@ -905,3 +905,112 @@ void walkAnimTableEntryCalc(short *pOut, float flNormSpeed,
         pOut[1] = (short)nAngle;
     }
 }
+
+/* playerAnimOrientFromDir @0x4336b0 — compute the 3-euler orientation
+ * (1/100-degree shorts) that aims a scene object along (nDirX,nDirY,nDirZ),
+ * blended with the walk-table limb swing (pWalkTable = g_awWalkAnimTable,
+ * entry picked by the clamped direction length 0x10..0x7f; the entry angle
+ * drives mathSinDeg/mathCosDeg(+0x4000) and the entry value becomes the
+ * limb offset). Consumed by playerAnimSfxUpdate for the limb sub-meshes
+ * 3/4/6/7 (the caller feeds pCharSceneObj + the move delta and steps
+ * sub-mesh 6/3 with pOutAngles and 7/4 with pOutWalk).
+ *
+ * Signature verified against both playerAnimSfxUpdate call sites (9 cdecl
+ * args, RET 0x24): (nDirX, nDirY, nDirZ, pOutAngles, pOutWalk, pUnused,
+ * pWalkTable, nWalkGeom=0x1ea, nRoll=+-16000). pUnused is pushed by the
+ * caller but never read (Ghidra/IDA saw it as a stray "flPitch" float).
+ * Returns 1 (EAX).
+ *
+ * UNCERTAIN (decompile-level confidence, re-verify vs disassembly if limb
+ * animation looks wrong):
+ *  - the exact operand pairing inside the four matrix loops below (the
+ *    original is one FPU-heavy loop nest; the decompile's stack-alias
+ *    resolution was used as-is),
+ *  - the pitch mathAtan2Deg operand order (fB, fC),
+ *  - the roll tail's table-value factor and the nRoll blend multiplier. */
+int playerAnimOrientFromDir(int nDirX, int nDirY, int nDirZ,
+                            short *pOutAngles, short *pOutWalk, void *pUnused,
+                            const short *pWalkTable, int nWalkGeom,
+                            short nRoll) /* @0x4336b0 */
+{
+    static const double g_dblWalkScale = 127.0; /* @0x44b7b0 (bytes 00 00 59 40) */
+    static const double g_dblOne = 1.0;         /* @0x44b288 (bytes 00 00 F0 3F) */
+    float afM[12];          /* 3x3 orientation matrix rows + 3 spare floats
+                             * (local_30 in the decompile; rows 0/1 seeded
+                             * {0,0,1}/{0,1,0}, rows 2/3 built in place) */
+    float flLen;
+    float fA;
+    float fB;
+    float fC;
+    int nI;
+    short sWalk;
+    float flSin;
+    float flCosWalk;
+    float flSinR;
+    float flCosR;
+
+    (void)pUnused;
+    afM[0] = 0.0f; afM[1] = 0.0f; afM[2] = 1.0f;           /* forward = +Z */
+    afM[3] = 0.0f; afM[4] = 1.0f; afM[5] = 0.0f;           /* up = +Y */
+    afM[6] = afM[7] = afM[8] = afM[9] = afM[10] = afM[11] = 0.0f;
+    flLen = sqrtf((float)(nDirY * nDirY + nDirZ * nDirZ + nDirX * nDirX)); /* @0x4336fd */
+    nI = (int)(flLen * g_dblWalkScale / (double)nWalkGeom); /* @0x433709..0x43371d */
+    if (nI > 0x7f) {                                       /* @0x433724 */
+        nI = 0x7f;                                         /* @0x433729 */
+    } else if (nI < 0x10) {                                /* @0x433733 */
+        nI = 0x10;                                         /* @0x433735 */
+    }
+    sWalk = pWalkTable[1 + nI * 2];                        /* @0x433745 entry[idx].walk */
+    pOutWalk[1] = 0;                                       /* @0x43374a */
+    pOutWalk[0] = sWalk;                                   /* @0x43374e */
+    pOutWalk[2] = 0;                                       /* @0x433751 */
+    flSin = mathSinDeg((short)(pWalkTable[nI * 2] + 0x4000));   /* @0x43375e */
+    flCosWalk = mathCosDeg((short)(pWalkTable[nI * 2] + 0x4000)); /* @0x433771 */
+    /* loop 1: rotate the two seed rows by the walk-swing angle into rows 2/3 */
+    for (nI = 0; nI < 0x18; nI += 0xc) {                   /* @0x43377c..0x4337b2 */
+        int k = nI / 4;
+        afM[k + 6] = afM[k];                               /* copy */
+        afM[k + 7] = flCosWalk * afM[k + 1] - flSin * afM[k + 2];
+        afM[k + 8] = flCosWalk * afM[k + 2] + flSin * afM[k + 1];
+    }
+    flSinR = mathSinDeg(nRoll);                            /* @0x4337bb */
+    flCosR = mathCosDeg(nRoll);                            /* @0x4337c5 */
+    /* loop 2: fold the roll angle back into rows 0/1 */
+    for (nI = 0; nI < 0x18; nI += 0xc) {                   /* @0x4337cf..0x433805 */
+        int k = nI / 4;
+        afM[k] = flCosR * afM[k + 6] - flSinR * afM[k + 7];
+        afM[k + 1] = flCosR * afM[k + 7] + flSinR * afM[k + 6];
+        afM[k + 2] = afM[k + 8];
+    }
+    /* loop 3: tilt rows 2/3 toward the direction (y over len, horiz over len) */
+    fA = (float)nDirY / flLen;                             /* @0x433809 */
+    fB = sqrtf((float)(nDirZ * nDirZ + nDirX * nDirX));    /* @0x433821 */
+    fC = fB / flLen;
+    for (nI = 0; nI < 0x18; nI += 0xc) {                   /* @0x433829..0x43385f */
+        int k = nI / 4;
+        afM[k + 6] = afM[k];                               /* copy */
+        afM[k + 7] = fA * afM[k + 2] + fC * afM[k + 1];
+        afM[k + 8] = fC * afM[k + 2] - fA * afM[k + 1];
+    }
+    /* loop 4: finish rows 0/1 from the z/x components over the horiz length */
+    for (nI = 0; nI < 0x18; nI += 0xc) {                   /* @0x433873..0x4338a9 */
+        int k = nI / 4;
+        afM[k] = (float)nDirZ / fB * afM[k + 6] +
+                 (float)nDirX / fB * afM[k + 8];
+        afM[k + 1] = afM[k + 7];
+        afM[k + 2] = (float)nDirZ / fB * afM[k + 8] -
+                     (float)nDirX / fB * afM[k + 6];
+    }
+    /* yaw/pitch/roll extraction */
+    fC = (float)g_dblOne / sqrtf(afM[0] * afM[0] + afM[2] * afM[2]); /* @0x4338ad */
+    fC = fC * afM[0] * afM[0] + fC * afM[2] * afM[2];      /* = sqrt(m0^2+m2^2) */
+    fA = fC * afM[0];                                      /* @0x4338c9 */
+    fB = fC * afM[2];                                      /* @0x4338d1 */
+    pOutAngles[0] = (short)mathAtan2Deg(-afM[1], fC);      /* @0x433903 yaw */
+    pOutAngles[1] = (short)mathAtan2Deg(fB, fC);           /* @0x433919 pitch (order UNCERTAIN) */
+    pOutAngles[2] = (short)mathAtan2Deg(                   /* @0x433960 roll (operands UNCERTAIN) */
+        -((float)pOutWalk[0] * afM[7] - (float)pOutAngles[0] * afM[9]),
+        afM[8] * (float)pWalkTable[1 + nI / 4 * 2] +
+        ((float)pOutAngles[0] * afM[7] + (float)pOutWalk[0] * afM[9]) * (float)nRoll);
+    return 1;                                              /* @0x43396c */
+}
