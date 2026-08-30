@@ -743,6 +743,14 @@ int sceneNodeSetHiddenFlag(SceneNode *pNode, int nMode) /* @0x4305c0 */
     return 1;
 }
 
+/* sceneNodeGetHiddenFlag @0x4305b0 — read the node's bType byte (+0x02) as a
+ * signed char. Paired with sceneNodeSetHiddenFlag @0x4305c0; the level-event
+ * directors poll it to re-arm once the bonus prop is hidden again. */
+int sceneNodeGetHiddenFlag(SceneNode *pNode) /* @0x4305b0 */
+{
+    return (int)(signed char)pNode->bType;
+}
+
 /* sceneObjResetFlags @0x430620 — clear the node's renderer flag byte
  * (+0x02 low byte); when nRecursive == 2 also clear the whole child list
  * (children at +0x0c, siblings chained via +0x08). */

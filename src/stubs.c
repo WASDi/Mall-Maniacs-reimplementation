@@ -189,12 +189,8 @@ void *musicModuleInit(void *pModuleEntry) /* @0x437b10 */
     return NULL;
 }
 
-/* levelEventDirector_L0..L4 — see stubs.h. No-op until the per-level
- * director subsystem is reconstructed. */
-void levelEventDirector_L0(void) /* @0x416fd0 */
-{
-}
-
+/* levelEventDirector_L1..L4 — see stubs.h. The L0 director is implemented
+ * in level0.c; the remaining per-level directors stay no-op stubs. */
 void levelEventDirector_L1(void) /* @0x4178c0 */
 {
 }
@@ -211,12 +207,8 @@ void levelEventDirector_L4(void) /* @0x4192a0 */
 {
 }
 
-/* levelEventDirector_L0_Init..L4_Init — see stubs.h. No-op until the
- * per-level director subsystem is reconstructed. */
-void levelEventDirector_L0_Init(void) /* @0x416db0 */
-{
-}
-
+/* levelEventDirector_L1_Init..L4_Init — see stubs.h. L0_Init is implemented
+ * in level0.c; the remaining per-level director inits stay no-op stubs. */
 void levelEventDirector_L1_Init(void) /* @0x4175e0 */
 {
 }

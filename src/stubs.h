@@ -91,35 +91,37 @@ void netClientSendSubCmd(int nSubCmd, int nArg1, int nArg2, int nArg3,
 extern void *g_pMusicSlotAlloc;                              /* @0x450f6c */
 void *musicModuleInit(void *pModuleEntry);                   /* @0x437b10 */
 
-/* levelEventDirector_L0..L4 @0x416fd0/0x4178c0/0x418000/0x418a30/0x4192a0 —
- * per-level event directors stepped once per roundLogicUpdate. The
- * original dispatches on g_nLevelIdx after the round clock and win
- * checks. Each director runs the level's "MCDMAN bonus task" presenter:
- * ambient sign sub-mesh bobbing (L0/L2/L3), a 9-step anim state machine
- * on a 10 s idle gate that dresses the mascot with the bonus prop,
- * throws it and spawns a class-0x1f bonus EventObject via
- * sceneObjCtor3 + objHashRegister, plus the cashier s_winner/cash_sit
- * ambient anim (results screen aware); L2 additionally beeps sfx 0x23
- * while the local player stands in the cash-zone object. The per-level
- * global blocks (g_nL<n>Event*, g_apL<n>*Anms, g_pL<n>*Anim, spawn
- * positions) and the Init/Cleanup pairs are deferred with the directors
- * — documented TODO stubs; safe no-ops while the round clock,
- * countdown and win detection stay fully live without them. */
-void levelEventDirector_L0(void);                            /* @0x416fd0 */
+/* levelEventDirector_L1..L4 @0x4178c0/0x418000/0x418a30/0x4192a0 — the
+ * remaining per-level event directors, stepped once per roundLogicUpdate
+ * (dispatch on g_nLevelIdx @0x40c7a6..0x40c7c7). L0 is implemented in
+ * level0.c. Each remaining director runs its level's "MCDMAN bonus task"
+ * presenter: ambient sign sub-mesh bobbing (L2/L3), a 9-step anim state
+ * machine on a 10 s idle gate that dresses the mascot with the bonus prop,
+ * throws it and spawns a class-0x1f bonus EventObject via sceneObjCtor3 +
+ * objHashRegister, plus the cashier s_winner/cash_sit ambient anim
+ * (results screen aware); L2 additionally beeps sfx 0x23 while the local
+ * player stands in the cash-zone object. Documented TODO stubs; safe no-ops
+ * while the round clock, countdown and win detection stay fully live
+ * without them. */
 void levelEventDirector_L1(void);                            /* @0x4178c0 */
 void levelEventDirector_L2(void);                            /* @0x418000 */
 void levelEventDirector_L3(void);                            /* @0x418a30 */
 void levelEventDirector_L4(void);                            /* @0x4192a0 */
 
-/* levelEventDirector_L0_Init..L4_Init @0x416db0/0x4175e0/0x417dc0/
- * 0x4186c0/0x418f30 — per-level director reset, dispatched by
- * levelDirectorInits @0x40bdf0 at round start. Documented TODO stubs;
- * safe no-ops until the director subsystem lands. */
-void levelEventDirector_L0_Init(void);                       /* @0x416db0 */
+/* levelEventDirector_L1_Init..L4_Init @0x4175e0/0x417dc0/0x4186c0/
+ * 0x418f30 — per-level director reset, dispatched by levelDirectorInits
+ * @0x40bdf0 at round start (L0_Init is implemented in level0.c).
+ * Documented TODO stubs; safe no-ops until the director subsystem lands. */
 void levelEventDirector_L1_Init(void);                       /* @0x4175e0 */
 void levelEventDirector_L2_Init(void);                       /* @0x417dc0 */
 void levelEventDirector_L3_Init(void);                       /* @0x4186c0 */
 void levelEventDirector_L4_Init(void);                       /* @0x418f30 */
+
+/* levelEventDirector_L1_Cleanup..L4_Cleanup @0x417860/0x417fa0/0x4189d0/
+ * 0x419240 — per-level director anim teardown, dispatched by roundTeardown
+ * @0x40aa10 (jump table 0x40ad60) on g_nLevelIdx 1..4 (L0_Cleanup lives in
+ * level0.c). roundTeardown itself is not implemented yet, so these have no
+ * rebuild-side callers yet; no stubs are needed until it lands. */
 
 
 
