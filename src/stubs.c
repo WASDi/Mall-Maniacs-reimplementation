@@ -168,32 +168,46 @@ void objTurretListFree2(int nMode) /* @0x402b70 */
  * g_pSndEmitterHead/Tail @0x45e5f0/.f4 and driven by the music module
  * (musicEmitterAlloc), which is deferred with the audio subsystem. The
  * stub frees the block immediately so the fire-and-forget callers (walk
- * physics hazard sfx) do not leak; no sound plays. The original also
- * takes a 10th nFlags argument that only reaches the emitter setup. */
+ * physics hazard sfx) do not leak; no sound plays. nFlags (0x24 in the
+ * objUpdatePhysics/objUpdateFire impact calls, 0 elsewhere) only reaches
+ * the emitter setup in the original. */
 int sndPlaySfx3D(void *pEmitter, unsigned int nBank, unsigned int nIdx,
                  unsigned int nVol, int nSndId, int pPosNode,
-                 int nEmitParam6, int nX, int nY, int nZ) /* @0x42bcd0 */
+                 int nEmitParam6, int nX, int nY, int nZ,
+                 unsigned int nFlags) /* @0x42bcd0 */
 {
     (void)nBank; (void)nIdx; (void)nVol; (void)nSndId; (void)pPosNode;
-    (void)nEmitParam6; (void)nX; (void)nY; (void)nZ;
+    (void)nEmitParam6; (void)nX; (void)nY; (void)nZ; (void)nFlags;
     memFreeDirect(pEmitter);
     return 0;
 }
 
-/* objUpdatePhysics @0x405680 — world-item physics pass called twice by
- * objUpdateAll @0x4055f0. Documented TODO stub: the world-item physics
- * subsystem (loose item bobbing/settling) is the next rebuild step; the
- * per-frame world-node state it consumes is zeroed by objUpdateAll, so a
- * no-op is safe. */
-void objUpdatePhysics(void) /* @0x405680 */
+/* objShotCollide @0x4035e0 — rebuild a world node's shot list (+0x10):
+ * walks the node's +0x08 sub-object list, raycasts each shooter's two
+ * positions (sceneRayFindNearest / sceneRayFindSorted over the zone-line
+ * and wall-line lists of the +0x3c/+0x38 entries) and objShotAdd's the
+ * hit records consumed by objUpdatePhysics. Documented TODO stub: the
+ * shot-collision subsystem (objShotAdd @0x404210, objShotListFree
+ * @0x406110, objSegCollideCollect) is a later rebuild step; shot lists
+ * stay empty, so the objUpdatePhysics/Fire response branches never run. */
+void objShotCollide(WorldNode *pNode) /* @0x4035e0 */
 {
+    (void)pNode;
 }
 
-/* objUpdateFire @0x405e10 — world-item fire/hazard pass called between the
- * two objUpdatePhysics runs. Documented TODO stub, same contract as
- * objUpdatePhysics. */
-void objUpdateFire(void) /* @0x405e10 */
+/* objCollideCheck @0x404ac0 — the objUpdateFire counterpart of
+ * objShotCollide (same contract, fire pass). Documented TODO stub. */
+void objCollideCheck(WorldNode *pNode) /* @0x404ac0 */
 {
+    (void)pNode;
+}
+
+/* objWalkAnimSync @0x409b10 — sync a parent node's walk animation state
+ * with the shot victim key read from the shot's pAnimTarget block (+0x44).
+ * Documented TODO stub; no animation plays. */
+void objWalkAnimSync(void *pParent, int nAnimKey) /* @0x409b10 */
+{
+    (void)pParent; (void)nAnimKey;
 }
 
 /* playerAnimSfxUpdate @0x40c800 — TODO stub (next-step #4). */

@@ -68,7 +68,7 @@ void objUpdateAll(void) /* @0x4055f0 */
     WorldNode *pNode;
 
     for (pNode = g_pObjHead; pNode != NULL; pNode = pNode->pPrev) { /* +0x00 walk toward tail @0x4055f6 */
-        pNode->_pad40 = 0;    /* +0x40 @0x4055fc */
+        pNode->flImpulse = 0.0f;  /* +0x40 @0x4055fc */
         pNode->field_18 = 0;  /* +0x18 @0x405601 */
     }
     objUpdatePhysics();       /* @0x405680 @0x405611 */
@@ -869,4 +869,212 @@ void sceneObjCtor3(EventObject *pObj, int nId, float flX, float flY,
     pObj->flHeightB = flHeight;
     pObj->pHashNext = NULL;
     pObj->pHashPrev = NULL;
+}
+
+static const float g_fl1_2e6 = 1.2e-06f;  /* @0x44b2f4 (bytes 57 5C 1A 36) */
+static const float g_fl1_5e6 = 1.5e-06f;  /* @0x44b300 (bytes AB A5 43 36) */
+
+/* objSetPos @0x404ef0 — move a world node on the ground plane: the old
+ * vPos is copied to vPosB (+0x28/+0x2c) and vPos (+0x20/+0x24) becomes
+ * (flX, flZ). Used by objUpdatePhysics/objUpdateFire to place a node on
+ * its collision shot (two calls in objUpdatePhysics leave vPosB on the
+ * shot's from-position and vPos on its to-position). */
+void objSetPos(WorldNode *pNode, float flX, float flZ) /* @0x404ef0 */
+{
+    pNode->vPosB.x = pNode->vPos.x;                      /* +0x28 @0x404ef2 */
+    pNode->vPosB.y = pNode->vPos.y;                      /* +0x2c @0x404ef5 */
+    pNode->vPos.x = flX;                                 /* +0x20 @0x404ef8 */
+    pNode->vPos.y = flZ;                                 /* +0x24 @0x404efb */
+}
+
+/* objShotListClear @0x405590 — release the node's shot list built by
+ * objShotCollide (objShotCollide walk) / objCollideCheck: objShotListFree
+ * the chain, free the head block, zero the list head (+0x10) and the shot
+ * count (+0x14). */
+void objShotListClear(WorldNode *pNode) /* @0x405590 */
+{
+    if (pNode->pShotList != NULL) {                      /* @0x405594 */
+        objShotListFree(pNode->pShotList);               /* @0x406110 @0x40559b */
+        memFreeDirect(pNode->pShotList);                 /* @0x4055a5 */
+    }
+    pNode->pShotList = NULL;                             /* +0x10 @0x4055ab */
+    pNode->field_14 = 0;                                 /* +0x14 @0x4055af */
+}
+
+/* objUpdatePhysics @0x405680 — collision-response pass 1 (objUpdateAll
+ * calls it twice per frame). Per enabled node, 40 times per frame
+ * (@0x405dd9): objShotListClear, objShotCollide (rebuilds the shot list),
+ * then apply the response. Single shot (field_14 == 1): objSetPos onto the
+ * shot's from-position and then its to-position (vPosB = from, vPos = to),
+ * flScaleC = shot->field_1c, flScaleB smoothed toward flScaleA by
+ * flBlend/(field_18+flBlend), and flImpulse = (dir - from)·slope *
+ * shot->flScale * 1.2e-06 (@0x44b2f4); impact sfx bank 1 idx
+ * pSfxSrc[1] vol 65000 id 1 with nFlags 0x24. Multiple shots: the same
+ * response using the shot with the lowest flBlend/(field_18+flBlend)
+ * ratio (@0x405bce). The original's g_nMovieFrame 400..500 debug trace
+ * blocks call the (empty) nopDebugStub logger and are omitted. */
+void objUpdatePhysics(void) /* @0x405680 */
+{
+    WorldNode *pNode;
+    ShotObj *pShot;
+    ShotObj *pBest;
+    void *pEmitter;
+    int nIter;
+    int nX;
+    int nZ;
+
+    for (pNode = g_pObjHead; pNode != NULL; pNode = pNode->pPrev) {  /* +0x00 walk @0x405de6 */
+        if (pNode->field_1c == 0) {                      /* @0x4056b0 */
+            continue;
+        }
+        for (nIter = 0; nIter < 0x28; nIter++) {         /* 40 substeps @0x405dd9 */
+            objShotListClear(pNode);                     /* @0x405590 @0x4056c5 */
+            objShotCollide(pNode);                       /* @0x4035e0 @0x4056cc */
+            if (pNode->field_14 == 1 && pNode->pShotList != NULL) {  /* @0x405721 */
+                pShot = (ShotObj *)pNode->pShotList;
+                objSetPos(pNode, pShot->v0.x, pShot->v0.y);      /* @0x405894 */
+                objSetPos(pNode, pShot->v2.x, pShot->v2.y);          /* @0x4058a6 */
+                pNode->flScaleC = pShot->v1.y;                       /* +0x38 @0x4058c3 */
+                pNode->flScaleB += (pNode->flScaleA - pNode->flScaleB) *
+                                   pShot->v3.x /
+                                   (pShot->v1.x + pShot->v3.x);       /* +0x34 @0x4058c9 */
+                pNode->flImpulse =                                   /* +0x40 @0x4058ee */
+                    ((pShot->v4.y - pShot->v0.y) * pShot->v5.y +
+                     (pShot->v4.x - pShot->v0.x) * pShot->v5.x) *
+                    pShot->flScale * g_fl1_2e6;                      /* @0x44b2f4 @0x4058f4 */
+                pEmitter = malloc(0x1c);                             /* operator_new @0x43dd42 @0x4058fd */
+                if (pEmitter != NULL) {                              /* @0x40590d */
+                    nZ = (int)pNode->vPos.x;                         /* ftol +0x20 @0x40591a */
+                    nX = (int)pNode->vPos.y;                         /* ftol +0x24 @0x405924 */
+                    sndPlaySfx3D(pEmitter, 1,                        /* @0x42bcd0 @0x405941 */
+                                 (unsigned int)pShot->pSrc[1], 65000, 1, 0, 0,
+                                 nX, 0, nZ, 0x24);
+                }
+            } else if (pNode->field_14 > 1 && pNode->pShotList != NULL) {  /* @0x405a20 */
+                pBest = (ShotObj *)pNode->pShotList;
+                for (pShot = pBest->pNext; pShot != NULL; pShot = pShot->pNext) {  /* @0x405beb */
+                    if (pShot->v3.x / (pShot->v1.x + pShot->v3.x) <
+                        pBest->v3.x / (pBest->v1.x + pBest->v3.x)) {               /* @0x405bce */
+                        pBest = pShot;
+                    }
+                }
+                objSetPos(pNode, pBest->v0.x, pBest->v0.y);          /* @0x405c4b */
+                objSetPos(pNode, pBest->v2.x, pBest->v2.y);          /* @0x405c5a */
+                pNode->flScaleC = pBest->v1.y;                       /* +0x38 @0x405c6f */
+                pNode->flScaleB += (pNode->flScaleA - pNode->flScaleB) *
+                                   pBest->v3.x /
+                                   (pBest->v1.x + pBest->v3.x);       /* +0x34 @0x405c78 */
+                pNode->flImpulse =                                   /* +0x40 @0x405c9f */
+                    ((pBest->v4.y - pBest->v0.y) * pBest->v5.y +
+                     (pBest->v4.x - pBest->v0.x) * pBest->v5.x) *
+                    pBest->flScale * g_fl1_2e6;                      /* @0x405ca5 */
+                pEmitter = malloc(0x1c);                             /* @0x405cae */
+                if (pEmitter != NULL) {                              /* @0x405cbc */
+                    nZ = (int)pNode->vPos.x;                         /* ftol +0x20 @0x405ccd */
+                    nX = (int)pNode->vPos.y;                         /* ftol +0x24 @0x405cd8 */
+                    sndPlaySfx3D(pEmitter, 1,                        /* @0x42bcd0 @0x405cf4 */
+                                 (unsigned int)pBest->pSrc[1], 65000, 1, 0, 0,
+                                 nX, 0, nZ, 0x24);
+                }
+            }
+            pNode->field_18++;                               /* +0x18 @0x405dcd */
+        }
+    }
+}
+
+/* objUpdateFire @0x405e10 — fire/hazard pass between the two
+ * objUpdatePhysics runs. Pass 1 (@0x405e31): clear + rebuild each enabled
+ * node's shot list with objCollideCheck @0x404ac0. Pass 2 (@0x405e5c):
+ * apply the response — single shot: objSetPos onto the shot's to-position
+ * (vPosB keeps the previous vPos), flScaleB = flScaleA (snap), field_3c =
+ * shot->field_18, flScaleC = shot->field_1c, flImpulse = (dir - to)·slope *
+ * flScale * 1.5e-06 (@0x44b300); fire sfx bank 1 idx pSfxSrc[2] vol 65000
+ * id 0 with nFlags 0x24; then objWalkAnimSync(pParent, *(pAnimTarget+0x44))
+ * for the node's parent. Multiple shots: the same response with the shot
+ * of maximum field_18 (@0x405f5a); the walk-anim sync always reads the
+ * list head's pAnimTarget (@0x40600f). */
+void objUpdateFire(void) /* @0x405e10 */
+{
+    WorldNode *pNode;
+    ShotObj *pShot;
+    ShotObj *pBest;
+    void *pEmitter;
+    int nX;
+    int nZ;
+    int nAnimKey;
+
+    for (pNode = g_pObjHead; pNode != NULL; pNode = pNode->pPrev) {  /* @0x405e46 */
+        if (pNode->field_1c != 0) {                      /* @0x405e31 */
+            objShotListClear(pNode);                     /* @0x405590 @0x405e3a */
+            objCollideCheck(pNode);                      /* @0x404ac0 @0x405e41 */
+        }
+    }
+    for (pNode = g_pObjHead; pNode != NULL; pNode = pNode->pPrev) {  /* @0x405e46/0x406025 */
+        if (pNode->field_1c == 0) {                      /* @0x405e5c */
+            continue;
+        }
+        if (pNode->field_14 == 1 && pNode->pShotList != NULL) {  /* @0x405e67 */
+            pShot = (ShotObj *)pNode->pShotList;
+            objSetPos(pNode, pShot->v2.x, pShot->v2.y);            /* @0x405e7e */
+            pNode->flScaleB = pNode->flScaleA;                     /* +0x34 @0x405e94 */
+            pNode->field_3c = pShot->v1.x;                         /* +0x3c @0x405e9d */
+            pNode->flScaleC = pShot->v1.y;                         /* +0x38 @0x405ea3 */
+            pNode->flImpulse =                                     /* +0x40 @0x405eba */
+                ((pShot->v4.y - pShot->v2.y) * pShot->v5.y +
+                 (pShot->v4.x - pShot->v2.x) * pShot->v5.x) *
+                pShot->flScale * g_fl1_5e6;                        /* @0x44b300 @0x405ec0 */
+            pEmitter = malloc(0x1c);                               /* @0x405ec9 */
+            if (pEmitter != NULL) {                                /* @0x405ed7 */
+                nZ = (int)pNode->vPos.x;                           /* ftol +0x20 @0x405ee8 */
+                nX = (int)pNode->vPos.y;                           /* ftol +0x24 @0x405ef3 */
+                sndPlaySfx3D(pEmitter, 1,                          /* @0x42bcd0 @0x405f12 */
+                             (unsigned int)pShot->pSrc[2], 65000, 0, 0, 0,
+                             nX, 0, nZ, 0x24);
+            }
+            if (pNode->pParent != NULL) {                          /* +0x44 @0x405f17 */
+                nAnimKey = 0;
+                if (pShot->pAnimTarget != NULL) {                  /* +0x08 @0x405f2d */
+                    nAnimKey = *(int *)((char *)pShot->pAnimTarget + 0x44);  /* @0x405f30 */
+                }
+                if (nAnimKey != 0) {                               /* @0x405f33 */
+                    objWalkAnimSync(pNode->pParent, nAnimKey);     /* @0x409b10 @0x40601c */
+                }
+            }
+            pNode->field_18++;                                     /* +0x18 @0x406022 */
+        } else if (pNode->field_14 > 1 && pNode->pShotList != NULL) {  /* @0x405f43 */
+            pBest = (ShotObj *)pNode->pShotList;
+            for (pShot = pBest->pNext; pShot != NULL; pShot = pShot->pNext) {  /* @0x405f54 */
+                if (pBest->v1.x < pShot->v1.x) {                   /* @0x405f62 */
+                    pBest = pShot;
+                }
+            }
+            objSetPos(pNode, pBest->v2.x, pBest->v2.y);            /* @0x405f6f */
+            pNode->flScaleB = pNode->flScaleA;                     /* +0x34 @0x405f81 */
+            pNode->field_3c = pBest->v1.x;                         /* +0x3c @0x405f89 */
+            pNode->flScaleC = pBest->v1.y;                         /* +0x38 @0x405f8f */
+            pNode->flImpulse =                                     /* +0x40 @0x405fa6 */
+                ((pBest->v4.x - pBest->v2.x) * pBest->v5.x +
+                 (pBest->v4.y - pBest->v2.y) * pBest->v5.y) *
+                pBest->flScale * g_fl1_5e6;                        /* @0x405fac */
+            pEmitter = malloc(0x1c);                               /* @0x405fb5 */
+            if (pEmitter != NULL) {                                /* @0x405fc3 */
+                nZ = (int)pNode->vPos.x;                           /* @0x405fd4 */
+                nX = (int)pNode->vPos.y;                           /* @0x405fdf */
+                sndPlaySfx3D(pEmitter, 1,                          /* @0x42bcd0 @0x405ffb */
+                             (unsigned int)pBest->pSrc[2], 65000, 0, 0, 0,
+                             nX, 0, nZ, 0x24);
+            }
+            if (pNode->pParent != NULL) {                          /* @0x406000 */
+                nAnimKey = 0;
+                pShot = (ShotObj *)pNode->pShotList;               /* head @0x406012 */
+                if (pShot->pAnimTarget != NULL) {                  /* +0x08 @0x406012 */
+                    nAnimKey = *(int *)((char *)pShot->pAnimTarget + 0x44);  /* @0x406015 */
+                }
+                if (nAnimKey != 0) {                               /* @0x40601a */
+                    objWalkAnimSync(pNode->pParent, nAnimKey);     /* @0x409b10 @0x40601d */
+                }
+            }
+            pNode->field_18++;                                     /* @0x406022 */
+        }
+    }
 }

@@ -1311,7 +1311,7 @@ void itemThrowUpdate(ThrownItem *pItem) /* @0x40f950 */
                 nFloor = (int)flFloor;                         /* ftol @0x40fa69 */
                 nX = (int)pObj->vPos.y;                        /* ftol @0x40fa72 */
                 sndPlaySfx3D(pEmitter, 1, 0x14, 65000, 0x6e,   /* @0x42bcd0 @0x40fa87 */
-                             0, 0, nX, nFloor, nZ);
+                             0, 0, nX, nFloor, nZ, 0);
             }
             pItem->flSpeed *= g_fl0_999;                       /* @0x40fc3f */
             objMovePolar(pObj, pItem->flSpeed, pItem->flHeading);            /* @0x40fc53 */

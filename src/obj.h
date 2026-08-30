@@ -159,15 +159,56 @@ typedef struct WorldNode {
     float flScaleB;             /* +0x34 */
     float flScaleC;             /* +0x38 */
     float field_3c;             /* +0x3c (polar length written by objMovePolar) */
-    int _pad40;                 /* +0x40 untouched in worldNodeCtor */
+    float flImpulse;            /* +0x40 shot impulse (objUpdatePhysics/Fire, read
+                                 * by player physics @0x42887c) */
     void *pParent;              /* +0x44 parent node (or the name MString ptr
                                  * as passed by playerSetupRound) */
 } WorldNode;                    /* 0x48 */
 
 typedef char WorldNodeSizeMustBe0x48[(sizeof(WorldNode) == 0x48) ? 1 : -1];
 
+/* ShotObj — one collision-response record built by objShotAdd (filled by
+ * objShotCollide @0x4035e0 / objCollideCheck @0x404ac0, stored in the
+ * node's +0x10 list; 0x44 bytes per the objShotAdd allocation). Layout
+ * from the objUpdatePhysics @0x405680 / objUpdateFire @0x405e10
+ * consumers; the producer side (objShotAdd) lands with the shot-collision
+ * subsystem. */
+typedef struct ShotObj {
+    struct ShotObj *pNext;   /* +0x00 list link */
+    int nFlags;              /* +0x04 */
+    void *pAnimTarget;       /* +0x08 block whose +0x44 feeds objWalkAnimSync */
+    int *pSrc;               /* +0x0c sfx table ([1] = physics idx, [2] = fire idx) */
+    GxVec2 v0;               /* +0x10 from-position (objSetPos pass 1) */
+    GxVec2 v1;               /* +0x18 {weight, kind} (fire picks the max
+                              * weight; physics blends by it) */
+    GxVec2 v2;               /* +0x20 to-position (objSetPos pass 2) */
+    GxVec2 v3;               /* +0x28 {blend, unk} (physics picks the min
+                              * blend.x/(v1.x+blend.x) ratio) */
+    GxVec2 v4;               /* +0x30 direction vector */
+    GxVec2 v5;               /* +0x38 direction slopes */
+    float flScale;           /* +0x40 impulse scale */
+} ShotObj;                   /* 0x44 */
+
 /* objListPush @0x4055c0 — head-insert a world node into g_pObjHead. */
 void objListPush(WorldNode *pNode);
+
+/* objSetPos @0x404ef0 — move a world node on the ground plane: vPosB
+ * (+0x28/+0x2c) = old vPos, vPos = (flX, flZ). */
+void objSetPos(WorldNode *pNode, float flX, float flZ);      /* @0x404ef0 */
+
+/* objShotListClear @0x405590 — free the node's shot list (+0x10) via
+ * objShotListFree + memFreeDirect and zero the list head and count
+ * (+0x10/+0x14). */
+void objShotListClear(WorldNode *pNode);                     /* @0x405590 */
+
+/* objUpdatePhysics @0x405680 / objUpdateFire @0x405e10 — world-object
+ * collision-response passes driven by objUpdateAll @0x4055f0. Each runs
+ * over the g_pObjHead list (nodes with +0x1c enabled): clear + rebuild the
+ * shot list (objShotCollide / objCollideCheck), then apply the shot
+ * impulse (objSetPos to the shot position, blend flScaleA->flScaleB, and
+ * flImpulse from the shot direction · slope), with a 3D impact sfx. */
+void objUpdatePhysics(void);                                 /* @0x405680 */
+void objUpdateFire(void);                                    /* @0x405e10 */
 
 /* ObjTurret is the 0x1c-byte turret entry built by objTurretAdd @0x405280
  * (levelObjectsCartsCameraInit collision cluster for each player's cart and

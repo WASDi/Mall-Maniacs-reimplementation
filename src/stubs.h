@@ -130,16 +130,25 @@ void levelEventDirector_L2_Init(void);                       /* @0x417dc0 */
 void levelEventDirector_L3_Init(void);                       /* @0x4186c0 */
 void levelEventDirector_L4_Init(void);                       /* @0x418f30 */
 
-/* sndPlaySfx3D @0x42bcd0 — 3D positional emitter stub (see stubs.c). */
+/* sndPlaySfx3D @0x42bcd0 — 3D positional emitter stub (see stubs.c).
+ * nFlags is 0x24 in the objUpdatePhysics/objUpdateFire impact calls and 0
+ * elsewhere. */
 int sndPlaySfx3D(void *pEmitter, unsigned int nBank, unsigned int nIdx,
                  unsigned int nVol, int nSndId, int pPosNode,
-                 int nEmitParam6, int nX, int nY, int nZ);
+                 int nEmitParam6, int nX, int nY, int nZ,
+                 unsigned int nFlags);
 
-/* objUpdatePhysics @0x405680 / objUpdateFire @0x405e10 — world-item
- * physics/fire passes driven by objUpdateAll @0x4055f0. Documented TODO
- * stubs (see stubs.c): the world-item subsystem is the next rebuild step. */
-void objUpdatePhysics(void);
-void objUpdateFire(void);
+/* objShotCollide @0x4035e0 / objCollideCheck @0x404ac0 — rebuild a world
+ * node's shot list (+0x10) from its +0x08 shooter sub-objects (physics and
+ * fire pass respectively). Documented TODO stubs (see stubs.c): shot
+ * lists stay empty, so the objUpdatePhysics/objUpdateFire response
+ * branches never run until the shot-collision subsystem lands. */
+void objShotCollide(WorldNode *pNode);                       /* @0x4035e0 */
+void objCollideCheck(WorldNode *pNode);                      /* @0x404ac0 */
+
+/* objWalkAnimSync @0x409b10 — sync a parent node's walk animation state
+ * from a shot's pAnimTarget key (+0x44). Documented TODO stub. */
+void objWalkAnimSync(void *pParent, int nAnimKey);           /* @0x409b10 */
 
 /* playerAnimSfxUpdate @0x40c800 — per-player animation stepping + gameplay
  * sfx (footsteps, cart engine, results orbit). TODO: full implementation
