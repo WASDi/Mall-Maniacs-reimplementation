@@ -13,7 +13,7 @@
  * mesh's SceneMeshPrim fan stream (bType 3 = tri fans, 4 = quad lists,
  * fans with normalized-Y >= 0.6 are walkable). zoneWallListBuild
  * (zone.c) then dedups/planes the lists and sceneRayFindNearest
- * (scene.c) queries them for floor heights.
+ * (scene_render.c) queries them for floor heights.
  *
  * The "nload <mall>.ai" startup command (nloadCmd @0x407e10) loads the
  * level's navpoint buoy graph: one 0x60-byte NavPoint per config block

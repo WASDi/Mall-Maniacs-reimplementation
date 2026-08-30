@@ -2,8 +2,7 @@
 #define PLAYER_CAMERA_H
 
 /* player_camera.h — arrow objects, menu scene, and camera follow
- * (maniac.exe 0x411550 camera tail + 0x4020d0 follow). Extracted from
- * src/player.c. */
+ * (maniac.exe 0x411550 camera tail + 0x4020d0 follow). */
 
 struct SceneNode;
 struct CameraFollowBlock;

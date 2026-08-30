@@ -2,7 +2,7 @@
 #define PLAYER_PHYSICS_H
 
 /* player_physics.h — gameUpdate cluster + special-zone ids
- * (maniac.exe 0x426ee0 physics suite). Extracted from src/player.c. */
+ * (maniac.exe 0x426ee0 physics suite). */
 
 struct PlayerRecord;
 

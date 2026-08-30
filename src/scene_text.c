@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "scenetext.h"
+#include "scene_text.h"
 
 enum { SCENE_TEXT_ANIM_SLOT_COUNT = 16, SCENE_TEXT_GLYPH_SIZE = 16 };
 

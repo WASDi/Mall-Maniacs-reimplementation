@@ -23,6 +23,14 @@
 
 extern void *g_pSceneDetailGrid;   /* @0x45838c (defined in gameplay.c) */
 
+/* g_playerRecords @0x456210 — the 0x374-byte gameplay player records.
+ * The controller view (original base 0x456524) is the embedded
+ * PlayerRecord.ai member. */
+PlayerRecord g_playerRecords[8];
+
+/* g_nResultsScreen @0x458130 — results-screen gate in gameWorldUpdate. */
+int g_nResultsScreen;
+
 /* g_nCurrentItemId @0x458128 — mode 3 target item id, reset by
  * playerSetupRound (checked by the AI state machine). */
 int g_nCurrentItemId;

@@ -4,7 +4,7 @@
 #include "../src/menu.h"
 #include "../src/player.h"
 #include "../src/scene.h"
-#include "../src/scenetext.h"
+#include "../src/scene_text.h"
 #include "../src/gx.h"
 
 static int g_nFlipCalls;

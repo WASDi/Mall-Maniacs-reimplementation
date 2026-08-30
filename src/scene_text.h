@@ -1,5 +1,5 @@
-#ifndef SCENETEXT_H
-#define SCENETEXT_H
+#ifndef SCENE_TEXT_H
+#define SCENE_TEXT_H
 
 #include <stddef.h>
 
@@ -13,4 +13,4 @@ int sceneTextAnimAdd(void *pOwner, void *pGlyphs, void *pRecordStream,
                      int nStreamLen);             /* @0x434a90 */
 void sceneTextAnimUpdate(char nFrameStep);         /* @0x434b00 */
 
-#endif /* SCENETEXT_H */
+#endif /* SCENE_TEXT_H */

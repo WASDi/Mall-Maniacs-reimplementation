@@ -56,7 +56,7 @@ SceneNode *g_pCharModelNodePrev = NULL; /* @0x45a6c8 previous node */
 AnmFile *g_pCharAnim = NULL;       /* @0x45a6d8 current anim */
 AnmFile *g_pCharAnimPrev = NULL;   /* @0x45a6dc previous anim */
 int   g_nCharModelSwapFlag = 0; /* @0x45d494 */
-/* g_pSceneRoot is the first field of g_camFollowBlock (player.c, scene.h). */
+/* g_pSceneRoot is the first field of g_camFollowBlock (scene.h). */
 void *g_anMenuCharTex[10] = {0};/* @0x45a660 per-char tex */
 void *g_hMenuTexTom = NULL;     /* @0x45a688 */
 void *g_pCharSelAnimData = NULL;/* @0x45a6d0 anim-data pointer passed to anmLoad */

@@ -279,66 +279,14 @@ extern float g_sceneCameraBasis_5;
 extern float g_sceneCameraBasis_6;
 extern float g_sceneCameraBasis_7;
 
-/* --- prototypes --- */
-int  sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount, int nMeshPoolSize, unsigned int nFlags);
-int  sceneFreeAllNodes(void);       /* @0x42f150 */
-int  sceneSystemClose(void);        /* @0x42f180 */
-void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, short nMeshIdx, short nUnk5, short nUnk6, short nUnk7); /* @0x4318e0 */
-void *sceneNodeAllocChild(SceneNode *pParent, void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3, void *pChannelPtr4);
-void *sceneryObjAlloc(SceneNode *pParent, int nChanPtr, int nChanPtr2, int nChanPtr3, int nChanPtr4,
-                      short nScaleX, short nScaleZ, short nScaleY, void *pTypeDef);
-int  scenNameToId(LPCSTR pszName);
-int  sceneCollectMeshHandles(int *pOut, int nMax, const char *pszFilter); /* @0x42b360 */
-int  sceneFindByName(SceneNode **pOut, int nMax, const char *pszFilter); /* @0x431fd0 */
-int  scenNameToIdEx(LPCSTR pszName); /* @0x431e20 */
-int  sceneObjSetPos(SceneNode *pObj, int nX, int nY, int nZ, int nMode); /* @0x430660 */
-int  sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll, byte nMode); /* @0x4307d0 */
-int  sceneObjSetSubPos(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll, byte nMode); /* @0x430a90 */
-int  sceneObjSetSubOrient(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch, short nRoll); /* @0x431110 */
-int  sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode); /* @0x430e80 */
-int  sceneNodeGetPos(SceneNode *pNode, int nChannel, int *pOutXYZ, int nMode); /* @0x431270 */
-int  sceneNodeSetPos(SceneNode *pNode, void *pXYZ, int nMode); /* @0x431590 — raw 32-bit copy (int channel storage) */
-int  sceneNodeSetPosShorts(SceneNode *pNode, short *pAngles, byte nMode); /* @0x431850 */
-int  sceneNodeGetChannelPos(SceneNode *pNode, int nChannel, short *pOutAngles,
-                            uint nMode, short *pOutAngles2); /* @0x4315e0 */
-SceneObjTypeDef *sceneNodeGetMesh(SceneNode *pNode); /* @0x431ae0 */
-int  sceneSetCurrentObj(SceneNode *pNodeHead, int nCurrentObj); /* @0x430d98 */
-void sceneMeshBBox(SceneNode *pNode, int *pOutBBox); /* @0x42ba40 */
-void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
-                          int nRows, int nCellSize); /* @0x42ad00 */
-void sceneDetailGridSetRoot(SceneDetailGrid *pGrid, SceneNode *pRootNode); /* @0x42b350 */
-void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount); /* @0x42b000 */
-int  sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMode); /* @0x430db0 */
-int  sceneNodeSetHiddenFlag(SceneNode *pNode, int nMode); /* @0x4305c0 */
-int  sceneObjResetFlags(SceneNode *pNode, int nRecursive); /* @0x430620 */
-int  sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float flZ, int nMode); /* @0x431030 */
-void sceneNodeFree(SceneNode *pNode, int nFreeChildren); /* @0x430460 */
-void sceneNodeUpdateBounds(SceneNode *pNode); /* @0x4303c0 */
-int  sceneRender(void *pCameraBlock);
-void sceneBuildRootMatrix(SceneNode *pRootNode); /* @0x42f520 */
-void sceneCameraBasisCalc(void);
-int  sceneNodeRender(SceneNode *pNode); /* @0x42f8c0 */
-void *sceneMorphInterp(SceneNode *pNode, SceneObjRenderInfo *pRender, void *pOut); /* @0x4300d0 */
-void chanCalcWorldTransform(SceneNode *pNode, int nChannel); /* @0x42f6e0 */
-void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, int pPalColors);
-void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
-                     void *pColor, int nUnk, int bInterpColor, int bInterpUV); /* @0x42d070 */
-void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
-                      void *pColor, int nUnk, int bInterpColor, int bInterpUV); /* @0x42daf0 */
-void gxSortPushKey(void *pMesh, void *pVerts, void *pNormals, int pTex, int pPalette);
-void mat3x3Mul(float *a, float *b, float *out);
-void chanBuildRotMatrix(SceneChannel *ch);
-int  sceneCacheLocalVerts(SceneNode *pNode); /* @0x42ffa0 */
-
-/* sceneRayFindNearest @0x42a750 — walk g_pNavNodeList and return the first
- * floor node whose plane height at (flX, flZ) is within flMaxDist above
- * flHeight and whose walls collide with point (flX, flZ) at radius
- * flRadius (zoneWallCircleHit). */
-void *sceneRayFindNearest(float flZ, float flX, float flHeight,
-                          float flMaxDist, float flRadius);
+/* --- prototypes — now in subsystem headers (de-duped, 4-way split) --- */
+#include "scene_system.h"
+#include "scene_alloc.h"
+#include "scene_transform.h"
+#include "scene_render.h"
 
 /* Bungee-degree conversion constants shared by the trig helpers and
- * walkAnimTableEntryCalc (declared in scene.c). */
+ * walkAnimTableEntryCalc (declared in anim.c). */
 extern const double g_dblBdgToRad;   /* @0x44b788 = pi/32768 */
 extern const double g_dblRadToBdg;   /* @0x44b780 = 65536/(2*pi) */
 

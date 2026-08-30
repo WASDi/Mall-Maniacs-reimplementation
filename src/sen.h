@@ -42,7 +42,7 @@ int sceneMeshFixup(int pMesh, void *pNames, int pMapGeom);
  * 0 on gxCreateSurface failure. */
 int  sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames);
 
-/* --- mesh-table registry (shared with scene.c / scenNameToId) ---
+/* --- mesh-table registry (shared with scene_render.c / scenNameToId) ---
  * g_pMeshTable holds 8-byte entries {char *name, void *pMeshData}; pMeshData is
  * the raw MESH chunk bytes, which are a serialized SceneObjTypeDef. */
 typedef struct ScenNameEntry {

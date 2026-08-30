@@ -10,7 +10,7 @@
 #include "charselect.h"
 #include "util.h"
 #include "pool.h"
-#include "scenetext.h"
+#include "scene_text.h"
 
 /* =====================================================================
  * SEN scene-file loader cluster. Faithful reimplementation of maniac.exe

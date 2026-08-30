@@ -1,9 +1,7 @@
 #ifndef PLAYER_AI_H
 #define PLAYER_AI_H
 
-/* player_ai.h — AI controller view + dispatch (maniac.exe 0x401xxx).
- * Extracted from src/player.c for size: owns the rotating AI update index
- * and difficulty speed table. */
+/* player_ai.h — AI controller view + dispatch (maniac.exe 0x401xxx). */
 
 struct AiController;
 struct PlayerRecord;

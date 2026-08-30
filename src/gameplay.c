@@ -14,7 +14,7 @@
 #include "pool.h"
 #include "quest.h"
 #include "scene.h"
-#include "scenetext.h"
+#include "scene_text.h"
 #include "sen.h"
 #include "sound.h"
 #include "stubs.h"
