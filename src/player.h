@@ -166,15 +166,13 @@ extern PlayerRecord g_playerRecords[8];  /* @0x456210 */
 /* camera-follow / results globals */
 extern int g_nLocalPlayerIdx;    /* @0x458104 local (human) player slot */
 extern int g_nResultsScreen;     /* @0x458130 nonzero while results screen runs */
-extern int g_nCameraUpdateTick;  /* @0x458948 camera-follow scheduler tick */
-extern int g_nCurrentItemId;     /* @0x458128 mode 3 target item id (HUD) */
+extern int g_nCameraUpdateTick;  /* @0x458948 camera-follow scheduler tick — defined in player_camera.c */
+extern int g_nCurrentItemId;     /* @0x458128 mode 3 target item id (HUD) — defined in player_setup.c */
 
 /* 4-byte object ids used by cameraFollowUpdate: "c_ac" camera-active zone
  * (snap target, @0x44e20c) and "c_di" camera-distance limiter (@0x44e204). */
 #define OBJ_ID_C_AC 0x63615f63   /* 'c_ac' */
 #define OBJ_ID_C_DI 0x69645f63   /* 'c_di' */
-
-int playerUpdateDispatch(void);                 /* @0x4010e0 */
 
 /* ThrownItemStub — minimal view of a g_pThrownItemHead list entry for
  * gameUpdate's walks (next link at +0x04). The full 0x30-byte layout
@@ -184,66 +182,18 @@ typedef struct ThrownItemStub {
     struct ThrownItemStub *pNext;    /* +0x04 next list entry */
 } ThrownItemStub;
 
-/* --- gameUpdate player-physics cluster (all __cdecl, PlayerRecord*) --- */
-void playerUpdateWalkPhysics(PlayerRecord *pRec);        /* @0x426fd0 */
-void playerUpdateOnFoot(PlayerRecord *pRec);            /* @0x427730 */
-void playerUpdateCartPhysics(PlayerRecord *pRec);       /* @0x4280b0 */
-void syncWalkNodeChannelsToMesh(PlayerRecord *pRec);    /* @0x428990 */
-void syncPosNodeChannelsToMesh(PlayerRecord *pRec);     /* @0x428840 */
-void syncCartNodeChannelsToMeshes(PlayerRecord *pRec);  /* @0x428a70 */
-void syncCartNodeChannelsToWalkPos(PlayerRecord *pRec); /* @0x40e040 */
-void gameUpdate(void);                                  /* @0x426ee0 */
+/* Per-subsystem headers — umbrella re-export so consumers that include
+ * player.h get all player APIs without changing include lists. Guarded
+ * includes avoid circular dependency (sub-headers use forward decls). */
+#include "player_ai.h"
+#include "player_setup.h"
+#include "player_camera.h"
+#include "player_physics.h"
 
-/* moveStateSetSnapFlag @0x4020c0 — raise the controller zone-snap flag
- * (+0x51) after a teleport pad moved the node. */
-void moveStateSetSnapFlag(AiController *pCtrl);
-
-/* 4-char EventObject ids of the per-level special zones (@0x450df4/.dec/.e4). */
-extern int g_nObjIdMvnc;   /* "mvnc" */
-extern int g_nObjIdHurl;   /* "hurl" */
-extern int g_nObjIdTele;   /* "tele" */
-int syncAiAnimToSceneObj(AiController *pCtrl);  /* @0x4015a0 */
-void playerAiUpdate(AiController *pCtrl);       /* @0x401160 */
-
-/* aiControllersInit @0x401040 — aiControllerCtor one controller per player
- * and reset the rotating AI update index g_nControllerIdx. */
-int aiControllersInit(void);                    /* @0x401040 */
-
-/* aiControllerCtor @0x401090 — zero the controller state, store the owning
- * record pointer and the difficulty-scaled AI speed. Returns 1. */
-int aiControllerCtor(AiController *pCtrl, PlayerRecord *pRecord); /* @0x401090 */
-
-/* playerSetupRound @0x410e90 — per-player round setup from [master] and
- * objects/characters[%d]/carts[%d] config: physics constants, shopping
- * list, names, stats and the three WorldNode sub-objects, then
- * aiControllersInit. */
-void playerSetupCharacters(void);               /* @0x41b6e0 */
-void playerSetupRound(void);                    /* @0x410e90 */
-
-/* playerSetupSceneObjects @0x411550 — create the per-player scene objects
- * (character + cart nodes, meshes, animation sets), the VAGNPIL/VARUPIL
- * arrow objects, the game scene root with camera nodes and the menu-scene
- * root for the return path. */
-void playerSetupSceneObjects(void);             /* @0x411550 */
-
-/* levelObjectsCartsCameraInit @0x411b70 — per-player cart/character world
- * placement from config object_pos/start_positions (TODO: the objTurretAdd /
- * nodeAddChildMesh pass) followed by the unconditional camera setup:
- * cameraSetClassMeshes, then place g_pCamPosNode/g_pCamAimNode from config
- * objects/camera pos/aim, copy the position/orientation onto the camera
- * root and load rot_speed/rot_max into the camera-follow block. */
-void levelObjectsCartsCameraInit(void);         /* @0x411b70 */
-
-/* cameraSetClassMeshes @0x4023b0 — attach the followed node's class mesh to
- * the camera pos node and the camera root and store it as the block's
- * follow node (block +4, 0x4588fc). */
-void cameraSetClassMeshes(CameraFollowBlock *pBlk, SceneNode *pMesh); /* @0x4023b0 */
-
-/* cameraFollowUpdate @0x4020d0 — per-tick camera follow: pick the target
- * position from the camera pos node or a c_ac zone snap, avoid zone walls
- * (TODO), smooth x/z/y toward the target (snap inside nSnapDist, else
- * delta/nDiv), clamp the height against c_di segments (TODO) and finally
- * set the camera root position and face the aim node's world position. */
-void cameraFollowUpdate(CameraFollowBlock *pBlk); /* @0x4020d0 */
+/* playerAiUpdate is a deferred stub (stubs.h) but historically declared
+ * here for the AI dispatch. Keep forward decl for callers that only
+ * include player.h. */
+struct AiController;
+void playerAiUpdate(struct AiController *pCtrl);       /* @0x401160 — stub in stubs.h */
 
 #endif /* PLAYER_H */
