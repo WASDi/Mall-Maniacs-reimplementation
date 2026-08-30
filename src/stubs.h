@@ -26,7 +26,7 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
 
 /* Gameplay entry contracts used by stateLevelInit0..4. Player/world setup is
  * still deferred; commandDispatch routes the original run command to runCmd
- * and level startup scripts' "eload <file>.eo" to eloadCmd (src/obj.c). */
+ * and level startup scripts' "eload <file>.eo" to eloadCmd (src/obj_event.c). */
 void unloadGameWorld(void);                                  /* gameplay teardown */
 unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand); /* @0x408b60 */
 void sndEmitterUpdateAll(void);                              /* @0x42bf40 */
@@ -43,7 +43,7 @@ int netIsActive(void);                                       /* @0x426ed0 */
 extern int g_nNetIsClient;                                   /* @0x45e59c */
 extern int g_nNetIsServer;                                   /* @0x45e598 */
 
-/* World-object sub-lists freed by objDtor @0x402ab0 (obj.c). The turret
+/* World-object sub-lists freed by objDtor @0x402ab0 (obj_world). The turret
  * object model is deferred; the player round-setup sub-objects never
  * populate these fields, so the stubs are safe no-ops. */
 void objTurretListFree(int nMode);                           /* @0x402b40 */
