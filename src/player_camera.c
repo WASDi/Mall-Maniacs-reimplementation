@@ -27,13 +27,18 @@ SceneNode *g_pMenuSceneChildB; /* @0x45891c */
 /* g_nCameraUpdateTick @0x458948 — camera-follow scheduler (mod 4 gate). */
 int g_nCameraUpdateTick;
 
-/* cameraSetClassMeshes @0x4023b0 — attach pMesh as the class mesh of the
- * block's pos node (+8) and camera root (+0) and store it as the follow
- * node (+4, 0x4588fc; the missing writer of that field). */
+/* cameraSetClassMeshes @0x4023b0 — re-parent the camera pos node (block +8,
+ * 0x458900) and the camera aim node (block +0xc, 0x458904) as children of
+ * the local player's char node (verified disassembly @0x4023be..0x4023d1:
+ * both calls read [EDI+8] and [EDI+0xc] — the camera root at +0 stays at
+ * scene top level and holds world coordinates), and store pMesh as the
+ * follow node (+4, 0x4588fc). This is what makes the config camera pos/aim
+ * offsets ride along with the player, so cameraFollowUpdate's mode-4 reads
+ * of those nodes track the character. */
 void cameraSetClassMeshes(CameraFollowBlock *pBlk, SceneNode *pMesh) /* @0x4023b0 */
 {
     sceneObjSetClassMesh((int)(size_t)pBlk->pPosNode, pMesh, 0, 3);   /* @0x4023c0 */
-    sceneObjSetClassMesh((int)(size_t)pBlk->pNode, pMesh, 0, 3);      /* @0x4023d5 */
+    sceneObjSetClassMesh((int)(size_t)pBlk->pAimNode, pMesh, 0, 3);   /* @0x4023d5 [EDI+0xc] */
     pBlk->pFollowNode = pMesh;                                        /* @0x4023e6 */
 }
 

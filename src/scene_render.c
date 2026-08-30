@@ -480,11 +480,11 @@ void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, i
 tri_draw:
                 if ((d1 < 0) || (d2 < 0)) {
 tri_clip:
-                    if (pvVar11 || pColorPtr)
-                        meshDrawTriClip((byte *)pIdxList, pVerts, pNormals, pColorPtr, pvVar11, (int)nUnk, (int)bColor, (int)local8);
+                    /* Original calls unconditionally (@0x42eb67, no NULL guard). */
+                    meshDrawTriClip((byte *)pIdxList, pVerts, pNormals, pColorPtr, pvVar11, (int)nUnk, (int)bColor, (int)local8);
                 } else {
-                    if (pvVar11 || pColorPtr)
-                        gxDrawTriUV((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (int)pColorPtr, pvVar11);
+                    /* Original calls unconditionally (@0x42eb5d). */
+                    gxDrawTriUV((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (int)pColorPtr, pvVar11);
                 }
             }
             pIdxList = pIdxList + bStride;
