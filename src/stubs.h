@@ -43,10 +43,9 @@ int netIsActive(void);                                       /* @0x426ed0 */
 extern int g_nNetIsClient;                                   /* @0x45e59c */
 extern int g_nNetIsServer;                                   /* @0x45e598 */
 
-/* World-object sub-lists freed by objDtor @0x402ab0 (obj.c). The shot and
- * turret object models are deferred; the player round-setup sub-objects
- * never populate these fields, so the stubs are safe no-ops. */
-void objShotListFree(void *pShotList);                       /* @0x406110 */
+/* World-object sub-lists freed by objDtor @0x402ab0 (obj.c). The turret
+ * object model is deferred; the player round-setup sub-objects never
+ * populate these fields, so the stubs are safe no-ops. */
 void objTurretListFree(int nMode);                           /* @0x402b40 */
 void objTurretListFree2(int nMode);                          /* @0x402b70 */
 
@@ -137,18 +136,6 @@ int sndPlaySfx3D(void *pEmitter, unsigned int nBank, unsigned int nIdx,
                  unsigned int nVol, int nSndId, int pPosNode,
                  int nEmitParam6, int nX, int nY, int nZ,
                  unsigned int nFlags);
-
-/* objShotCollide @0x4035e0 / objCollideCheck @0x404ac0 — rebuild a world
- * node's shot list (+0x10) from its +0x08 shooter sub-objects (physics and
- * fire pass respectively). Documented TODO stubs (see stubs.c): shot
- * lists stay empty, so the objUpdatePhysics/objUpdateFire response
- * branches never run until the shot-collision subsystem lands. */
-void objShotCollide(WorldNode *pNode);                       /* @0x4035e0 */
-void objCollideCheck(WorldNode *pNode);                      /* @0x404ac0 */
-
-/* objWalkAnimSync @0x409b10 — sync a parent node's walk animation state
- * from a shot's pAnimTarget key (+0x44). Documented TODO stub. */
-void objWalkAnimSync(void *pParent, int nAnimKey);           /* @0x409b10 */
 
 /* playerAnimSfxUpdate @0x40c800 — per-player animation stepping + gameplay
  * sfx (footsteps, cart engine, results orbit). TODO: full implementation

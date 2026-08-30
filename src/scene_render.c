@@ -932,3 +932,52 @@ void *sceneRayFindNearest(float flZ, float flX, float flHeight,
     }
     return NULL;
 }
+
+/* sceneRayFindSorted @0x42a7c0 — insertion-sort the given node array by
+ * *(float*)node (the AiNavNode plane height at +0x00), then scan it in
+ * order and return the first node whose plane sits at least flHeight
+ * below the query (flHeight - planeDist <= flMaxDist) and whose walls
+ * the (flZ, flX) point/radius touches (zoneWallCircleHit). Returns the
+ * hit node or NULL. objShotCollide calls it with the sub-object surface
+ * array to refresh the pSurface cache in nearest-first order. */
+void *sceneRayFindSorted(float flZ, float flX, float flHeight,
+                         float flMaxDist, float flRadius, void **apList) /* @0x42a7c0 */
+{
+    void *pKey;
+    void *pCur;
+    void **ppSlot;
+    AiNavNode *pNav;
+    int i;
+
+    pKey = apList[1];                                          /* @0x42a7c8 */
+    if (pKey != NULL) {                                        /* @0x42a7cc */
+        i = 0;                                                 /* @0x42a7d4 */
+        ppSlot = &apList[0];                                   /* @0x42a7d8 */
+        do {
+            pCur = *ppSlot;                                    /* apList[i] @0x42a7dc */
+            while (i > -1 && pCur != NULL &&                   /* @0x42a7e2 */
+                   *(float *)pKey < *(float *)pCur) {
+                ppSlot[1] = pCur;                              /* @0x42a7ea */
+                *ppSlot = pKey;
+                i--;                                           /* @0x42a7f0 */
+                ppSlot--;                                      /* @0x42a7f2 */
+                if (i > -1) {
+                    pCur = *ppSlot;                            /* @0x42a7f4 */
+                }
+            }
+            pKey = ppSlot[2];                                  /* apList[i+2] @0x42a7f6 */
+            ppSlot++;                                          /* @0x42a800 */
+            i++;                                               /* @0x42a804 */
+        } while (pKey != NULL);
+    }
+    for (i = 0; apList[i] != NULL; i++) {                      /* @0x42a820 */
+        pNav = (AiNavNode *)apList[i];
+        if (flHeight - ((flX - (float)pNav->nRefX) * pNav->flSlopeX +   /* @0x42a83a */
+                        (flZ - (float)pNav->nRefZ) * pNav->flSlopeZ +
+                        (float)pNav->nRefY) <= flMaxDist &&    /* @0x42a862 */
+            zoneWallCircleHit(pNav, flZ, flX, flRadius) != 0) { /* @0x42a876 */
+            return pNav;
+        }
+    }
+    return NULL;                                               /* @0x42a859 */
+}

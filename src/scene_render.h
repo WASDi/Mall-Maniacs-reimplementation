@@ -31,5 +31,7 @@ int sceneRender(void *pCameraBlock); /* @0x42f1c0 */
 int sceneCacheLocalVerts(SceneNode *pNode); /* @0x42ffa0 */
 void *sceneRayFindNearest(float flZ, float flX, float flHeight,
                           float flMaxDist, float flRadius); /* @0x42a750 */
+void *sceneRayFindSorted(float flZ, float flX, float flHeight,
+                         float flMaxDist, float flRadius, void **apList); /* @0x42a7c0 */
 
 #endif /* SCENE_RENDER_H */

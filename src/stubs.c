@@ -141,14 +141,6 @@ int netIsActive(void) /* @0x426ed0 */
     return g_nNetIsClient | g_nNetIsServer;
 }
 
-/* objShotListFree @0x406110 — free a world node's shot list (+0x10). The
- * shot object model is deferred; playerSetupRound sub-objects never set
- * the field, so this is a safe no-op. */
-void objShotListFree(void *pShotList) /* @0x406110 */
-{
-    (void)pShotList;
-}
-
 /* objTurretListFree @0x402b40 — free a turret sub-struct list (node +0x08
  * embedded list at +0x48). Turret objects are deferred; safe no-op. */
 void objTurretListFree(int nMode) /* @0x402b40 */
@@ -180,34 +172,6 @@ int sndPlaySfx3D(void *pEmitter, unsigned int nBank, unsigned int nIdx,
     (void)nEmitParam6; (void)nX; (void)nY; (void)nZ; (void)nFlags;
     memFreeDirect(pEmitter);
     return 0;
-}
-
-/* objShotCollide @0x4035e0 — rebuild a world node's shot list (+0x10):
- * walks the node's +0x08 sub-object list, raycasts each shooter's two
- * positions (sceneRayFindNearest / sceneRayFindSorted over the zone-line
- * and wall-line lists of the +0x3c/+0x38 entries) and objShotAdd's the
- * hit records consumed by objUpdatePhysics. Documented TODO stub: the
- * shot-collision subsystem (objShotAdd @0x404210, objShotListFree
- * @0x406110, objSegCollideCollect) is a later rebuild step; shot lists
- * stay empty, so the objUpdatePhysics/Fire response branches never run. */
-void objShotCollide(WorldNode *pNode) /* @0x4035e0 */
-{
-    (void)pNode;
-}
-
-/* objCollideCheck @0x404ac0 — the objUpdateFire counterpart of
- * objShotCollide (same contract, fire pass). Documented TODO stub. */
-void objCollideCheck(WorldNode *pNode) /* @0x404ac0 */
-{
-    (void)pNode;
-}
-
-/* objWalkAnimSync @0x409b10 — sync a parent node's walk animation state
- * with the shot victim key read from the shot's pAnimTarget block (+0x44).
- * Documented TODO stub; no animation plays. */
-void objWalkAnimSync(void *pParent, int nAnimKey) /* @0x409b10 */
-{
-    (void)pParent; (void)nAnimKey;
 }
 
 /* playerAnimSfxUpdate @0x40c800 — TODO stub (next-step #4). */

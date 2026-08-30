@@ -18,6 +18,8 @@ void syncWalkNodeChannelsToMesh(struct PlayerRecord *pRec);     /* @0x428990 */
 void syncPosNodeChannelsToMesh(struct PlayerRecord *pRec);      /* @0x428840 */
 void syncCartNodeChannelsToMeshes(struct PlayerRecord *pRec);   /* @0x428a70 */
 void syncCartNodeChannelsToWalkPos(struct PlayerRecord *pRec);  /* @0x40e040 */
+void objWalkAnimSync(struct PlayerRecord *pSelf,
+                     struct PlayerRecord *pRec);                /* @0x409b10 */
 void gameUpdate(void);                                          /* @0x426ee0 */
 
 #endif /* PLAYER_PHYSICS_H */

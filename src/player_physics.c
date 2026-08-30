@@ -628,6 +628,32 @@ void syncCartNodeChannelsToWalkPos(PlayerRecord *pRec) /* @0x40e040 */
     pRec->flPosVelAng = pRec->vCartVelPolar.y;             /* +0x260 = +0x2a0 @0x40e191 */
 }
 
+/* objWalkAnimSync @0x409b10 — objUpdateFire shot-response tail: when the
+ * round gate (+0x174) is armed, take a rand()%100 stumble roll against
+ * the threshold (pRec->nStatStrength*5 + 60 - pSelf->nStatStrength*10)
+ * * 0.2 (@0x44b454/0x44b450/0x44b44c/0x44b2d4) and re-derive the walk
+ * and pos nodes from the cart via syncCartNodeChannelsToWalkPos (which
+ * clears the gate, making it a one-shot). The caller passes the shot
+ * victim's pParent (+0x44) as pRec and the owning node's pParent as
+ * pSelf (the original __thiscall ECX); the original's second stack
+ * argument is pRec itself. */
+void objWalkAnimSync(struct PlayerRecord *pSelf, struct PlayerRecord *pRec) /* @0x409b10 */
+{
+    static const float g_fl5 = 5.0f;   /* @0x44b454 */
+    static const float g_fl60 = 60.0f; /* @0x44b450 */
+    static const float g_fl10 = 10.0f; /* @0x44b44c */
+    static const float g_fl0_2 = 0.2f; /* @0x44b2d4 */
+    float flThreshold;
+
+    if (pSelf->field_174 != 0) {                           /* +0x174 @0x409b14 */
+        flThreshold = ((float)pRec->nStatStrength * g_fl5 + g_fl60 -
+                       (float)pSelf->nStatStrength * g_fl10) * g_fl0_2; /* @0x409b1e */
+        if ((float)(rand() % 100) < flThreshold) {         /* rand @0x43ea7c @0x409b4c */
+            syncCartNodeChannelsToWalkPos(pSelf);          /* @0x40e040 @0x409b6d */
+        }
+    }
+}
+
 /* syncCartNodeChannelsToMeshes @0x428a70 — per-frame pass (gameUpdate)
  * for a riding player: clamp the cart turn (+0x284) and speed (+0x274)
  * channels, reposition BOTH meshes (+0x14 cart with pitch/roll, +0x10
