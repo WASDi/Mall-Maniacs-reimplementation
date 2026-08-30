@@ -120,8 +120,17 @@ void levelEventDirector_L4_Init(void);                       /* @0x418f30 */
 /* levelEventDirector_L1_Cleanup..L4_Cleanup @0x417860/0x417fa0/0x4189d0/
  * 0x419240 — per-level director anim teardown, dispatched by roundTeardown
  * @0x40aa10 (jump table 0x40ad60) on g_nLevelIdx 1..4 (L0_Cleanup lives in
- * level0.c). roundTeardown itself is not implemented yet, so these have no
- * rebuild-side callers yet; no stubs are needed until it lands. */
+ * level0.c). The stub roundTeardown below is a safe no-op until the real
+ * teardown sequence (director Cleanup dispatch + world/scene unload) lands,
+ * so the L1..L4 Cleanups still have no rebuild-side callers. */
+void roundTeardown(void);                                    /* @0x40aa10 */
+
+/* consoleHandleKey @0x4086e0 — console line editor (backspace/tab-completion/
+ * enter/esc/history). The in-game console is out of scope for the offline
+ * rebuild and g_nScrollText @0x4580ec is never set nonzero here, so the only
+ * caller (gameKeyHandler @0x40db80 nKeyType==0 branch) can never reach it;
+ * the stub exists only to keep the original call hierarchy intact. */
+void consoleHandleKey(int nKey);                             /* @0x4086e0 */
 
 
 

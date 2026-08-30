@@ -33,6 +33,8 @@ extern int g_nMovieRecord;      /* @0x455e8c */
 extern int g_nMoviePlay;        /* @0x455e90 */
 
 int runCmd(int nContext, LPCSTR pszArgs); /* @0x4084c0 */
+int killCmd(int nContext, LPCSTR pszArgs); /* @0x407870 */
+void gameKeyHandler(int nKey, int nKeyType); /* @0x40db80 */
 void roundStartInit(void);                /* @0x40a4d0 */
 void levelDirectorInits(void);            /* @0x40bdf0 */
 void roundLogicUpdate(void);              /* @0x40beb0 */

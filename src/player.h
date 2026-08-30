@@ -164,7 +164,10 @@ typedef struct PlayerRecord {
                                   * 0xa burger hold, 0xf timer wait) */
     int nAiPhaseNext;            /* +0x2f4 phase to restore after the 0xf timer */
     int nAiPhaseTimer;           /* +0x2f8 0xf-phase frame counter */
-    int field_2fc;               /* +0x2fc zeroed */
+    int field_2fc;               /* +0x2fc action-wait timer: gameKeyHandler
+                                  * @0x40db80 decrements it per event and
+                                  * gates (key,2) dispatches on it < 1
+                                  * (playerSetupRound zeroes it) */
     int field_300_pad[3];        /* +0x300 */
     int nNetReady;               /* +0x30c ==1 while waiting for peers (HUD) */
     int nNetFlags;               /* +0x310 &0x100 = peer announced ready

@@ -81,7 +81,14 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         }
         break;
     case WM_CHAR:                         /* 0x102 */
-        if (g_pStateFunc != NULL) {
+        /* Original WindowProc @0x4163b0: while a round is active the
+         * translated character goes to gameKeyHandler @0x40db80 as
+         * (char, 0) — the J/Y confirm / N resume / quest answers; only
+         * menu states receive it through dispatchKeyEvent. */
+        if (g_bGameActive != 0) {
+            gameKeyHandler((int)wParam, 0);
+        }
+        else if (g_pStateFunc != NULL) {
             g_pStateFunc(1, (int)wParam, 0);
         }
         break;

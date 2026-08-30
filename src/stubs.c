@@ -1,6 +1,8 @@
 #include <stdio.h>
+#include <string.h>
 #include <windows.h>
 #include "stubs.h"
+#include "time.h"
 #include "menu.h"
 #include "gx.h"
 #include "pool.h"
@@ -35,10 +37,48 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType)
     return 0;
 }
 
-/* unloadGameWorld — gameplay-world teardown contract. */
-void unloadGameWorld(void)
+/* unloadGameWorld @0x41a670 — world/round teardown, called by stateLevelInit0
+ * (each frame while it is the state func) and by the original roundTeardown.
+ * VERIFIED 2026-08-30 vs disassembly @0x41a670..0x41a72a: when g_nMenuInit
+ * @0x45a658 is nonzero it logs "menu exit" @0x4507b8, clears the deferred
+ * resume slot g_pResumeStateFunc @0x45a710, resets g_nMenuInit = 0 (the next
+ * gameFrameUpdate re-runs menuInit @0x419c20 and lands back on menuUpdate),
+ * then frees the two menu anim blocks (@0x45a6dc/@0x45a6d8 via anmFree
+ * @0x434050), unloads the sprite/font handles (@0x419a60), clears/flips, and
+ * tears the scene/sound down (@0x431e00/@0x42f180/@0x437cb0/@0x408fc0/
+ * @0x419bb0/winmmRestoreTimerRes/gxSetMode @0x416c80). The resource-freeing
+ * tail is deferred (TODO) — menuInit re-loads everything it needs on the
+ * next menuInit pass — but the g_nMenuInit reset is the live contract that
+ * makes killCmd @0x407870 ("J" on the quit prompt) return to the main menu. */
+void unloadGameWorld(void) /* @0x41a670 */
 {
-    appLog("[stub TODO] unloadGameWorld");
+    if (g_nMenuInit == 0) {
+        return;                                    /* @0x41a677 */
+    }
+    nopDebugStub();                                /* "menu exit" @0x4507b8 @0x41a698 */
+    g_pResumeStateFunc = NULL;                     /* @0x45a710 @0x41a684 */
+    g_nMenuInit = 0;                               /* @0x45a658 @0x41a68e */
+    /* TODO: anmFree(@0x45a6dc/@0x45a6d8), sprite/font unload (@0x419a60),
+     * gxClearScreen/gxFlip cycle, scene + sound teardown, gxSetMode. */
+}
+
+/* roundTeardown @0x40aa10 — round-end teardown: per-level director Cleanup
+ * dispatch (jump table @0x40ad60; L0_Cleanup lives in level0.c, L1..L4 are
+ * stubs) plus quest/thrown-item/scene-object world unload. The full teardown
+ * sequence is not reconstructed yet; the stub is a safe no-op so killCmd
+ * @0x407870 ends the round (g_bGameActive = 0) without the freed-resource
+ * steps. TODO: replace with the real jump-table teardown. */
+void roundTeardown(void) /* @0x40aa10 */
+{
+}
+
+/* consoleHandleKey @0x4086e0 — console line editor. Out of scope: the
+ * offline rebuild never opens the console overlay (g_nScrollText stays 0),
+ * so gameKeyHandler can never reach this. Safe no-op preserving the
+ * original call hierarchy. */
+void consoleHandleKey(int nKey) /* @0x4086e0 */
+{
+    (void)nKey;
 }
 
 
@@ -98,6 +138,9 @@ unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
 {
     if (pszCommand != NULL && strncmp(pszCommand, "action ", 7) == 0) {
         actionCmd(nCommand, pszCommand + 7); /* @0x4067c0 (table @0x44b308) */
+    }
+    if (pszCommand != NULL && strcmp(pszCommand, "kill") == 0) {
+        killCmd(nCommand, NULL);             /* @0x407870 (table @0x44b384) */
     }
     if (pszCommand != NULL && strncmp(pszCommand, "run ", 4) == 0) {
         runCmd(0, pszCommand + 4);

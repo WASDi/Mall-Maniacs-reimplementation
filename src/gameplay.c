@@ -604,6 +604,183 @@ int runCmd(int nContext, LPCSTR pszArgs)
     return 0;
 }
 
+/* killCmd @0x407870 — console "kill" (command table @0x44b384, name
+ * "kill" @0x44e548, desc "Kill current game" @0x44e534). Ends the live
+ * round: roundTeardown then g_bGameActive = 0 + g_nReturnToMenu = 1.
+ * roundTeardown is a documented no-op stub (stubs.c) until the real
+ * teardown sequence lands. Dispatched by commandDispatch (stubs.c) for
+ * gameKeyHandler's quit-confirm and results-screen tails. */
+int killCmd(int nContext, LPCSTR pszArgs) /* @0x407870 */
+{
+    (void)nContext;
+    (void)pszArgs;
+    if (g_bGameActive == 0) {
+        nopDebugStub();                            /* @0x40787b */
+        return 0;
+    }
+    roundTeardown();                               /* @0x407884 */
+    g_bGameActive = 0;                             /* @0x4580f8 @0x40788d */
+    g_nReturnToMenu = 1;                           /* @0x407894 */
+    return 0;
+}
+
+/* gameKeyHandler @0x40db80 — in-game key handler, dispatched every frame
+ * while a round runs: gameWorldUpdate @0x40b3d0 passes this function
+ * (pushed @0x40b3d0) to pollKeyboard @0x416820, which forwards the
+ * debounced (key, 2) events (key ids 0 Right, 1 Left, 2 Up, 3 Down,
+ * 4 Space, 6 Enter, 7 Escape). Key 0..3 clear bit 0 of bStateFlags (+0x158)
+ * and set flInputTurn (+0x2e0) / flInputAccel (+0x2e4) to ±1.0 — the player
+ * physics integrates these channels. Key 4 dispatches "action smart".
+ * Enter/Escape run the results-screen continuation (request play_level /
+ * request endscene via commandDispatch then "kill"; the requestCmd
+ * @0x41a730 deferred-state machinery they feed is not rebuilt yet, so the
+ * rebuild's commandDispatch leaves "request ..." unrecognized like any
+ * unknown command). Escape outside the results screen toggles g_bQuitPrompt
+ * (cleared again by WM_CHAR J/Y via killCmd, resumed by N/n).
+ * nKeyType 0 (WM_CHAR): J/Y/j/y and N/n route through the jump table
+ * @0x40df9c/@0x40df90 into the quit-prompt / quest-answer branches
+ * (pQuestMessage +0x1dc set -> nQuestStage +0x1e0 = 2 or 1). The console
+ * branch (g_nScrollText != 0 -> consoleHandleKey @0x4086e0) is unreachable
+ * offline: the rebuild never opens the console overlay.
+ * Field +0x2fc is the action-wait timer, decremented once per event before
+ * any dispatch; type-2 events are gated on it reaching 0 and on
+ * g_bGameActive != 0, and every dispatch sets g_nReturnToMenu = 1. */
+void gameKeyHandler(int nKey, int nKeyType) /* @0x40db80 */
+{
+    PlayerRecord *pRec;
+    char szCmd[64];
+    int i = g_nLocalPlayerIdx;                     /* @0x458104 @0x40db80 */
+    pRec = &g_playerRecords[i];                    /* i * 0x374 @0x40db8b */
+
+    if (pRec->field_2fc > 0) {                     /* +0x2fc @0x45650c @0x40dba0 */
+        pRec->field_2fc--;                         /* @0x40dba4 */
+    }
+
+    if (nKeyType == 0) {                           /* @0x40dbb6 */
+        if (g_nScrollText != 0) {                  /* @0x4580ec @0x40de90 */
+            consoleHandleKey(nKey);                /* @0x4086e0 @0x40dea2 */
+            return;
+        }
+        switch (nKey) {                            /* table @0x40df9c -> @0x40df90 */
+        case 'J':                                  /* @0x40ded4 */
+        case 'Y':                                  /* idx15 @0x40dfab */
+        case 'j':                                  /* idx32 @0x40dfbc */
+        case 'y':                                  /* idx47 @0x40dfcb */
+            if (g_bQuitPrompt != 0) {              /* @0x45812c @0x40dedc */
+                commandDispatch(0, "kill");        /* "kill" @0x44e548 @0x40dede */
+            }
+            if (pRec->pQuestMessage != NULL) {     /* +0x1dc @0x4563ec @0x40df01 */
+                pRec->nQuestStage = 2;             /* +0x1e0 @0x4563f0 @0x40df0b */
+            }
+            return;                                /* @0x40df67 */
+        case 'N':                                  /* @0x40df1d */
+        case 'n':                                  /* idx36 @0x40dfc0 */
+            if (g_bQuitPrompt != 0) {              /* @0x40df25 */
+                g_bQuitPrompt = 0;                 /* @0x40df2d */
+                getGameTime();                     /* @0x40dfe0 @0x40df34 */
+            }
+            if (pRec->pQuestMessage != NULL) {     /* @0x40df53 */
+                pRec->nQuestStage = 1;             /* @0x40df5d */
+            }
+            return;                                /* @0x40df67 */
+        default:
+            return;                                /* @0x40df67 */
+        }
+    }
+    if (nKeyType != 2) {                           /* @0x40dbbf */
+        nopDebugStub();                            /* "mm_key: unknown flag"
+                                                    * @0x44f570 @0x40ddaf */
+        return;
+    }
+    if (g_nScrollText != 0) {                      /* @0x40dbc5 */
+        return;                                    /* @0x40df67 */
+    }
+    if (g_bGameActive == 0) {                      /* @0x4580f8 @0x40dbd2 */
+        return;                                    /* @0x40df67 */
+    }
+    if (pRec->field_2fc >= 1) {                    /* @0x40dbdf */
+        return;                                    /* @0x40df67 */
+    }
+
+    g_nReturnToMenu = 1;                           /* @0x45810c @0x40dbf4 */
+    switch (nKey) {                                /* table @0x40df70 @0x40dc07 */
+    case 0:                                        /* Right @0x40dc0e */
+        pRec->bStateFlags &= 0xfeu;                /* +0x158 @0x456368 @0x40dc15 */
+        pRec->flInputTurn = 1.0f;                  /* +0x2e0 @0x4564f0 @0x40dc1d */
+        return;                                    /* @0x40dc27 */
+    case 1:                                        /* Left @0x40dc2e */
+        pRec->bStateFlags &= 0xfeu;                /* @0x40dc35 */
+        pRec->flInputTurn = -1.0f;                 /* @0x40dc3d */
+        return;                                    /* @0x40dc47 */
+    case 2:                                        /* Up @0x40dc4e */
+        pRec->bStateFlags &= 0xfeu;                /* @0x40dc55 */
+        pRec->flInputAccel = 1.0f;                 /* +0x2e4 @0x4564f4 @0x40dc5d */
+        return;                                    /* @0x40dc67 */
+    case 3:                                        /* Down @0x40dc6e */
+        pRec->bStateFlags &= 0xfeu;                /* @0x40dc75 */
+        pRec->flInputAccel = -1.0f;                /* @0x40dc7d */
+        return;                                    /* @0x40dc87 */
+    case 4:                                        /* Space @0x40dc8e */
+        commandDispatch((int)(size_t)pRec, "action smart");  /* @0x44f5b8 @0x40dc9a */
+        return;                                    /* @0x40dca2 */
+    case 6:                                        /* Enter @0x40dcaa */
+        if (g_nResultsScreen == 0) {               /* @0x458130 @0x40dcaf */
+            return;                                /* @0x40df67 */
+        }
+        if (g_nGameMode != 1 && g_nGameMode != 4) {/* @0x458120 @0x40dcb7 */
+            if (netIsActive() == 0 &&              /* @0x426ed0 @0x40dcce */
+                g_nWinnerIdx == g_nLocalPlayerIdx) {/* @0x458134 @0x40dcd7 */
+                if (g_nLevelIdx == 4) {            /* @0x458100 @0x40dcec */
+                    fmtSprintf(szCmd, "request endscene %d",    /* @0x44f5a4 */
+                               g_playerRecords[g_nWinnerIdx].nCharIdx);  /* +0x150 @0x456360 @0x40dd01 */
+                    commandDispatch(0, szCmd);     /* @0x40dd33 */
+                }
+                else {                             /* @0x40dd1b */
+                    fmtSprintf(szCmd, "request play_level %d 0 0 0",  /* @0x44f588 */
+                               g_nLevelIdx + 1);    /* @0x40dd1c */
+                    commandDispatch(0, szCmd);     /* @0x40dd77 */
+                }
+                commandDispatch(0, "kill");        /* @0x40dd3b */
+                return;                            /* @0x40dd51 */
+            }
+            if (netIsActive() == 0) {              /* @0x40dd52 */
+                fmtSprintf(szCmd, "request play_level %d 0 0 0",
+                           g_nLevelIdx + 1);       /* @0x40dd64 */
+                commandDispatch(0, szCmd);         /* @0x40dd77 */
+                commandDispatch(0, "kill");        /* @0x40dd7c */
+            }
+            netIsActive();                         /* @0x40dd93 */
+            return;                                /* @0x40dd9f */
+        }
+        commandDispatch(0, "kill");                /* @0x40dda0 */
+        nopDebugStub();                            /* @0x40ddaf */
+        return;                                    /* @0x40ddc5 */
+    case 7:                                        /* Escape @0x40ddc6 */
+        if (g_nResultsScreen != 0) {               /* @0x40ddc6 */
+            if (netIsActive() == 0 &&              /* @0x40de00 */
+                g_nWinnerIdx == g_nLocalPlayerIdx) {
+                if (g_nLevelIdx == 4) {            /* @0x40de18 */
+                    fmtSprintf(szCmd, "request endscene %d",
+                               g_playerRecords[g_nWinnerIdx].nCharIdx);
+                    commandDispatch(0, szCmd);     /* @0x40de4b */
+                }
+                commandDispatch(0, "kill");        /* @0x40de53 */
+            }
+            commandDispatch(0, "kill");            /* @0x40de62 */
+            return;                                /* @0x40de78 */
+        }
+        g_bQuitPrompt = (g_bQuitPrompt == 0);      /* @0x40ddcf */
+        if (g_bQuitPrompt == 0) {                  /* @0x40dde1 */
+            getGameTime();                         /* @0x40df34 */
+        }
+        return;                                    /* @0x40df67 */
+    default:                                       /* key 5 / >7 @0x40de79 */
+        nopDebugStub();                            /* "mm_key:DI: unknown key"
+                                                    * @0x44f558 / flag @0x44f570 */
+        return;
+    }
+}
+
 /* gameWorldUpdate @0x40b3d0 — game-frame scheduler. The original polls input,
  * runs player/movie/round work, rechecks the active round, then advances this
  * tick before its player/item stage. Text-animation records are stepped before
@@ -611,7 +788,17 @@ int runCmd(int nContext, LPCSTR pszArgs)
 void gameWorldUpdate(void)
 {
     PlayerRecord *pLocalRec;
-    pollKeyboard(dispatchKeyEvent, (int)g_nLastFrameTime);
+    /* The original pushes gameKeyHandler @0x40db80 (@0x40b3d0) into
+     * pollKeyboard, so gameplay (key, 2) events go straight to the in-game
+     * handler and set the flInputTurn/flInputAccel channels; the menu path
+     * (gameFrameUpdate) keeps dispatchKeyEvent -> g_pStateFunc. Ghidra types
+     * gameKeyHandler void __cdecl(int,int) while DispatchKeyEventFn returns
+     * int; pollKeyboard never reads the callback's return, so the pragma just
+     * bridges the two signatures of the same original call site. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+    pollKeyboard((DispatchKeyEventFn)gameKeyHandler, (int)g_nLastFrameTime);
+#pragma GCC diagnostic pop
     if (g_bGameActive == 0 || g_bQuitPrompt != 0) return;
 
     playerUpdateDispatch();

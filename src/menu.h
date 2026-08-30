@@ -12,6 +12,8 @@
  * Owned by the menu subsystem (src/menu.c) for now; game states reuse it. */
 typedef int (*PStateFunc)(int nType, int nKey, int nKeyType);
 extern PStateFunc g_pStateFunc;
+extern int g_nMenuInit;           /* @0x45a658 one-time menu init gate (defined in menu.c) */
+extern PStateFunc g_pResumeStateFunc; /* @0x45a710 deferred resume state (defined in menu.c) */
 
 /* Frame timing — mirrors maniac g_flFrameDelta @0x45a6cc (float, =
  * elapsed ms * 0.04) and g_nLastFrameTime @0x45a65c. Written by the WinMain
