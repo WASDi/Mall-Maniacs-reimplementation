@@ -55,7 +55,6 @@ void *g_pSceneDetailGrid;/* @0x45838c */
 void *g_pGameVoiceList;  /* @0x45f0e0 */
 int g_bCollisionEnabled; /* @0x458354 */
 int g_nGameUpdateTick;   /* @0x45e5dc */
-ThrownItemStub *g_pThrownItemHead; /* @0x45896c */
 int g_nMovieRecord;      /* @0x455e8c */
 int g_nMoviePlay;        /* @0x455e90 */
 

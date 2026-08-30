@@ -33,6 +33,12 @@ int g_nNavPtSearchCount;
 /* g_nControllerIdx @0x4550d0 — chooses the pair of AI players to update. */
 int g_nControllerIdx;
 
+/* g_pThrownItemHead/Tail @0x45896c/0x458970 — thrown-item list (head =
+ * newest). g_nThrownItemCount @0x458974 caps it at 10. */
+ThrownItem *g_pThrownItemHead;                      /* @0x45896c */
+ThrownItem *g_pThrownItemTail;                      /* @0x458970 */
+int g_nThrownItemCount;                             /* @0x458974 */
+
 /* g_aflAiCtrlSpeed @0x44b230 — difficulty-scaled AI speed picked by
  * aiControllerCtor (indexed by g_nModeSel 0..2). */
 const float g_aflAiCtrlSpeed[3] = { 0.72f, 0.84f, 0.96f };
@@ -222,6 +228,16 @@ static const float g_fl1_3 = 1.3f;                  /* @0x44b478 */
 static const float g_flZero = 0.0f;                 /* @0x44b244 */
 static const float g_flNegOne = -1.0f;              /* @0x44b25c */
 static const float g_flOne = 1.0f;                  /* @0x44b260 */
+/* thrown-item cluster constants */
+static const float g_fl1200 = 1200.0f;              /* @0x44b578 */
+static const float g_fl0_999 = 0.999f;              /* @0x44b57c */
+static const float g_flNeg15 = -15.0f;              /* @0x44b580 */
+static const float g_fl15 = 15.0f;                  /* @0x44b584 */
+static const float g_flNeg0_4 = -0.4f;              /* @0x44b588 */
+static const float g_fl18 = 18.0f;                  /* @0x44b58c */
+static const float g_flNeg100 = -100.0f;            /* @0x44b590 */
+static const float g_fl100 = 100.0f;                /* @0x44b594 */
+static const float g_fl1000 = 1000.0f;              /* @0x44b464 */
 
 #define AI_WRAP_SCALEA(pNode)                                            \
     do {                                                                  \
@@ -544,15 +560,16 @@ int playerAiGrabItem(PlayerRecord *pRec) /* @0x40ea20 */
         return pRec->anHeldSlot[0];                       /* +0x17c @0x40eaeb */
     }
     if (pObj->field_14 != 0 && pObj->field_24 != 0) {   /* @0x40eaf8 */
+        ThrownItem *pThrown = (ThrownItem *)pObj->field_24; /* [EBX+0x24] @0x40eaff */
         pRec->anHeldSlot[0] = nItemId;                  /* +0x17c @0x40eb09 */
-        pRec->pGrabSceneObj = *(SceneNode **)pObj->field_24; /* @0x40eb0f */
-        sceneObjSetClassMesh((int)*(void **)pObj->field_24, pRec->pCharSceneObj, 8, 3); /* @0x40eb1e */
-        sceneObjSetPos(*(SceneNode **)pObj->field_24, 0, 300, 0, 2);   /* @0x40eb32 */
-        sceneObjSetPosOrient(*(SceneNode **)pObj->field_24, 0, 0, 0, 2); /* @0x40eb43 */
-        objHashRemoveFree(pObj);                        /* @0x40eb49 */
-        *(void **)pObj->field_24 = NULL;                /* +0x24 @0x40eb53 */
-        thrownItemFree((ThrownItemStub *)pObj->field_24);    /* @0x40f8d0 @0x40eb5a */
-        memFreeDirect((void *)pObj->field_24);          /* @0x43dd37 @0x40eb60 */
+        pRec->pGrabSceneObj = pThrown->pMesh;           /* [EDI+0x24] @0x40eb0f */
+        sceneObjSetClassMesh((int)pThrown->pMesh, pRec->pCharSceneObj, 8, 3); /* @0x430db0 @0x40eb1e */
+        sceneObjSetPos(pThrown->pMesh, 0, 300, 0, 2);   /* @0x430660 @0x40eb32 */
+        sceneObjSetPosOrient(pThrown->pMesh, 0, 0, 0, 2); /* @0x4307d0 @0x40eb43 */
+        objHashRemoveFree(pObj);                        /* @0x414990 @0x40eb49 */
+        pThrown->pMesh = NULL;                          /* +0x24 @0x40eb53 */
+        thrownItemFree(pThrown);                        /* @0x40f8d0 @0x40eb5a */
+        memFreeDirect(pThrown);                         /* @0x43dd37 @0x40eb60 */
         return pRec->anHeldSlot[0];
     }
     pRec->anHeldSlot[0] = nItemId;                      /* +0x17c @0x40eb72 */
@@ -612,8 +629,10 @@ void playerUpdateAI(void) /* @0x40b510 */
     float flAvgFront;
     float flFloor;
     float flThrowDist;
-    ThrownItemStub *pThrownItem;
+    float flVertVel;
+    ThrownItem *pThrownItem;
     GxVec2 vThrowPolar;
+    int anCharPos[3];
 
     g_nPlayerAiTick++;                                  /* @0x45894c @0x40b531 */
     if (g_nPlayerCount <= 0) return;
@@ -852,6 +871,8 @@ void playerUpdateAI(void) /* @0x40b510 */
                 if (pRec == &g_playerRecords[g_nLocalPlayerIdx]) {   /* @0x40baeb */
                     sndPlaySfx(0, 1, 0x15, 0xffff, 0, 0x400);    /* @0x437cf0 @0x40baff */
                 }
+                sceneObjSetClassMesh((int)pRec->pGrabSceneObj, NULL, 0, 3); /* @0x430db0 @0x40bb1d */
+                sceneNodeGetPos(pRec->pCharSceneNode, 0, anCharPos, 2);     /* @0x431270 @0x40bb31 */
                 pWalkNode = (WorldNode *)pRec->pSubObjA;         /* +0x224 @0x40bb25 */
                 nThrowX = (int)pWalkNode->vPos.y;       /* ftol @0x40bb2e */
                 nThrowZ = (int)pWalkNode->vPos.x;       /* ftol @0x40bb44 */
@@ -862,15 +883,18 @@ void playerUpdateAI(void) /* @0x40b510 */
                 if (flThrowDist > g_fl200) {
                     flThrowDist = g_fl200;              /* @0x40bb77 */
                 }
-                /* distance-based throw: the polar length is
-                 * -(distance) - 50, +25 for the throw vector below. */
-                flThrowDist = -(flThrowDist * g_flNegOne) - g_fl50;
-                pThrownItem = (ThrownItemStub *)malloc(0x30);  /* operator_new @0x43dd42 @0x40bb95 */
+                flVertVel = -(flThrowDist * g_flNegOne) - g_fl50;  /* @0x40bb83..0x40bb91 */
+                pThrownItem = (ThrownItem *)malloc(0x30);  /* operator_new @0x43dd42 @0x40bb95 */
                 if (pThrownItem != NULL) {
                     AI_WRAP_SCALEA(pWalkNode);          /* @0x40bbb2..0x40bc0a */
                     gxVec2Set(&vThrowPolar, flThrowDist + g_fl25,
                               pWalkNode->flScaleA);     /* @0x434fa0 @0x40bc2e */
-                    playerThrowItemCtor(pThrownItem, pRec->anHeldSlot[0]);  /* @0x40f720 @0x40bc61 */
+                    playerThrowItemCtor(pThrownItem, pRec->anHeldSlot[0],  /* @0x40f720 @0x40bc61 */
+                                        (float)anCharPos[2],
+                                        (float)anCharPos[0],
+                                        (float)anCharPos[1] - 1000.0f,
+                                        vThrowPolar.x, vThrowPolar.y,
+                                        flVertVel, pRec->pGrabSceneObj, nPlayer);
                 }
                 pRec->anHeldSlot[0] = 0;                /* @0x40bc71 */
                 pRec->pGrabSceneObj = NULL;             /* @0x40bc77 */
@@ -1073,4 +1097,307 @@ int aiCheckItemRange(PlayerRecord *pRec, int nSlot) /* @0x40f5e0 */
         }
     }
     return 0;
+}
+
+/* --- thrown-item cluster (0x40f720..0x40fde0) --- */
+
+/* playerThrowItemCtor @0x40f720 — finish a thrown shopping item. Allocates
+ * the 0x48-byte physics WorldNode (worldNodeCtor), adds its child mesh
+ * (extents 150/2/500, mesh tag 1) and a turret entry keyed by pMesh with
+ * channel values 20/20, marks WorldNode+0x1c = 1, places the node at
+ * {flNodeX, flNodeY, flNodeZ} (the original argument order is Z, X,
+ * Y-1000), then fills the record: +0x14 = flSpeed, +0x18 = flHeading,
+ * +0x20 = nItemId, +0x24 = pMesh, +0x2c = nOwnerIdx, +0x0c = 0, the
+ * child-mesh entry's flVertVel (+0x44) = flVertVel and
+ * g_playerRecords[nOwnerIdx].nLastThrownItemId (+0x1e4) = nItemId. The
+ * list is capped at 10 items: when the count exceeds 10 the oldest entry
+ * (g_pThrownItemTail) has its landed pickup object (if any) removed from
+ * the id hash and is freed. The record is head-inserted into
+ * g_pThrownItemHead/Tail (+0x04 next toward the tail, +0x08 toward the
+ * head). */
+ThrownItem *playerThrowItemCtor(ThrownItem *pItem, int nItemId, float flNodeZ,
+                                float flNodeX, float flNodeY, float flSpeed,
+                                float flHeading, float flVertVel,
+                                SceneNode *pMesh, int nOwnerIdx) /* @0x40f720 */
+{
+    WorldNode *pNode;
+    ObjChildMesh *pEntry;
+    ThrownItem *pOld;
+
+    gxVec2SetAngleZero((GxVec2 *)((char *)pItem + 0x14));      /* @0x434f90 @0x40f73f */
+    pNode = worldNodeCtor(malloc(0x48), 0, 0, 0, 0, NULL);     /* operator_new @0x43dd42
+                                                                * @0x40f746 + worldNodeCtor
+                                                                * @0x402a20 @0x40f76a */
+    pItem->pMesh = pMesh;                                      /* +0x24 @0x40f78b */
+    pItem->pObj = pNode;                                       /* +0x10 @0x40f79c */
+    if (pNode != NULL) {
+        nodeAddChildMesh(pNode, 0, 0, 0, 150.0f, 2.0f,         /* @0x4053a0 @0x40f79f */
+                         (int)pMesh, 500.0f, 1);
+        objTurretAdd(pNode, 0, 0, 0, 0, (int)pMesh);           /* @0x405280 @0x40f7b3 */
+        pNode->field_1c = 1;                                   /* @0x40f7c1 */
+        nodeSetTransformFromChannels(pNode, (int)flNodeX,      /* @0x404e00 @0x40f7e7 */
+                                     (int)flNodeY, (int)flNodeZ, 0, 0);
+        objTurretSetValue(pNode, (int)pMesh, 0x14, 0x14);      /* @0x405370 @0x40f804 */
+        pEntry = objFindTurret(pNode, (int)pMesh);             /* @0x405120 @0x40f810 */
+        if (pEntry != NULL) {
+            pEntry->flVertVel = flVertVel;                     /* +0x44 @0x40f81d */
+        }
+    }
+    ((GxVec2 *)((char *)pItem + 0x14))->x = flSpeed;           /* +0x14 @0x40f7ff */
+    ((GxVec2 *)((char *)pItem + 0x14))->y = flHeading;         /* +0x18 @0x40f801 */
+    pItem->nOwnerIdx = nOwnerIdx;                              /* +0x2c @0x40f824 */
+    pItem->nItemId = nItemId;                                  /* +0x20 @0x40f827 */
+    pItem->pLandedObj = NULL;                                  /* +0x0c @0x40f82d */
+    g_playerRecords[nOwnerIdx].nLastThrownItemId = nItemId;    /* +0x1e4 @0x40f83d */
+    g_nThrownItemCount++;                                      /* @0x458974 @0x40f844 */
+    if (g_nThrownItemCount > 10) {                             /* @0x40f852 */
+        pOld = g_pThrownItemTail;                              /* @0x458970 @0x40f854 */
+        if (pOld != NULL) {
+            if (pOld->pLandedObj != NULL) {                    /* +0x0c @0x40f85a */
+                objHashRemoveFree(pOld->pLandedObj);           /* @0x414990 @0x40f862 */
+            }
+            thrownItemFree(pOld);                              /* @0x40f8d0 @0x40f876 */
+            memFreeDirect(pOld);                               /* @0x43dd37 @0x40f87c */
+        }
+    }
+    if (g_pThrownItemHead != NULL) {                           /* @0x45896c @0x40f884 */
+        g_pThrownItemHead->pPrev = pItem;                      /* +0x08 @0x40f88d */
+    } else {
+        g_pThrownItemTail = pItem;                             /* @0x40f897 */
+    }
+    pItem->pNext = g_pThrownItemHead;                          /* +0x04 @0x40f8a1 */
+    g_pThrownItemHead = pItem;                                 /* @0x40f8a4 */
+    pItem->pPrev = NULL;                                       /* +0x08 @0x40f8aa */
+    return pItem;
+}
+
+/* thrownItemFree @0x40f8d0 — unlink pItem from the g_pThrownItemHead/Tail
+ * list (+0x04 = next toward the tail, +0x08 = next toward the head),
+ * sceneNodeFree the item mesh (+0x24, children too) and objDtor+free the
+ * physics world node (+0x10), then decrement g_nThrownItemCount. */
+void thrownItemFree(ThrownItem *pItem) /* @0x40f8d0 */
+{
+    if (g_pThrownItemHead == pItem) {                          /* @0x40f8d8 */
+        g_pThrownItemHead = pItem->pNext;                      /* +0x04 @0x40f8dc */
+    }
+    if (g_pThrownItemTail == pItem) {                          /* @0x40f8e4 */
+        g_pThrownItemTail = pItem->pPrev;                      /* +0x08 @0x40f8ec */
+    }
+    if (pItem->pNext != NULL) {                                /* @0x40f8f5 */
+        pItem->pNext->pPrev = pItem->pPrev;                    /* @0x40f8ff */
+    }
+    if (pItem->pPrev != NULL) {                                /* @0x40f902 */
+        pItem->pPrev->pNext = pItem->pNext;                    /* @0x40f90c */
+    }
+    if (pItem->pMesh != NULL) {                                /* +0x24 @0x40f90f */
+        sceneNodeFree(pItem->pMesh, 1);                        /* @0x430460 @0x40f919 */
+    }
+    if (pItem->pObj != NULL) {                                 /* +0x10 @0x40f921 */
+        objDtor(pItem->pObj);                                  /* @0x402ab0 @0x40f92a */
+        memFreeDirect(pItem->pObj);                            /* @0x43dd37 @0x40f92f */
+    }
+    g_nThrownItemCount--;                                      /* @0x40f93e */
+}
+
+/* itemThrowUpdate @0x40f950 — gameUpdate pass 1 over the thrown-item list.
+ * Reads the floor plane from the child-mesh entry's raycast surface
+ * (AiNavNode) offset by the entry's world position, then integrates the
+ * turret entry's flHeight (+0x40) / flVertVel (+0x44):
+ *  - above the floor: gravity (+18.0f per frame), height += velocity, and
+ *    when the floor is crossed the height is clamped and the overshoot is
+ *    subtracted from the velocity; horizontal speed decays by 0.999.
+ *  - at/below the floor with velocity < 18.0f: land — velocity 0, height =
+ *    floor, speed *= 0.5; when the speed reaches [-15, 15] the item comes
+ *    to rest: the mesh is re-oriented/positioned, a 0x50-byte pickup
+ *    EventObject is built (sceneObjCtor3 + objHashRegister) with
+ *    +0x10 = (int)channel height, +0x14 = 1 and +0x24 = this record, the
+ *    world node is freed and the owner's nLastThrownItemId (+0x1e4) is
+ *    cleared when it still names this item.
+ *  - at/below the floor with velocity >= 18.0f: bounce — velocity *=
+ *    -0.4, height += velocity and a positional bounce sfx (bank 1,
+ *    index 0x14, volume 65000, id 0x6e) plays from a 0x1c-byte emitter;
+ *    horizontal speed decays by 0.999.
+ * The non-rest paths then objMovePolar the node by {speed, heading} and
+ * run the pickup scan over g_playerRecords: players on foot (field_174 ==
+ * 0) within the z band (item-1200, item+500] and within 1000.0f ground
+ * distance pick the item up through playerCollectItem; the local player
+ * additionally notifies the server (sub-cmd 0x3d) and plays sfx 0x16.
+ * The picked-up record frees with its mesh left allocated (pMesh = NULL
+ * before thrownItemFree, matching the original's deliberate leak). */
+void itemThrowUpdate(ThrownItem *pItem) /* @0x40f950 */
+{
+    WorldNode *pObj;
+    ObjChildMesh *pEntry;
+    AiNavNode *pSurf;
+    EventObject *pNew;
+    PlayerRecord *pRec;
+    void *pEmitter;
+    float flFloor;
+    float flPlayerZ;
+    float flItemZ;
+    float flHeight;
+    int nX;
+    int nZ;
+    int nFloor;
+    int i;
+    short anRot[3];
+
+    pObj = pItem->pObj;                                        /* +0x10 @0x40f970 */
+    if (pObj == NULL) {                                        /* @0x40f975 */
+        return;
+    }
+    pEntry = objFindTurret(pObj, (int)pItem->pMesh);           /* @0x405120 @0x40f97f */
+    flFloor = 0.0f;                                            /* @0x40f9cf */
+    pSurf = (pEntry != NULL) ? (AiNavNode *)pEntry->pSurface : NULL;  /* +0x3c @0x40f986 */
+    if (pSurf != NULL) {
+        nX = (int)pObj->vPos.y;                                /* ftol @0x40f993 */
+        nZ = (int)pObj->vPos.x;                                /* ftol @0x40f9ac */
+        flFloor = (float)
+            ((nX + pEntry->vWorldA.y - pSurf->nRefX) * pSurf->flSlopeX +  /* @0x40f9a0 */
+             (nZ + pEntry->vWorldA.x - pSurf->nRefZ) * pSurf->flSlopeZ +
+             pSurf->nRefY);                                               /* @0x40f9c6 */
+    }
+    if (flFloor <= pEntry->flHeight) {                         /* +0x40 @0x40f9e6 */
+        if (pEntry->flVertVel < g_fl18) {                      /* +0x44 @0x40fa29 */
+            /* rest @0x40fa99 */
+            pEntry->flVertVel = 0.0f;                          /* @0x40fa9d */
+            pEntry->flHeight = flFloor;                        /* @0x40faa0 */
+            pItem->flSpeed *= g_flHalf;                        /* 0.5f @0x44b274 @0x40faa6 */
+            if (pItem->flSpeed > g_fl15 || pItem->flSpeed < g_flNeg15) {  /* @0x40fab7 */
+                objMovePolar(pObj, pItem->flSpeed, pItem->flHeading);     /* @0x40fc2e..0x40fc53 */
+            } else {
+                /* come to rest: register the pickup object @0x40fad1 */
+                sceneObjGetPos(pItem->pMesh, anRot, 2);        /* @0x4317e0 @0x40fadc */
+                sceneObjSetPosOrient(pItem->pMesh, 0, anRot[1], 0x4000, 2);  /* @0x4307d0 @0x40faf2 */
+                nZ = objPolarPosLookup2(pObj, (int)pItem->pMesh);            /* @0x4051c0 @0x40fb03 */
+                flHeight = nodeChannelAvgFloat(pObj, (int)pItem->pMesh);     /* @0x4050c0 @0x40fb10 */
+                nX = objPolarPosLookup(pObj, (int)pItem->pMesh);             /* @0x405140 @0x40fb22 */
+                sceneObjSetPos(pItem->pMesh, nX, (int)flHeight, nZ, 2);      /* @0x430660 @0x40fb2c */
+                pNew = (EventObject *)malloc(0x50);            /* operator_new @0x43dd42 @0x40fb33 */
+                if (pNew != NULL) {                            /* @0x40fb41 */
+                    nX = (int)pObj->vPos.y;                    /* ftol @0x40fb53 */
+                    nZ = (int)pObj->vPos.x;                    /* ftol @0x40fb5f */
+                    flHeight = nodeChannelAvgFloat(pObj, (int)pItem->pMesh); /* @0x40fb6e */
+                    sceneObjCtor3(pNew, pItem->nItemId, (float)nZ,           /* @0x4146a0 @0x40fb8d */
+                                  (float)nX, flHeight);
+                }
+                pItem->pLandedObj = pNew;                      /* +0x0c @0x40fba1 */
+                if (pNew != NULL) {
+                    pNew->field_10 = (int)nodeChannelAvgFloat(pObj,          /* +0x10 @0x40fbb5 */
+                                                              (int)pItem->pMesh);
+                    pNew->field_14 = 1;                        /* +0x14 @0x40fbbb */
+                    pNew->field_24 = (int)pItem;               /* +0x24 @0x40fbbf */
+                    objHashRegister(pNew);                     /* @0x4148f0 @0x40fbcc */
+                }
+                if (pObj != NULL) {                            /* @0x40fbd7 */
+                    objDtor(pObj);                             /* @0x402ab0 @0x40fbdd */
+                    memFreeDirect(pObj);                       /* @0x43dd37 @0x40fbe3 */
+                }
+                pItem->pObj = NULL;                            /* +0x10 @0x40fbee */
+                pItem->flSpeed = 0.0f;                         /* +0x14 @0x40fbf1 */
+                if (g_playerRecords[pItem->nOwnerIdx].nLastThrownItemId ==    /* @0x40fc03 */
+                    pItem->nItemId) {
+                    g_playerRecords[pItem->nOwnerIdx].nLastThrownItemId = 0;  /* @0x40fc13 */
+                }
+                return;                                        /* @0x40fc1b */
+            }
+        } else {
+            /* bounce @0x40fa2e */
+            pEntry->flVertVel *= g_flNeg0_4;                   /* @0x40fa31 */
+            pEntry->flHeight += pEntry->flVertVel;             /* @0x40fa3f */
+            pEmitter = malloc(0x1c);                           /* operator_new @0x43dd42 @0x40fa42 */
+            if (pEmitter != NULL) {                            /* @0x40fa50 */
+                nZ = (int)pObj->vPos.x;                        /* ftol @0x40fa5f */
+                nFloor = (int)flFloor;                         /* ftol @0x40fa69 */
+                nX = (int)pObj->vPos.y;                        /* ftol @0x40fa72 */
+                sndPlaySfx3D(pEmitter, 1, 0x14, 65000, 0x6e,   /* @0x42bcd0 @0x40fa87 */
+                             0, 0, nX, nFloor, nZ);
+            }
+            pItem->flSpeed *= g_fl0_999;                       /* @0x40fc3f */
+            objMovePolar(pObj, pItem->flSpeed, pItem->flHeading);            /* @0x40fc53 */
+        }
+    } else {
+        /* airborne @0x40f9e8 */
+        pEntry->flVertVel += g_fl18;                           /* gravity @0x40f9e8 */
+        pEntry->flHeight += pEntry->flVertVel;                 /* @0x40f9f6 */
+        if (flFloor <= pEntry->flHeight) {                     /* @0x40fa04 */
+            pEntry->flVertVel -= pEntry->flHeight - flFloor;   /* @0x40fa15 */
+            pEntry->flHeight = flFloor;                        /* @0x40fa0e */
+        }
+        pItem->flSpeed *= g_fl0_999;                           /* @0x40fc3f */
+        objMovePolar(pObj, pItem->flSpeed, pItem->flHeading);  /* @0x40fc53 */
+    }
+    /* pickup scan @0x40fc58 */
+    for (i = 0; i < g_nPlayerCount; i++) {
+        pRec = &g_playerRecords[i];
+        if (pRec->field_174 != 0) {                            /* +0x174 @0x40fc7a */
+            continue;
+        }
+        flPlayerZ = nodeChannelAvgFloat(pRec->pSubObjC,        /* +0x264 @0x40fc8b */
+                                        (int)pRec->pCartSceneObj);
+        flItemZ = nodeChannelAvgFloat(pObj, (int)pItem->pMesh);              /* @0x40fc9b */
+        if (flPlayerZ <= flItemZ - g_fl1200 ||                 /* @0x40fca2..0x40fc02 */
+            flPlayerZ > flItemZ + g_fl500) {
+            continue;
+        }
+        nX = (int)pObj->vPos.y;                                /* ftol @0x40fcca */
+        nZ = (int)pObj->vPos.x;                                /* ftol @0x40fcde */
+        if (objDistToPoint(pRec->pSubObjC, (float)nZ,          /* @0x405050 @0x40fcf1 */
+                           (float)nX) >= g_fl1000) {
+            continue;                                          /* @0x40fcf6 */
+        }
+        if (playerCollectItem(pRec, pItem->nItemId,            /* @0x40f1f0 @0x40fd0c */
+                              pItem->pMesh) == 0) {
+            continue;
+        }
+        if (pRec == &g_playerRecords[g_nLocalPlayerIdx]) {     /* @0x40fd64 */
+            if (netIsActive() != 0) {                          /* @0x426ed0 @0x40fd68 */
+                netClientSendSubCmd(0x3d, g_nLocalPlayerIdx,   /* @0x415cb0 @0x40fd85 */
+                                    pItem->nItemId, 0, 0, 0, 0);
+            }
+            sndPlaySfx(0, 1, 0x16, 0xffff, 0, 0x400);          /* @0x437cf0 @0x40fd9f */
+        }
+        pItem->pMesh = NULL;                                   /* +0x24 @0x40fda9 */
+        thrownItemFree(pItem);                                 /* @0x40f8d0 @0x40fdb4 */
+        memFreeDirect(pItem);                                  /* @0x43dd37 @0x40fdba */
+        return;
+    }
+}
+
+/* itemMeshFollowUpdate @0x40fde0 — gameUpdate pass 2: clamp the record's
+ * +0x14 height channel against the node's last polar length (WorldNode
+ * +0x3c): above 100 the channel is raised to at least 100, within
+ * [-100, 100] it takes the node value, below -100 it is lowered to at
+ * most -100. When WorldNode+0x18 is nonzero the +0x18 heading adopts the
+ * node's last move angle (+0x38). The mesh is then re-oriented in mode 5
+ * with the constant Euler triple (0x173, 0x348, 0xfa) and repositioned
+ * onto the node in mode 2 with the height channel minus 200. */
+void itemMeshFollowUpdate(ThrownItem *pItem) /* @0x40fde0 */
+{
+    WorldNode *pObj;
+    float flHeight;
+    int nX;
+    int nZ;
+
+    pObj = pItem->pObj;                                        /* +0x10 @0x40fde3 */
+    if (pObj == NULL) {                                        /* @0x40fde8 */
+        return;
+    }
+    if (pObj->field_3c > g_fl100) {                            /* +0x3c @0x40fdf4 */
+        if (pItem->flSpeed < g_fl100) {                        /* +0x14 @0x40fe07 */
+            pItem->flSpeed = g_fl100;                          /* @0x40fe10 */
+        }
+    } else if (pObj->field_3c >= g_flNeg100) {                 /* @0x40fe1b */
+        pItem->flSpeed = pObj->field_3c;                       /* @0x40fe3f */
+    } else if (pItem->flSpeed > g_flNeg100) {                  /* @0x40fe2e */
+        pItem->flSpeed = g_flNeg100;                           /* @0x40fe37 */
+    }
+    if (pObj->field_18 != 0) {                                 /* @0x40fe47 */
+        pItem->flHeading = pObj->flScaleC;                     /* +0x38 @0x40fe4e */
+    }
+    sceneObjSetPosOrient(pItem->pMesh, 0x173, 0x348, 0xfa, 5); /* @0x4307d0 @0x40fe72 */
+    nZ = objPolarPosLookup2(pObj, (int)pItem->pMesh);          /* @0x4051c0 @0x40fe83 */
+    flHeight = nodeChannelAvgFloat(pObj, (int)pItem->pMesh);   /* @0x4050c0 @0x40fe90 */
+    nX = objPolarPosLookup(pObj, (int)pItem->pMesh);           /* @0x405140 @0x40fea7 */
+    sceneObjSetPos(pItem->pMesh, nX, (int)flHeight - 200, nZ, 2);            /* @0x430660 @0x40feb1 */
 }

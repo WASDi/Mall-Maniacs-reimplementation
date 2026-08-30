@@ -180,13 +180,31 @@ extern int g_nCurrentItemId;     /* @0x458128 mode 3 target item id (HUD) — de
 #define OBJ_ID_C_AC 0x63615f63   /* 'c_ac' */
 #define OBJ_ID_C_DI 0x69645f63   /* 'c_di' */
 
-/* ThrownItemStub — minimal view of a g_pThrownItemHead list entry for
- * gameUpdate's walks (next link at +0x04). The full 0x30-byte layout
- * lands with the thrown-item cluster (playerThrowItemCtor @0x40f720). */
-typedef struct ThrownItemStub {
-    int field_00;                    /* +0x00 */
-    struct ThrownItemStub *pNext;    /* +0x04 next list entry */
-} ThrownItemStub;
+/* ThrownItem is the 0x30-byte thrown/pickup shopping-item record built by
+ * playerThrowItemCtor @0x40f720 and walked by gameUpdate @0x426ee0 (head
+ * g_pThrownItemHead @0x45896c, tail @0x458970, next link at +0x04). The
+ * physics WorldNode at +0x10 carries the ObjChildMesh entry keyed by
+ * pMesh (+0x24) whose +0x40 height / +0x44 vertical velocity the
+ * itemThrowUpdate pass integrates. */
+typedef struct ThrownItem {
+    int field_00;                /* +0x00 */
+    struct ThrownItem *pNext;    /* +0x04 next entry toward the list tail */
+    struct ThrownItem *pPrev;    /* +0x08 next entry toward the list head */
+    EventObject *pLandedObj;     /* +0x0c registered pickup object once the
+                                  * item comes to rest (itemThrowUpdate) */
+    WorldNode *pObj;             /* +0x10 physics world node (objDtor'd when
+                                  * the item lands) */
+    float flSpeed;               /* +0x14 throw polar length (the mesh-height
+                                  * channel is reused here by the follow pass) */
+    float flHeading;             /* +0x18 throw heading */
+    int field_1c_pad;            /* +0x1c */
+    int nItemId;                 /* +0x20 shopping-list item id */
+    SceneNode *pMesh;            /* +0x24 item mesh node (child-mesh key) */
+    int field_28_pad;            /* +0x28 */
+    int nOwnerIdx;               /* +0x2c throwing player index */
+} ThrownItem;                    /* 0x30 */
+
+typedef char ThrownItemSizeMustBe0x30[(sizeof(ThrownItem) == 0x30) ? 1 : -1];
 
 /* Per-subsystem headers — umbrella re-export so consumers that include
  * player.h get all player APIs without changing include lists. Guarded

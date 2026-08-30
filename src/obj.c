@@ -839,3 +839,34 @@ void nodeSetTransformFromChannels(WorldNode *pNode, int nPosX, int nPosY,
         pMesh->flVertVel = 0.0f;                             /* +0x44 @0x404ecd */
     }
 }
+
+/* sceneObjCtor3 @0x4146a0 — zero the 0x50-byte EventObject and set nId
+ * (+0x08), origin (+0x38/+0x3c; the callers pass the world Z into flX and
+ * the world X into flY, matching the {x=z, y=x} vPos convention) and both
+ * vertical bounds (+0x40/+0x44 = flHeight). Used for the landed
+ * thrown-item pickup objects (itemThrowUpdate) and the level-event
+ * bonus items. */
+void sceneObjCtor3(EventObject *pObj, int nId, float flX, float flY,
+                   float flHeight) /* @0x4146a0 */
+{
+    pObj->field_00 = 0;
+    pObj->pLineList = NULL;
+    pObj->nId = nId;
+    pObj->field_0c = 0;
+    pObj->field_10 = 0;
+    pObj->field_14 = 0;
+    pObj->field_18 = 0;
+    pObj->field_1c = 0;
+    pObj->field_20 = 0;
+    pObj->field_24 = 0;
+    pObj->field_28 = 0;
+    pObj->field_2c = 0;
+    pObj->field_30 = 0;
+    pObj->field_34 = 0;
+    pObj->flOriginX = flX;
+    pObj->flOriginZ = flY;
+    pObj->flHeightA = flHeight;
+    pObj->flHeightB = flHeight;
+    pObj->pHashNext = NULL;
+    pObj->pHashPrev = NULL;
+}

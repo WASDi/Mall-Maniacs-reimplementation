@@ -196,44 +196,9 @@ void objUpdateFire(void) /* @0x405e10 */
 {
 }
 
-/* thrownItemFree @0x40f8d0 — TODO: unlink a thrown-item record from the
- * g_pThrownItemHead/Tail list and release its WorldNode mesh (the item
- * cluster is the next rebuild increment; the record is left allocated and
- * detached so callers do not dereference freed memory). */
-void thrownItemFree(ThrownItemStub *pItem) /* @0x40f8d0 */
-{
-    (void)pItem;
-}
-
 /* playerAnimSfxUpdate @0x40c800 — TODO stub (next-step #4). */
 void playerAnimSfxUpdate(void) /* @0x40c800 */
 {
-}
-
-/* playerThrowItemCtor @0x40f720 — TODO stub: allocates nothing; the AI
- * drop-item path simply produces no projectile until the item cluster
- * lands (contract in stubs.h). */
-void *playerThrowItemCtor(void *pItem, int nItemId) /* @0x40f720 */
-{
-    (void)nItemId;
-    return pItem;
-}
-
-/* itemThrowUpdate @0x40f950 — step one thrown item (g_pThrownItemHead
- * list, next at +0x04). Documented TODO stub: the thrown-item cluster
- * (playerThrowItemCtor/itemThrowUpdate/itemMeshFollowUpdate) is the next
- * rebuild step; the list is empty until then, so gameUpdate never
- * reaches this stub. */
-void itemThrowUpdate(void *pItem) /* @0x40f950 */
-{
-    (void)pItem;
-}
-
-/* itemMeshFollowUpdate @0x40fde0 — second thrown-item pass (mesh follow).
- * Documented TODO stub, same contract as itemThrowUpdate. */
-void itemMeshFollowUpdate(void *pItem) /* @0x40fde0 */
-{
-    (void)pItem;
 }
 
 /* zoneAvoidWalls @0x4023e0 — documented TODO stub, see stubs.h. Original

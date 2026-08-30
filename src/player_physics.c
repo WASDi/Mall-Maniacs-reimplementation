@@ -914,7 +914,7 @@ void playerUpdateCartPhysics(PlayerRecord *pRec) /* @0x4280b0 */
  * and the per-player mesh-channel syncs. */
 void gameUpdate(void) /* @0x426ee0 */
 {
-    ThrownItemStub *pItem;
+    ThrownItem *pItem;
     int i;
 
     g_nGameUpdateTick++;                                                  /* @0x45e5dc @0x426ee0 */

@@ -8,6 +8,10 @@
 
 int sceneObjSetPos(SceneNode *pObj, int nX, int nY, int nZ, int nMode); /* @0x430660 */
 int sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll, byte nMode); /* @0x4307d0 */
+/* sceneObjGetPos @0x4317e0 — read the node's rotation channels (three
+ * shorts from pChannels->rot[0..2]) when (nMode & 0xf) == 2, scaled by
+ * 182 when (nMode & 0xf0) == 0x20. Returns 1, or 0 for other modes. */
+int sceneObjGetPos(SceneNode *pObj, short *pOutXYZ, byte nMode); /* @0x4317e0 */
 int sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode); /* @0x430e80 */
 SceneObjTypeDef *sceneNodeGetMesh(SceneNode *pNode); /* @0x431ae0 */
 int sceneSetCurrentObj(SceneNode *pNodeHead, int nCurrentObj); /* @0x430d98 */

@@ -846,3 +846,24 @@ int sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMod
     }
     return 1;
 }
+
+/* sceneObjGetPos @0x4317e0 — read the node's rotation channels as three
+ * shorts into pOutXYZ (pChannels->rot[0..2]) when (nMode & 0xf) == 2,
+ * scaled by 182 when (nMode & 0xf0) == 0x20; returns 1, or 0 for other
+ * mode families. Used by itemThrowUpdate to re-orient a landed item's
+ * mesh. */
+int sceneObjGetPos(SceneNode *pObj, short *pOutXYZ, byte nMode) /* @0x4317e0 */
+{
+    if ((nMode & 0xf) != 2) {                              /* @0x4317e6 */
+        return 0;                                          /* @0x43184c */
+    }
+    pOutXYZ[0] = pObj->pChannels->rot[0];                  /* @0x4317fe */
+    pOutXYZ[1] = pObj->pChannels->rot[1];                  /* +2 @0x43180b */
+    pOutXYZ[2] = pObj->pChannels->rot[2];                  /* +4 @0x431817 */
+    if ((nMode & 0xf0) == 0x20) {                          /* @0x4317fb/0x43181f */
+        pOutXYZ[0] = (short)(pOutXYZ[0] * 0xb6);           /* @0x431828 */
+        pOutXYZ[1] = (short)(pOutXYZ[1] * 0xb6);           /* @0x43182d */
+        pOutXYZ[2] = (short)(pOutXYZ[2] * 0xb6);           /* @0x431839 */
+    }
+    return 1;                                              /* @0x431846 */
+}

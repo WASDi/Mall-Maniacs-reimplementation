@@ -115,6 +115,13 @@ void objHashFreeAll(void);
 
 /* sceneObjCtor4 @0x414700 — zero the 0x50-byte EventObject and set
  * nId (+0x08), origin (+0x38/+0x3c) and vertical bounds (+0x40/+0x44). */
+/* sceneObjCtor3 @0x4146a0 — zero the 0x50-byte EventObject and set nId,
+ * origin (+0x38/+0x3c) and both vertical bounds (+0x40/+0x44 = flHeight).
+ * Landed thrown-item pickups (itemThrowUpdate) and level-event bonus
+ * items use it. */
+void sceneObjCtor3(EventObject *pObj, int nId, float flX, float flY,
+                   float flHeight);
+
 void sceneObjCtor4(EventObject *pObj, int nId, float flX, float flY,
                    float flHeight, float flHeight2);
 

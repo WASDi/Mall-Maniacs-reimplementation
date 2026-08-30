@@ -30,7 +30,43 @@ int aiStateTurnToBlocked(PlayerRecord *pRec);                        /* @0x40ef6
 int playerCollectItem(PlayerRecord *pRec, int nItemId, void *pThrownMesh); /* @0x40f1f0 */
 int aiCollectItem(PlayerRecord *pRec, int nSlot);                    /* @0x40f420 */
 int playerCheckTargetRange(PlayerRecord *pRec, int nSlot);           /* @0x40f4d0 */
-int aiCheckItemRange(PlayerRecord *pRec, int nSlot);                 /* @0x40f5e0 */
+int aiCheckItemRange(PlayerRecord *pRec, int nSlot);                /* @0x40f5e0 */
+
+/* --- thrown-item cluster (0x40f720..0x40fde0) --- */
+extern ThrownItem *g_pThrownItemHead;   /* @0x45896c newest item */
+extern ThrownItem *g_pThrownItemTail;   /* @0x458970 oldest item */
+extern int g_nThrownItemCount;          /* @0x458974 */
+
+/* playerThrowItemCtor @0x40f720 — finish a thrown shopping item: allocate
+ * the 0x48 physics WorldNode (worldNodeCtor), add its child-mesh + turret
+ * entry keyed by pMesh (extents 150/2/500, channel values 20/20), place it
+ * at {flNodeX, flNodeY, flNodeZ} (original arg order is Z, X, Y-1000),
+ * then fill the record: +0x14 = flSpeed, +0x18 = flHeading, +0x20 = itemId,
+ * +0x24 = pMesh, +0x2c = nOwnerIdx, +0x0c = 0, entry->flVertVel (+0x44) =
+ * flVertVel and g_playerRecords[nOwnerIdx].nLastThrownItemId (+0x1e4) =
+ * nItemId. Caps the list at 10 items (frees the oldest). */
+ThrownItem *playerThrowItemCtor(ThrownItem *pItem, int nItemId, float flNodeZ,
+                                float flNodeX, float flNodeY, float flSpeed,
+                                float flHeading, float flVertVel,
+                                SceneNode *pMesh, int nOwnerIdx);   /* @0x40f720 */
+
+/* thrownItemFree @0x40f8d0 — unlink pItem from the g_pThrownItemHead/Tail
+ * list, sceneNodeFree the mesh (+0x24), objDtor+free the world node
+ * (+0x10) and decrement g_nThrownItemCount. */
+void thrownItemFree(ThrownItem *pItem);                             /* @0x40f8d0 */
+
+/* itemThrowUpdate @0x40f950 — gameUpdate pass 1: integrate one thrown item
+ * against its child-mesh raycast surface (gravity +18/frame, ×-0.4 ground
+ * bounce with sfx 0x14/0x6e, 0.5-speed landing), and once at rest register
+ * the pickup EventObject (sceneObjCtor3 + objHashRegister) and free the
+ * world node. Then the per-player proximity pickup scan. */
+void itemThrowUpdate(ThrownItem *pItem);                            /* @0x40f950 */
+
+/* itemMeshFollowUpdate @0x40fde0 — gameUpdate pass 2: clamp the item's
+ * +0x14 height channel against the node's last polar length (+0x3c),
+ * adopt the node's +0x38 heading when +0x18 is set, and reposition the
+ * mesh onto the node (mode-5 orient + mode-2 pos, height -200). */
+void itemMeshFollowUpdate(ThrownItem *pItem);                       /* @0x40fde0 */
 
 /* Console "action <cmd>" handler (commandDispatch table @0x44b308). */
 int actionCmd(int nContext, LPCSTR pszArgs);          /* @0x4067c0 */
