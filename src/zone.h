@@ -100,7 +100,7 @@ extern int   g_nNavTriIdx;                 /* @0x45e5cc */
  * (navPoint* @0x425760..0x425c90, Dijkstra pathfinding) is deferred —
  * structs kept here for the milestone-3 loader. */
 #define NAVPOINT_LINKS 8
-typedef struct __attribute__((packed)) NavPoint {
+typedef struct NavPoint {
     int   nId;             /* +0x00 -1 until registered */
     struct NavPoint *pALink[8];         /* +0x04 up to 8 links */
     float pALinkDist[8];   /* +0x24 link distances */

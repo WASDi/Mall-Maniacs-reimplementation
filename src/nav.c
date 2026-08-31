@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include "nav.h"
 #include "config.h"
@@ -25,6 +26,7 @@ NavPoint *g_pNavPointHead;            /* @0x45d4d0 */
 NavPoint *g_pNavPointTail;            /* @0x45d4d4 */
 int   g_nNavPointCount;               /* @0x45d4d8 */
 NavPoint *g_pNavPointSel;             /* @0x45e480 */
+extern int g_nNavPtSearchCount;       /* @0x45d4dc via player_ai */
 
 static const float g_flHalfPi = 1.5707964f;  /* @0x44b270 (bytes DB 0F C9 3F) */
 
@@ -446,6 +448,259 @@ NavPoint *navPointFindById(int nId) /* @0x425c50 */
         }
     }
     return NULL;
+}
+
+/* navPointGetNext @0x425ae0 — return pPoint->pNext (+0x5c). */
+NavPoint *navPointGetNext(NavPoint *pPoint) /* @0x425ae0 */
+{
+    return pPoint->pNext;
+}
+
+/* navPointGetLinkList @0x4257e0 — write link-array start (this+4) to
+ * *pOutList and return link count at +0x48. Uses struct field accessor
+ * pPoint->pALink (array decays to NavPoint**). */
+int navPointGetLinkList(NavPoint *pPoint, NavPoint ***pOutList) /* @0x4257e0 */
+{
+    *pOutList = pPoint->pALink;                              /* +0x04 @0x4257e4 pALink field */
+    return pPoint->nLinkCount;                               /* +0x48 @0x4257e9 */
+}
+
+/* navPointRemoveLink @0x425880 — remove link to pTarget from pPoint's
+ * array (pALink at +0x04, pALinkDist at +0x24, count at +0x48), shifting
+ * remaining entries down. Returns 1 if removed, 0 if not found. */
+int navPointRemoveLink(NavPoint *pPoint, NavPoint *pTarget) /* @0x425880 */
+{
+    int i;
+    int nCount = pPoint->nLinkCount;
+
+    for (i = 0; i < nCount; i++) {
+        if (pPoint->pALink[i] == pTarget) {
+            int j;
+            for (j = i; j < nCount - 1; j++) {
+                pPoint->pALink[j] = pPoint->pALink[j + 1];
+                pPoint->pALinkDist[j] = pPoint->pALinkDist[j + 1];
+            }
+            pPoint->nLinkCount--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* navPointRemove @0x425920 — unlink pPoint from g_pNavPointHead/Tail
+ * list (+0x5c), remove all links referencing it from every nav point,
+ * free via navPointListFreeAll/memFreeDirect, decrement count. Returns
+ * 0, -1 on NULL. */
+int navPointRemove(NavPoint *pPoint) /* @0x425920 */
+{
+    NavPoint *pPrev = NULL;
+    NavPoint *pCur;
+
+    if (pPoint == NULL) {
+        return -1;
+    }
+    for (pCur = g_pNavPointHead; pCur != NULL; pCur = pCur->pNext) {
+        if (pCur == pPoint) {
+            if (pPrev != NULL) {
+                pPrev->pNext = pCur->pNext;
+            }
+            if (g_pNavPointHead == pCur) {
+                g_pNavPointHead = pCur->pNext;
+            }
+            if (g_pNavPointTail == pCur) {
+                g_pNavPointTail = pPrev;
+            }
+            pCur->pNext = NULL;
+            break;
+        }
+        pPrev = pCur;
+    }
+    for (pCur = navPointListGetHead(); pCur != NULL; pCur = navPointGetNext(pCur)) {
+        while (navPointRemoveLink(pCur, pPoint) != 0) {
+        }
+    }
+    navPointListFreeAll(pPoint);
+    free(pPoint);
+    g_nNavPointCount--;
+    return 0;
+}
+
+/* navPointResetAllFlags @0x425c70 — for every NavPoint set +0x58 flags=0
+ * and +0x44 flUnknown=-1.0f (graph-search visited/cost reset). */
+void navPointResetAllFlags(void) /* @0x425c70 */
+{
+    NavPoint *pCur;
+
+    for (pCur = g_pNavPointHead; pCur != NULL; pCur = pCur->pNext) {
+        pCur->nFlags = 0;                                /* +0x58 @0x425c80 */
+        pCur->flUnknown = -1.0f;                         /* +0x44 @0x425c83 0xbf800000 */
+    }
+}
+
+/* navPointRelaxCosts @0x425af0 — Dijkstra-style recursive cost relaxation.
+ * Visited-marker is (float)nFlags at +0x58 (0 = unvisited), best-cost is
+ * flUnknown at +0x44. If already visited with cheaper cost (float)nFlags <
+ * flCost && nFlags != 0, return -1.0. Otherwise store flCost to nFlags,
+ * then: if pPoint==pTarget optionally lower flUnknown and return flCost;
+ * else recurse over links with acc cost (flCost + linkDist @+0x24) and
+ * propagate the minimal returned cost into flUnknown. */
+float navPointRelaxCosts(NavPoint *pPoint, NavPoint *pTarget, float flCost) /* @0x425af0 */
+{
+    float flVisited;
+    int i;
+
+    memcpy(&flVisited, &pPoint->nFlags, sizeof(float));  /* +0x58 */
+    if (flVisited < flCost && flVisited != 0.0f) {       /* @0x425af6..@0x425b12 */
+        return -1.0f;                                    /* g_flMinusOne @0x44b25c */
+    }
+    memcpy(&pPoint->nFlags, &flCost, sizeof(float));     /* @0x425b27 */
+
+    if (pPoint != pTarget) {                             /* @0x425b2a */
+        for (i = 0; i < pPoint->nLinkCount; i++) {       /* @0x425b62..@0x425bba */
+            NavPoint *pLink = pPoint->pALink[i];
+            float flEdge = pPoint->pALinkDist[i];        /* +0x24 */
+            float fVar = navPointRelaxCosts(pLink, pTarget, flCost + flEdge); /* @0x425b7f */
+            if (fVar != -1.0f) {                         /* @0x425b84 */
+                int nFlUnknownBits;
+                memcpy(&nFlUnknownBits, &pPoint->flUnknown, 4);
+                if (nFlUnknownBits == (int)0xbf800000 || fVar < pPoint->flUnknown) { /* @0x425b94 */
+                    pPoint->flUnknown = fVar;            /* @0x425ba7 */
+                }
+            }
+        }
+        return pPoint->flUnknown;                        /* @0x425bba */
+    }
+    /* pPoint == pTarget @0x425b2c */
+    if (flCost != -1.0f) {                               /* @0x425b30 */
+        int nBits;
+        memcpy(&nBits, &pPoint->flUnknown, 4);
+        if (nBits == (int)0xbf800000 || flCost < pPoint->flUnknown) { /* @0x425b3d */
+            pPoint->flUnknown = flCost;                  /* @0x425b58 */
+        }
+    }
+    return flCost;                                       /* @0x425b5b */
+}
+
+/* navPointPickCheapestLink @0x425bd0 — reset all flags, relax costs from
+ * pPoint to pTarget, then return the NavPoint* among pPoint's links whose
+ * best-cost (+0x44) is minimal. Used by aiPathfindToTarget. */
+NavPoint *navPointPickCheapestLink(NavPoint *pPoint, NavPoint *pTarget) /* @0x425bd0 */
+{
+    float flBest = -1.0f;                                /* @0x425bd3 0xbf800000 */
+    NavPoint *pBest = NULL;
+    int i;
+
+    navPointResetAllFlags();                             /* @0x425bdd */
+    navPointRelaxCosts(pPoint, pTarget, 0.0f);           /* @0x425bed */
+
+    for (i = 0; i < pPoint->nLinkCount; i++) {           /* @0x425bfe..@0x425c3a */
+        NavPoint *pLink = pPoint->pALink[i];
+        int nBits;
+        memcpy(&nBits, &pLink->flUnknown, 4);
+        if (nBits != (int)0xbf800000) {                  /* @0x425c05 */
+            if (pLink->flUnknown < flBest || flBest == -1.0f) { /* @0x425c0e..@0x425c2b */
+                flBest = pLink->flUnknown;
+                pBest = pLink;                           /* @0x425c30 */
+            }
+        }
+    }
+    return pBest;                                        /* @0x425c3c */
+}
+
+/* navPointFindNearestToXY @0x425c90 — nearest NavPoint to (nZ,nX) by 2D
+ * XZ distance (full-list scan via gxVec2Set + mathVec2Polar). Editor and
+ * navPointEditorClick use. Param order matches original: param_1 is Z,
+ * param_2 is X (so nPosZ - nZ, nPosX - nX). */
+NavPoint *navPointFindNearestToXY(int nZ, int nX) /* @0x425c90 */
+{
+    NavPoint *pPoint;
+    NavPoint *pBest = NULL;
+    float flBest = 0.0f;
+
+    for (pPoint = navPointListGetHead(); pPoint != NULL; pPoint = navPointGetNext(pPoint)) { /* @0x425c9f..@0x425d1b */
+        GxVec2 vDelta;
+        GxVec2 vPolar;
+        gxVec2Set(&vDelta, (float)pPoint->nPosZ - (float)nZ, /* @0x425cc4 */
+                  (float)pPoint->nPosX - (float)nX);         /* @0x425ce1 */
+        mathVec2Polar(&vPolar, &vDelta);                     /* @0x425cee */
+        if (pBest == NULL || vPolar.x < flBest) {            /* @0x425cf3 */
+            flBest = vPolar.x;
+            pBest = pPoint;
+        }
+    }
+    return pBest;                                        /* @0x425d1d */
+}
+
+/* navPointFindNearestInYRange @0x4259d0 — nearest NavPoint to (nX,nZ)
+ * whose nPosY is within (nYMin, nYMax) by 2D XZ Euclidean distance.
+ * Early ABS pruning mirrors the x87 FCOMPP path. Increments
+ * g_nNavPtSearchCount @0x45d4dc. Returns head if no candidate (original
+ * head->next == NULL fast path). Used by aiPathfindToTarget. */
+NavPoint *navPointFindNearestInYRange(int nX, int nZ, int nYMin, int nYMax) /* @0x4259d0 */
+{
+    float flBest = 3.4028235e+38f;                       /* @0x4259e3 0x7f7fffff */
+    NavPoint *pHead = g_pNavPointHead;                   /* @0x4259dd */
+    NavPoint *pBest = pHead;
+    NavPoint *pCur;
+
+    g_nNavPtSearchCount++;                               /* @0x4259e2..@0x4259f3 */
+
+    if (pHead == NULL) {
+        return NULL;
+    }
+    pCur = pHead->pNext;                                 /* @0x4259f9 */
+    if (pCur == NULL) {                                  /* @0x4259fc */
+        return pHead;                                    /* @0x425a8f */
+    }
+    for (; pCur != NULL; pCur = pCur->pNext) {           /* @0x425a80 */
+        if (pCur->nPosY <= nYMin || pCur->nPosY >= nYMax) { /* @0x425a17..@0x425a1d */
+            continue;
+        }
+        {
+            float dZ = (float)pCur->nPosZ - (float)nZ;   /* @0x425a1f */
+            if (fabsf(dZ) >= flBest) {                   /* @0x425a2a..@0x425a37 */
+                continue;
+            }
+            float dX = (float)pCur->nPosX - (float)nX;   /* @0x425a39 */
+            if (fabsf(dX) >= flBest) {                   /* @0x425a44..@0x425a51 */
+                continue;
+            }
+            float flDist = sqrtf(dZ * dZ + dX * dX);     /* @0x425a53..@0x425a67 */
+            if (flDist < flBest) {                       /* @0x425a6b */
+                flBest = flDist;                         /* @0x425a76 */
+                pBest = pCur;                            /* @0x425a7a */
+            }
+        }
+    }
+    return pBest;
+}
+
+/* navPointPickRandom @0x425aa0 — uniformly random NavPoint (rand() % count walk). */
+NavPoint *navPointPickRandom(void) /* @0x425aa0 */
+{
+    NavPoint *pHead = g_pNavPointHead;                   /* @0x425aa1 */
+    int nRand = rand();                                  /* @0x425aa7 _rand */
+    int nCount = g_nNavPointCount;                       /* @0x45d4d8 */
+    int nIdx;
+    NavPoint *pCur;
+    int i;
+
+    if (pHead == NULL || nCount <= 0) {
+        return pHead;
+    }
+    nIdx = nRand % nCount;                               /* @0x425aad IDIV */
+    if (nIdx <= 0) {                                     /* @0x425ab7 JLE */
+        return pHead;
+    }
+    pCur = pHead;
+    for (i = 0; i < nIdx; i++) {                         /* @0x425ab9..@0x425ac5 */
+        NavPoint *pNext = pCur->pNext;
+        if (pNext == NULL) {                             /* @0x425abe */
+            return pCur;
+        }
+        pCur = pNext;
+    }
+    return pCur;
 }
 
 /* nloadCmd @0x407e10 — "nload <file.ai>": parse the buoy config with the

@@ -118,7 +118,7 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
             if (bSquashed || rand() % 100 < 5) {                               /* @0x4271b8 */
                 void *pEmitter = malloc(0x1c);                                 /* operator_new @0x43dd42 */
                 if (pEmitter != NULL) {
-                    sndPlaySfx3D(pEmitter, 1, 0x1a, 0xfde8, 0xff, nCharKey, 0, 0, 0, 0, 0);
+                    sndPlaySfx3D(pEmitter, 1, 0x1a, 0xfde8, 0xff, (void *)(size_t)nCharKey, 0, 0, 0, 0, 0);
                 }
             }
             gxVec2Set(&vIn, pEo->flOriginZ - (float)(int)pWalk->vPos.y,        /* +0x3c @0x42720f */
@@ -153,7 +153,7 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
             if (bHurtSfx == 0) {                                               /* TEST BL,BL @0x427397 */
                 void *pEmitter = malloc(0x1c);                                 /* @0x42739d */
                 if (pEmitter != NULL) {
-                    sndPlaySfx3D(pEmitter, 1, 7, 0xfde8, 0xff, nCharKey, 0, 0, 0, 0, 0);
+                    sndPlaySfx3D(pEmitter, 1, 7, 0xfde8, 0xff, (void *)(size_t)nCharKey, 0, 0, 0, 0, 0);
                 }
             }
             pRec->vVelPolar.x = 0.0f;                                          /* +0x21c @0x4273e6 */
@@ -419,7 +419,7 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
             if (bHurtSfx == 0) {                                             /* @0x427d9c */
                 void *pEmitter = malloc(0x1c);                               /* @0x427da2 */
                 if (pEmitter != NULL) {
-                    sndPlaySfx3D(pEmitter, 1, 7, 0xfde8, 0xff, nCartKey, 0, 0, 0, 0, 0);
+                    sndPlaySfx3D(pEmitter, 1, 7, 0xfde8, 0xff, (void *)(size_t)nCartKey, 0, 0, 0, 0, 0);
                 }
             }
             pRec->bStateFlags |= 0x10;                                       /* @0x427dfd */

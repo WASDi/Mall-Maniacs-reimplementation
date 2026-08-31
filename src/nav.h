@@ -18,8 +18,10 @@
  * The "nload <mall>.ai" startup command (nloadCmd @0x407e10) loads the
  * level's navpoint buoy graph: one 0x60-byte NavPoint per config block
  * ("ID"/"X"/"Y"/"Z" keys) with up to 8 precomputed-distance links
- * ("LINKS" list). The Dijkstra pathfinding over the buoys
- * (navPointRelaxCosts @0x425af0 and friends) is deferred. */
+ * ("LINKS" list). The Dijkstra/repeated-relaxation pathfinding over the
+ * buoys (navPointRelaxCosts @0x425af0, navPointPickCheapestLink @0x425bd0,
+ * navPointFindNearest* @0x425c90/@0x4259d0, navPointPickRandom @0x425aa0,
+ * navPointResetAllFlags @0x425c70) is live. */
 
 /* --- AI nav-mesh scan state (aiNavNodeCtorScene/aiNavNodeUpdate) ---
  * g_pNavMeshData is the current FLOOR mesh's SceneObjRenderInfo;
@@ -54,6 +56,16 @@ int  navPointAddLink(NavPoint *pPoint, NavPoint *pLink);             /* @0x4257f
 int  navPointListAdd(NavPoint *pPoint);                              /* @0x4258e0 */
 NavPoint *navPointListGetHead(void);                                 /* @0x425ad0 */
 NavPoint *navPointFindById(int nId);                                 /* @0x425c50 */
+NavPoint *navPointGetNext(NavPoint *pPoint);                         /* @0x425ae0 */
+int  navPointGetLinkList(NavPoint *pPoint, NavPoint ***pOutList);   /* @0x4257e0 */
+int  navPointRemoveLink(NavPoint *pPoint, NavPoint *pTarget);        /* @0x425880 */
+int  navPointRemove(NavPoint *pPoint);                               /* @0x425920 */
+float navPointRelaxCosts(NavPoint *pPoint, NavPoint *pTarget, float flCost); /* @0x425af0 */
+NavPoint *navPointPickCheapestLink(NavPoint *pPoint, NavPoint *pTarget); /* @0x425bd0 */
+NavPoint *navPointFindNearestToXY(int nZ, int nX);                   /* @0x425c90 */
+NavPoint *navPointFindNearestInYRange(int nX, int nZ, int nYMin, int nYMax); /* @0x4259d0 */
+NavPoint *navPointPickRandom(void);                                  /* @0x425aa0 */
+void navPointResetAllFlags(void);                                    /* @0x425c70 */
 
 /* "nload <file.ai>" startup-script command: parse the buoy config file
  * (configParseFile grammar), rebuild the NavPoint list. Returns 0. */
