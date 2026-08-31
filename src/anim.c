@@ -921,13 +921,13 @@ void walkAnimTableEntryCalc(short *pOut, float flNormSpeed,
  * caller but never read (Ghidra/IDA saw it as a stray "flPitch" float).
  * Returns 1 (EAX).
  *
- * UNCERTAIN (decompile-level confidence, re-verify vs disassembly if limb
- * animation looks wrong):
- *  - the exact operand pairing inside the four matrix loops below (the
- *    original is one FPU-heavy loop nest; the decompile's stack-alias
- *    resolution was used as-is),
- *  - the pitch mathAtan2Deg operand order (fB, fC),
- *  - the roll tail's table-value factor and the nRoll blend multiplier. */
+ * Verified against the original disassembly (0x4336b0..0x43396c): the four
+ * matrix loops, the walk-table entry/clamp, and the yaw/pitch/roll tail
+ * below match the FPU code (mathAtan2Deg @0x42d010, mathSinDeg @0x42d030,
+ * mathCosDeg @0x42d050, __ftol @0x43dd10, and the FMUL/FDIVR constants
+ * 127.0 @0x44b7b0 / 1.0 @0x44b288). 
+ *
+ * SUSPECTED BUG HERE: See CartGrabAnimBug.md */
 int playerAnimOrientFromDir(int nDirX, int nDirY, int nDirZ,
                             short *pOutAngles, short *pOutWalk, void *pUnused,
                             const short *pWalkTable, int nWalkGeom,
@@ -1001,16 +1001,18 @@ int playerAnimOrientFromDir(int nDirX, int nDirY, int nDirZ,
         afM[k + 2] = (float)nDirZ / fB * afM[k + 8] -
                      (float)nDirX / fB * afM[k + 6];
     }
-    /* yaw/pitch/roll extraction */
-    fC = (float)g_dblOne / sqrtf(afM[0] * afM[0] + afM[2] * afM[2]); /* @0x4338ad */
-    fC = fC * afM[0] * afM[0] + fC * afM[2] * afM[2];      /* = sqrt(m0^2+m2^2) */
-    fA = fC * afM[0];                                      /* @0x4338c9 */
-    fB = fC * afM[2];                                      /* @0x4338d1 */
-    pOutAngles[0] = (short)mathAtan2Deg(-afM[1], fC);      /* @0x433903 yaw */
-    pOutAngles[1] = (short)mathAtan2Deg(fB, fC);           /* @0x433919 pitch (order UNCERTAIN) */
-    pOutAngles[2] = (short)mathAtan2Deg(                   /* @0x433960 roll (operands UNCERTAIN) */
-        -((float)pOutWalk[0] * afM[7] - (float)pOutAngles[0] * afM[9]),
-        afM[8] * (float)pWalkTable[1 + nI / 4 * 2] +
-        ((float)pOutAngles[0] * afM[7] + (float)pOutWalk[0] * afM[9]) * (float)nRoll);
+    /* yaw/pitch/roll extraction (verified: 0x4338ad..0x43396c; the original
+     * keeps inv=1/s on the FPU stack, so fA/fB are normalized by s) */
+    fC = (float)g_dblOne / sqrtf(afM[0] * afM[0] + afM[2] * afM[2]); /* @0x4338ad FDIVR 1.0 */
+    fA = fC * afM[0];                                      /* @0x4338c9 = m0/s */
+    fB = fC * afM[2];                                      /* @0x4338d1 = m2/s */
+    {   /* fU = fB*m2 + fA*m0 = sqrt(m0^2+m2^2), recomputed implicitly @0x4338e3..0x4338f9 */
+        float fU = fB * afM[2] + fA * afM[0];
+        pOutAngles[0] = (short)mathAtan2Deg(-afM[1], fU);  /* @0x433903 yaw */
+        pOutAngles[1] = (short)mathAtan2Deg(fA, fB);       /* @0x433919 pitch */
+        pOutAngles[2] = (short)mathAtan2Deg(               /* @0x433960 roll */
+            fA * afM[5] - fB * afM[3],
+            flSinR * (fB * afM[5] + fA * afM[3]) + fU * afM[4]);
+    }
     return 1;                                              /* @0x43396c */
 }

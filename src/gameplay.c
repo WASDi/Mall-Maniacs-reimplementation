@@ -219,12 +219,14 @@ void roundStartInit(void) /* @0x40a4d0 */
         }
     }
     /* Walk-anim lookup table fill (original @0x40a941..0x40a981): 128
-     * entries, entry i for normalized speed i*0.01f (const @0x44b458) on
-     * the circle center 0xd2 / radius 0x118. */
+     * entries, entry i for normalized speed i * 0.0078740157f (const
+     * @0x44b458, bytes 15 62 01 3C = 1/127) on the circle center 0xd2 /
+     * radius 0x118. */
     {
+        static const float g_flNormSpeedStep = 0.0078740157f; /* @0x44b458 */
         int i;
         for (i = 0; i < 128; i++) {
-            walkAnimTableEntryCalc(g_awWalkAnimTable[i], (float)i * 0.01f,
+            walkAnimTableEntryCalc(g_awWalkAnimTable[i], (float)i * g_flNormSpeedStep,
                                    0xd2, 0x118);                    /* @0x433980 @0x40a967 */
         }
     }
