@@ -278,7 +278,7 @@ int playerFindCart(PlayerRecord *pRec) /* @0x40e180 */
 {
     int i;
 
-    if (objDistTo(pRec->pSubObjA, pRec->pSubObjC) > (float)g_dbl3000) {
+    if (objDistTo(pRec->pSubObjA, pRec->pSubObjB) > (float)g_dbl3000) {
         return 0;                                       /* @0x40e197..0x40e1a7 */
     }
     for (i = 0; i < 1; i++) {                           /* @0x40e1b0..0x40e1bc */
@@ -296,6 +296,7 @@ int playerFindCart(PlayerRecord *pRec) /* @0x40e180 */
  * 0x5a (drive), 0x6e (grab) or 100 (steer step). */
 int aiStateCartApproach(PlayerRecord *pRec, int *pAnimState) /* @0x40e1d0 */
 {
+    float flAngle;
     float flDiff;
     float flDiffCart;
     if (pRec->field_174 != 0) return 1;                 /* @0x40e1d5 */
@@ -303,8 +304,8 @@ int aiStateCartApproach(PlayerRecord *pRec, int *pAnimState) /* @0x40e1d0 */
 
     pRec->flInputTurn = 0.0f;                           /* +0x2e0 @0x40e204 */
     pRec->flInputAccel = 0.0f;                          /* +0x2e4 @0x40e20e */
-    flDiff = aiTurnDiff(pRec->pSubObjA,
-                        objAngleTo(pRec->pSubObjA, pRec->pSubObjC)); /* @0x40e218..0x40e293 */
+    flAngle = objAngleTo(pRec->pSubObjA, pRec->pSubObjB); /* @0x40e218 */
+    flDiff = aiTurnDiff(pRec->pSubObjA, flAngle);       /* @0x40e218..0x40e293 */
     if (flDiff > (float)g_dbl0_1 || flDiff < (float)g_dblNeg0_1) {
         if (flDiff >= g_flZero) {                       /* @0x40e581 */
             pRec->flInputTurn = g_flOne;                /* +0x2e0 @0x40e592 */
@@ -314,17 +315,17 @@ int aiStateCartApproach(PlayerRecord *pRec, int *pAnimState) /* @0x40e1d0 */
         if (pAnimState != NULL) *pAnimState = 0x50;     /* 80 @0x40e5a4 */
         return 0;
     }
-    if (objDistTo(pRec->pSubObjA, pRec->pSubObjC) > (float)g_dbl1000) {
+    if (objDistTo(pRec->pSubObjA, pRec->pSubObjB) > (float)g_dbl1000) {
         pRec->flInputAccel = g_flOne;                   /* +0x2e4 @0x40e3c6 */
         if (pAnimState != NULL) *pAnimState = 0x5a;     /* 90 @0x40e3a7 */
         return 0;
     }
-    flDiffCart = aiTurnDiff(pRec->pSubObjC, flDiff);    /* @0x40e3b8..0x40e50b */
+    flDiffCart = aiTurnDiff(pRec->pSubObjB, flAngle);   /* @0x40e3b8..0x40e50b */
     if (fabs(flDiffCart) <= fabs(pRec->flPosTurnAccum)) { /* FABS/FCOMPP @0x40e50e */
         if (pAnimState != NULL) *pAnimState = 0x6e;     /* 110 @0x40e56c */
         return 1;
     }
-    if (flDiff >= g_flZero) {                           /* @0x40e529 */
+    if (flDiffCart >= g_flZero) {                       /* @0x40e529 */
         pRec->flPosTurnAccum = pRec->flPosTurnAccum + pRec->flRotAccSpeed; /* @0x40e53e */
     } else {
         pRec->flPosTurnAccum = pRec->flPosTurnAccum - pRec->flRotAccSpeed; /* @0x40e530 */
@@ -356,7 +357,7 @@ void playerUpdateOrientToTurret(PlayerRecord *pRec) /* @0x40e5b0 */
     memcpy(&nSpeedBits, &pRec->flCurSpeed, 4);          /* +0x1f4 raw bits @0x40e5d8 */
     nodeSetTransformFromChannels(pRec->pSubObjC, nX, (int)flAvgFront, nZ, nSpeedBits, nScale); /* @0x40e606 */
     ((WorldNode *)pRec->pSubObjA)->field_1c = 0;                       /* @0x40e661 */
-    ((WorldNode *)pRec->pSubObjC)->field_1c = 0;                       /* @0x40e669 */
+    ((WorldNode *)pRec->pSubObjB)->field_1c = 0;                       /* @0x40e669 */
 }
 
 /* playerCheckTurn @0x40e670 — 1 when already riding, facing within the
@@ -373,11 +374,11 @@ int playerCheckTurn(PlayerRecord *pRec) /* @0x40e670 */
     float flDz;
 
     if (pRec->field_174 != 0) return 1;
-    flDiff = aiTurnDiff(pRec->pSubObjA, objAngleTo(pRec->pSubObjA, pRec->pSubObjC)); /* @0x40e6c6 */
+    flDiff = aiTurnDiff(pRec->pSubObjA, objAngleTo(pRec->pSubObjA, pRec->pSubObjB)); /* @0x40e6c6 */
     nWalkX = objPolarPosLookup(pRec->pSubObjA, (int)pRec->pCharSceneNode);   /* @0x40e6f2 */
     nWalkZ = objPolarPosLookup2(pRec->pSubObjA, (int)pRec->pCharSceneNode);  /* @0x40e709 */
-    nCartX = objPolarPosLookup(pRec->pSubObjC, (int)pRec->pCartSceneObj);    /* @0x40e72d */
-    nCartZ = objPolarPosLookup2(pRec->pSubObjC, (int)pRec->pCartSceneObj);   /* @0x40e72d */
+    nCartX = objPolarPosLookup(pRec->pSubObjB, (int)pRec->pCartSceneObj);    /* @0x40e72d */
+    nCartZ = objPolarPosLookup2(pRec->pSubObjB, (int)pRec->pCartSceneObj);   /* @0x40e72d */
     if (flDiff <= (float)g_dbl0_1 && flDiff >= (float)g_dblNeg0_1) {
         return 1;                                       /* @0x40e7c1 */
     }
@@ -968,8 +969,8 @@ int playerCheckTargetRange(PlayerRecord *pRec, int nSlot) /* @0x40f4d0 */
     if (pRec->anHeldSlot[nSlot] <= 0) return 0;        /* +0x17c+4*nSlot @0x40f4ee */
     nWalkX = objPolarPosLookup(pRec->pSubObjA, (int)pRec->pCharSceneNode);   /* @0x40f507 */
     nWalkZ = objPolarPosLookup2(pRec->pSubObjA, (int)pRec->pCharSceneNode);  /* @0x40f522 */
-    nCartX = objPolarPosLookup(pRec->pSubObjC, (int)pRec->pCartSceneObj);    /* @0x40f53d */
-    nCartZ = objPolarPosLookup2(pRec->pSubObjC, (int)pRec->pCartSceneObj);   /* @0x40f558 */
+    nCartX = objPolarPosLookup(pRec->pSubObjB, (int)pRec->pCartSceneObj);    /* @0x40f53d */
+    nCartZ = objPolarPosLookup2(pRec->pSubObjB, (int)pRec->pCartSceneObj);   /* @0x40f558 */
     flDx = (float)nWalkX - (float)nCartX;
     flDz = (float)nWalkZ - (float)nCartZ;
     if (flDx * flDx + flDz * flDz > g_fl1690000) return 0;   /* @0x40f57b */
@@ -1084,8 +1085,8 @@ int aiCheckItemRange(PlayerRecord *pRec, int nSlot) /* @0x40f5e0 */
     if (pRec->anHeldSlot[nSlot] <= 0) return 0;
     nWalkX = objPolarPosLookup(pRec->pSubObjA, (int)pRec->pCharSceneNode);   /* @0x40f617 */
     nWalkZ = objPolarPosLookup2(pRec->pSubObjA, (int)pRec->pCharSceneNode);  /* @0x40f632 */
-    nCartX = objPolarPosLookup(pRec->pSubObjC, (int)pRec->pCartSceneObj);    /* @0x40f64d */
-    nCartZ = objPolarPosLookup2(pRec->pSubObjC, (int)pRec->pCartSceneObj);   /* @0x40f668 */
+    nCartX = objPolarPosLookup(pRec->pSubObjB, (int)pRec->pCartSceneObj);    /* @0x40f64d */
+    nCartZ = objPolarPosLookup2(pRec->pSubObjB, (int)pRec->pCartSceneObj);   /* @0x40f668 */
     flDx = (float)nWalkZ - (float)nCartZ;
     flDy = (float)nWalkX - (float)nCartX;
     if (flDx * flDx + flDy * flDy > g_fl81000000) return 0;

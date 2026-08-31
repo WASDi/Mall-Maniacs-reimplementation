@@ -282,8 +282,8 @@ void playerSetupRound(void) /* @0x410e90 */
         pRec->flCartAccSpeed = ((float)pRec->nStatSpeed * 0.06f + 0.7f) * flAccWC;     /* @0x411456 */
         pRec->flCartRotAccSpeed = ((float)pRec->nStatAgility * 0.1f + 0.5f) * flRotAccWC; /* @0x41146f */
         pRec->flCartFrictionB = (flFriction + pRec->flRotFactor) * 0.5f;               /* +0x27c @0x411492 */
-        pRec->flCartFriction = (flFriction + pRec->flAccFactor) * 0.5f;                /* +0x26c @0x41149f */
-        pRec->flCartCurSpeed = pRec->flCartAccSpeed / (1.0f - pRec->flCartFriction);   /* +0x274 @0x4114b0 */
+        pRec->field_26c_pad = (flFriction + pRec->flAccFactor) * 0.5f;                /* +0x26c @0x41149f */
+        pRec->flCartFriction = pRec->flCartAccSpeed / (1.0f - pRec->field_26c_pad);   /* +0x270 @0x4114b0 (terminal bound) */
         pRec->flCartRotAccFric = pRec->flCartRotAccSpeed / (1.0f - pRec->flCartFrictionB); /* +0x280 @0x4114c6 */
         appLog(" Player(%d) ch<%s> ca<%s>", i,                             /* @0x44f974 @0x4114e3 */
                mStringCStr(&pRec->mstrCharacterName),
@@ -501,18 +501,18 @@ void levelObjectsCartsCameraInit(void) /* @0x411b70 */
         nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],      /* @0x411e9d */
                          anObjPos[2] - 150, 300.0f, flExtentB,
                          (int)pRec->pCartSceneObj, 300.0f, 1);
-        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[2] + 190, anObjPos[1],/* @0x411ed2 */
-                         anObjPos[2] + 300, 20.0f, flExtentB,
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
-        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[2] - 190, anObjPos[1],/* @0x411f07 */
-                         anObjPos[2] + 300, 20.0f, flExtentB,
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
-        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[2] + 240, anObjPos[1],/* @0x411f3d */
-                         anObjPos[2] - 300, 20.0f, flExtentB,
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
-        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[2] - 240, anObjPos[1],/* @0x411f72 */
-                         anObjPos[2] - 300, 20.0f, flExtentB,
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0] + 190, anObjPos[1],/* @0x411ed2 */
+                          anObjPos[2] + 300, 5.0f, flExtentB,
+                          (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0] - 190, anObjPos[1],/* @0x411f07 */
+                          anObjPos[2] + 300, 5.0f, flExtentB,
+                          (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0] + 240, anObjPos[1],/* @0x411f3d */
+                          anObjPos[2] - 300, 5.0f, flExtentB,
+                          (int)pRec->pCartSceneObj, 240.0f, 1);
+        nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0] - 240, anObjPos[1],/* @0x411f72 */
+                          anObjPos[2] - 300, 5.0f, flExtentB,
+                          (int)pRec->pCartSceneObj, 240.0f, 1);
         objTurretSetValue((WorldNode *)pRec->pSubObjC, (int)pRec->pCartSceneObj,     /* @0x411f84 */
                           1, 2);
 
