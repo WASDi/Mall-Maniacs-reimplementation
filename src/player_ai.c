@@ -16,6 +16,9 @@
 #include "quest.h"
 #include "scene_alloc.h"
 #include "gx.h"
+#include "nav.h"
+#include "gameplay.h"
+#include "obj_event.h"
 
 /* g_nPlayerAiTick @0x45894c — global AI tick, incremented once per
  * playerUpdateAI pass; drives the %5 checkout-tick decay. */
@@ -99,18 +102,18 @@ int aiControllerCtor(AiController *pCtrl, PlayerRecord *pRecord) /* @0x401090 */
 {
     pCtrl->nAiState = 0;
     pCtrl->pNavPoint = 0;
-    pCtrl->field_0c = 0;
-    pCtrl->field_10 = 0;
+    pCtrl->pNavTarget = 0;
+    pCtrl->pNavCurrent = 0;
     pCtrl->pPlayerObj = pRecord;
     pCtrl->nSavedAnimationFrame = 0;
     pCtrl->nSavedAnimationTimer = 0;
     pCtrl->bFlag50 = 0;
     pCtrl->bFlag51 = 0;
     pCtrl->bFlag52 = 0;
-    pCtrl->field_54 = 0;
-    pCtrl->field_58 = 0;
-    pCtrl->field_5c = 0;
-    pCtrl->nCtrlSpeed = (int)g_aflAiCtrlSpeed[g_nModeSel];
+    pCtrl->nStuckTicks = 0;
+    pCtrl->vStuckPos.x = 0;
+    pCtrl->vStuckPos.y = 0;
+    pCtrl->flCtrlSpeed = g_aflAiCtrlSpeed[g_nModeSel]; /* raw float copy @0x4010c9 */
     return 1;
 }
 
@@ -228,6 +231,20 @@ static const float g_fl1_3 = 1.3f;                  /* @0x44b478 */
 static const float g_flZero = 0.0f;                 /* @0x44b244 */
 static const float g_flNegOne = -1.0f;              /* @0x44b25c */
 static const float g_flOne = 1.0f;                  /* @0x44b260 */
+/* --- AI controller cluster constants (0x401160..0x402060) --- */
+static const float g_flFltMax = 3.4028235e38f;      /* @0x44b240 (0x7f7fffff) */
+static const float g_fl1210000 = 1210000.0f;        /* @0x44b23c (1100 squared) */
+static const float g_fl490000 = 490000.0f;          /* @0x44b248 (700 squared) */
+static const float g_fl700 = 700.0f;                /* @0x44b24c */
+static const float g_fl0_00125 = 0.00125f;          /* @0x44b250 (1/800) */
+static const float g_fl800 = 800.0f;                /* @0x44b254 */
+static const float g_fl2250000 = 2250000.0f;        /* @0x44b258 (1500 squared) */
+static const float g_fl2000 = 2000.0f;              /* @0x44b264 */
+static const float g_fl0_1f = 0.1f;                 /* @0x44b268 */
+static const float g_fl0_9f = 0.9f;                 /* @0x44b26c */
+static const float g_fl2 = 2.0f;                    /* @0x44b278 */
+static const float g_fl1100 = 1100.0f;              /* @0x44b27c */
+static const float g_fl1_27324 = 1.2732395f;        /* @0x44b290 (4/pi) */
 /* thrown-item cluster constants */
 static const float g_fl1200 = 1200.0f;              /* @0x44b578 */
 static const float g_fl0_999 = 0.999f;              /* @0x44b57c */
@@ -249,6 +266,709 @@ static const float g_fl1000 = 1000.0f;              /* @0x44b464 */
         }                                                                 \
     } while (0)
 
+/* --- AI decision cluster (0x4015c0..0x402060) ---
+ * Position vec2s passed through this cluster use the WorldNode.vPos order
+ * {x = vPos.x ("z" axis), y = vPos.y ("x" axis)}; NavPoint nPosZ (+0x54,
+ * config "Z") pairs with vPos.x and nPosX (+0x4c, config "X") with vPos.y.
+ * navPointFindNearestInYRange(nX = vPos.y, nZ = vPos.x, ...) per the
+ * original @0x4259d0 body. */
+
+/* commandDispatch payloads for the AI action verbs (actionCmd @0x4067c0) */
+#define SZ_ACTION_DROP_ITEM    "action drop item"      /* @0x44e1cc */
+#define SZ_ACTION_GRAB_CART    "action grab cart"      /* @0x44e1e0 */
+#define SZ_ACTION_GET_ITEM     "action get item"       /* @0x44e1f4 */
+#define SZ_ACTION_RELEASE_CART "action release cart"   /* @0x44e11c */
+
+/* sceneObjGetPosXZ @0x4099d0 — write the player's ground position to pOut:
+ * node = cart node (+0x2a4) when field_174 is set, else walk node (+0x224);
+ * pOut[0] = node->vPos.x (+0x20), pOut[1] = node->vPos.y (+0x24). */
+void sceneObjGetPosXZ(PlayerRecord *pRec, float *pOut) /* @0x4099d0 */
+{
+    WorldNode *pNode = (pRec->field_174 != 0)          /* @0x4099d0 */
+        ? (WorldNode *)pRec->pSubObjC                  /* +0x2a4 @0x4099da */
+        : (WorldNode *)pRec->pSubObjA;                 /* +0x224 @0x4099e3 */
+    pOut[0] = pNode->vPos.x;                           /* +0x20 */
+    pOut[1] = pNode->vPos.y;                           /* +0x24 */
+}
+
+/* playerGetPos @0x409a10 — write the player's walk position to pOut:
+ * with a cart (field_174), sceneNodeGetPos(pCartSceneObj, 0, buf, 2) gives
+ * the channel translation {x, y, z} and pOut[0] = (float)buf[2] (z axis =
+ * vPos.x), pOut[1] = (float)buf[0] (x axis = vPos.y); without, pOut comes
+ * straight from the pos node (+0x264) fields. */
+void playerGetPos(PlayerRecord *pRec, float *pOut) /* @0x409a10 */
+{
+    if (pRec->field_174 != 0) {                        /* @0x409a16 */
+        int anPos[3];
+        sceneNodeGetPos(pRec->pCartSceneObj, 0, anPos, 2); /* @0x431270 @0x409a36 */
+        pOut[0] = (float)anPos[2];                     /* channel z @0x409a3b */
+        pOut[1] = (float)anPos[0];                     /* channel x @0x409a4a */
+        return;
+    }
+    {
+        WorldNode *pNode = (WorldNode *)pRec->pSubObjB; /* +0x264 @0x409a66 */
+        pOut[0] = pNode->vPos.x;                       /* +0x20 */
+        pOut[1] = pNode->vPos.y;                       /* +0x24 */
+    }
+}
+
+/* sceneObjGetHeightChar @0x409a90 — ftol of nodeChannelAvgFloat over the
+ * cart node (+0x2a4) when riding, else the walk node (+0x224), keyed by
+ * the record's char channel (+0x10). Feeds the nav Y range in
+ * playerAiUpdate (floor selection). */
+int sceneObjGetHeightChar(PlayerRecord *pRec) /* @0x409a90 */
+{
+    WorldNode *pNode = (pRec->field_174 != 0)
+        ? (WorldNode *)pRec->pSubObjC                  /* @0x409a9d */
+        : (WorldNode *)pRec->pSubObjA;                 /* @0x409ab1 */
+    return (int)nodeChannelAvgFloat(pNode, (int)(size_t)pRec->pCharSceneNode); /* @0x4050c0 */
+}
+
+/* sceneObjGetHeightCart @0x409ad0 — ftol of nodeChannelAvgFloat over the
+ * cart node (+0x2a4) when riding, else the pos node (+0x264), keyed by the
+ * record's cart channel (+0x14). Cached at AiController+0x28. */
+int sceneObjGetHeightCart(PlayerRecord *pRec) /* @0x409ad0 */
+{
+    WorldNode *pNode = (pRec->field_174 != 0)
+        ? (WorldNode *)pRec->pSubObjC                  /* @0x409add */
+        : (WorldNode *)pRec->pSubObjB;                 /* @0x409af1 */
+    return (int)nodeChannelAvgFloat(pNode, (int)(size_t)pRec->pCartSceneObj); /* @0x4050c0 */
+}
+
+/* aiSteerToTarget @0x401ae0 — drive pFromPos toward pToPos: writes
+ * flInputTurn (+0x2e0, heading diff ×4/pi clamped to ±1) and flInputAccel
+ * (+0x2e4, speed by distance/facing band, clamped ±1). Uses the walk node
+ * (+0x224, turn step flAccFric +0x1f0) on foot and the cart node (+0x2a4,
+ * flCartFriction +0x270) when riding. The stuck detector (+0x54 ticks,
+ * +0x58/+0x5c position sample) raises bFlag51 and clears bFlag50 after
+ * 875 update ticks within 1500 of the sample. */
+void aiSteerToTarget(AiController *pCtrl, float *pFromPos, float *pToPos) /* @0x401ae0 */
+{
+    GxVec2 vDelta;
+    GxVec2 vPolar;
+    PlayerRecord *pRec = pCtrl->pPlayerObj;
+    WorldNode *pNode;
+    float flTurnStep;
+    float flDiff;
+    float flFactor;
+
+    gxVec2Sub(&vDelta, (const GxVec2 *)pToPos, (const GxVec2 *)pFromPos); /* @0x435020 @0x401b07 */
+    mathVec2Polar(&vPolar, &vDelta);                   /* {len, ang} @0x435060 @0x401b14 */
+
+    if (pRec->field_174 != 0) {                        /* @0x401b2b */
+        pNode = (WorldNode *)pRec->pSubObjC;           /* +0x2a4 @0x401b35 */
+        flTurnStep = pRec->flCartFriction;             /* +0x270 @0x401b3b */
+    } else {
+        pNode = (WorldNode *)pRec->pSubObjA;           /* +0x224 @0x401ba4 */
+        flTurnStep = pRec->flAccFric;                  /* +0x1f0 @0x401baa */
+    }
+    AI_WRAP_SCALEA(pNode);                             /* ±3.1415, step 6.283f @0x401b45 */
+
+    flDiff = vPolar.y - pNode->flScaleA;               /* @0x401c0d */
+    while (flDiff > g_flPiLoop) {                      /* @0x401c14..0x401c32 */
+        flDiff -= g_flTwoPiLoop;
+    }
+    while (flDiff < g_flNegPiLoop) {                   /* @0x401c34..0x401c52 */
+        flDiff += g_flTwoPiLoop;
+    }
+    pRec->flInputTurn = flDiff * g_fl1_27324;          /* ×4/pi @0x401c5d */
+    if (pRec->flInputTurn > 1.0) {                     /* @0x401c6b */
+        pRec->flInputTurn = g_flOne;
+    } else if (pRec->flInputTurn < -1.0) {             /* @0x401c8a */
+        pRec->flInputTurn = g_flNegOne;
+    }
+
+    if (vPolar.x < g_fl1100) {                         /* @0x401ca3 */
+        if (fabsf(flDiff) > g_fl2) {                   /* @0x401cb4..0x401ccf */
+            float flNodeSpeed = pNode->field_3c;       /* +0x3c @0x401b4e */
+            if (flTurnStep * pCtrl->flCtrlSpeed * g_flHalf >= flNodeSpeed) {
+                pRec->flInputAccel = -pCtrl->flCtrlSpeed; /* back off @0x401cea */
+                goto apply;
+            }
+        }
+    }
+    /* speed branch @0x401cf6 */
+    {
+        float flAbs = fabsf(flDiff);
+        if (flAbs > g_flHalfPiAi) {
+            flFactor = g_flZero;                       /* @0x401d16 */
+        } else {
+            float c = cosf(flAbs);                     /* @0x401d2d */
+            flFactor = c * c * g_fl0_9f + g_fl0_1f;    /* @0x401d33..0x401d39 */
+        }
+        if (vPolar.x < g_fl2000) {                     /* @0x401d3f */
+            pRec->flInputAccel = ((g_flOne - flFactor) * g_fl2000 + vPolar.x)
+                * pCtrl->flCtrlSpeed * flFactor
+                / ((g_fl2 - flFactor) * g_fl2000);     /* @0x401d50..0x401d77 */
+        } else {
+            pRec->flInputAccel = flFactor * pCtrl->flCtrlSpeed; /* @0x401d83 */
+        }
+    }
+apply:
+    if (pRec->flInputAccel < g_flNegOne) {             /* @0x401d90 */
+        pRec->flInputAccel = g_flNegOne;
+    } else if (pRec->flInputAccel > g_flOne) {         /* @0x401dab */
+        pRec->flInputAccel = g_flOne;
+    }
+
+    {                                                  /* stuck detector @0x401dc8 */
+        float flDx = pCtrl->vStuckPos.y - pCtrl->vSelfXZ.y;
+        float flDy = pCtrl->vStuckPos.x - pCtrl->vSelfXZ.x;
+        if (flDx * flDx + flDy * flDy < g_fl2250000) {
+            pCtrl->nStuckTicks += g_nObjUpdateTime;    /* @0x4580d0 @0x401e04 */
+        } else {
+            pCtrl->vStuckPos = pCtrl->vSelfXZ;         /* @0x401def */
+            pCtrl->nStuckTicks = 0;
+        }
+        if (pCtrl->nStuckTicks > 0x36b) {              /* 875 ticks @0x401e11 */
+            pCtrl->nStuckTicks = 0;
+            pCtrl->bFlag51 = 1;
+            pCtrl->bFlag50 = 0;
+        }
+    }
+}
+
+/* aiPathfindToTarget @0x401800 — AI waypoint movement toward pToPos
+ * ({z, x, height}): nearest NavPoint in the level Y band (±10000 on level
+ * 4, else -400/+1000), steer to it; on arrival (1210000) return 2 (or 1
+ * when already at pToPos); otherwise walk the buoy link graph via
+ * navPointPickCheapestLink, extrapolating the current waypoint by up to
+ * 800 units toward the next link. Returns 0 = steering, 1 = at pToPos,
+ * 2 = waypoint reached. */
+int aiPathfindToTarget(AiController *pCtrl, float *pFromPos, float *pToPos) /* @0x401800 */
+{
+    GxVec2 vWpt;
+    GxVec2 vNext;
+    GxVec2 vDelta;
+    GxVec2 vPolar;
+    GxVec2 vStepPolar;
+    GxVec2 vStep;
+    NavPoint *pTarget;
+    NavPoint *pNext;
+    float flDist;
+    int nYMin;
+    int nYMax;
+
+    if (g_nLevelIdx == 4) {                            /* @0x401823 */
+        nYMax = (int)pToPos[2] + 10000;                /* +0x2710 */
+        nYMin = (int)pToPos[2] - 10000;
+    } else {
+        nYMax = (int)pToPos[2] + 1000;                 /* +0x3e8 */
+        nYMin = (int)pToPos[2] - 400;                  /* 0xfffffe70 */
+    }
+    pTarget = navPointFindNearestInYRange((int)pToPos[1], (int)pToPos[0],
+                                          nYMin, nYMax); /* @0x4259d0 @0x401860 */
+
+    if (pCtrl->pNavCurrent == pTarget) {               /* @0x40186d */
+        if (pCtrl->bFlag50 == 0) {                     /* @0x401875 */
+            vWpt.x = (float)((NavPoint *)pTarget)->nPosZ;   /* +0x54 @0x4018cf */
+            vWpt.y = (float)((NavPoint *)pTarget)->nPosX;   /* +0x4c @0x4018da */
+            {
+                float flDx = pFromPos[1] - vWpt.y;
+                float flDz = pFromPos[0] - vWpt.x;
+                if (flDz * flDz + flDx * flDx < g_fl1210000) {
+                    pCtrl->bFlag50 = 1;                /* @0x401909 */
+                    return 2;                          /* waypoint reached */
+                }
+            }
+            aiSteerToTarget(pCtrl, pFromPos, &vWpt.x); /* @0x401923 */
+            return 0;
+        }
+        {                                              /* bFlag50 set @0x40187c */
+            float flDx = pFromPos[1] - pToPos[1];
+            float flDz = pFromPos[0] - pToPos[0];
+            int nArrived = (flDz * flDz + flDx * flDx < g_fl1210000);
+            aiSteerToTarget(pCtrl, pFromPos, pToPos);  /* @0x4018a9 */
+            return nArrived ? 1 : 2;                   /* @0x4018b0/0x4018bc */
+        }
+    }
+    pCtrl->bFlag50 = 0;                                /* @0x401936 */
+    if (pTarget != pCtrl->pNavTarget || pCtrl->bFlag51 != 0 ||
+        pCtrl->pNavCurrent == NULL) {                  /* @0x40193a..0x40194f */
+        pCtrl->bFlag51 = 0;                            /* @0x401ab3 */
+        pCtrl->pNavTarget = pTarget;                   /* @0x401ab7 */
+        pCtrl->pNavCurrent = pCtrl->pNavPoint;         /* +0x08 @0x401aba */
+        g_nReturnToMenu = 1;                           /* @0x45810c @0x401abf */
+        return 0;
+    }
+    vWpt.x = (float)((NavPoint *)pCtrl->pNavCurrent)->nPosZ;   /* @0x401955 */
+    vWpt.y = (float)((NavPoint *)pCtrl->pNavCurrent)->nPosX;
+    {
+        float flDx = pFromPos[1] - vWpt.y;
+        float flDz = pFromPos[0] - vWpt.x;
+        flDist = sqrtf(flDz * flDz + flDx * flDx);     /* @0x40197e */
+    }
+    if (flDist < g_fl800) {                            /* @0x401988 */
+        pNext = navPointPickCheapestLink((NavPoint *)pCtrl->pNavCurrent,
+                                         pTarget);      /* @0x425bd0 @0x40199f */
+        if (pNext != NULL) {                           /* @0x4019a7 */
+            vNext.x = (float)pNext->nPosZ;             /* @0x4019af */
+            vNext.y = (float)pNext->nPosX;
+            gxVec2Sub(&vDelta, &vNext, &vWpt);         /* @0x435020 @0x4019cc */
+            mathVec2Polar(&vPolar, &vDelta);           /* @0x435060 @0x4019d9 */
+            vStepPolar.x = g_fl800;                    /* @0x4019f7 */
+            vStepPolar.y = vPolar.y;
+            gxVec2FromPolar(&vStep, &vStepPolar);      /* @0x434fc0 @0x4019ff */
+            vWpt.x += (g_fl800 - flDist) * vStep.x * g_fl0_00125;  /* @0x401a04 */
+            vWpt.y += (g_fl800 - flDist) * vStep.y * g_fl0_00125;  /* @0x401a2a */
+        }
+    }
+    if (flDist >= g_fl700) {                           /* @0x401a44 */
+        float flDx = pFromPos[1] - vWpt.y;
+        float flDz = pFromPos[0] - vWpt.x;
+        if (flDz * flDz + flDx * flDx >= g_fl490000) {
+            aiSteerToTarget(pCtrl, pFromPos, &vWpt.x); /* @0x401a85 */
+            return 0;
+        }
+    }
+    pCtrl->pNavCurrent = navPointPickCheapestLink(     /* @0x425bd0 @0x401a9a */
+        (NavPoint *)pCtrl->pNavCurrent, pTarget);
+    return 0;
+}
+
+/* aiStateSetTargetItem @0x4015c0 — AI state 0: pick the goal. Mode 3 with
+ * the list full (+0x180 == 5) returns 0; with no spawned item
+ * (g_nCurrentItemId == 0) it targets a random NavPoint (navPointPickRandom)
+ * and returns 1. Otherwise it scans the shopping list (+0x184..+0x1a8,
+ * uncollected and positive ids), skipping objects with +0x14 == 1, and
+ * keeps the nearest by |dx|/|dy|/dist over all objGetPos occurrences
+ * (nTargetItemId +0x40 / nTargetOccurrence +0x3c). Returns 0 with no
+ * candidate, else stores the nearest NavPoint to the goal ({z, x} into
+ * +0x2c/+0x30, nPosY into +0x34, bFlag51 = 1) and returns 1. */
+int aiStateSetTargetItem(AiController *pCtrl) /* @0x4015c0 */
+{
+    PlayerRecord *pRec = pCtrl->pPlayerObj;
+    float flBest = g_flFltMax;                         /* @0x4015e7 */
+    int nBestId = 0;                                   /* EBX @0x4015d9 */
+    int nBestOcc = 0;                                  /* [ESP+0x10] @0x4015e3 */
+    GxVec2 vGoal;                                      /* {z, x} of the best occurrence */
+    int nGoalHeight = 0;
+    int nYMin;
+    int nYMax;
+    int nSlot;
+    int nId;
+    int nOcc;
+    EventObject *pObj;
+    NavPoint *pNav;
+
+    if (g_nGameMode == 3) {                            /* @0x4015f4 */
+        if (pRec->anHeldSlot[1] == 5) {                /* +0x180 @0x4015ff */
+            return 0;
+        }
+        if (g_nCurrentItemId == 0) {                   /* @0x401610 */
+            pNav = navPointPickRandom();               /* @0x425aa0 @0x401618 */
+            pCtrl->vTargetXZ.x = (float)pNav->nPosZ;   /* +0x2c @0x401620 */
+            pCtrl->vTargetXZ.y = (float)pNav->nPosX;   /* +0x30 @0x401626 */
+            pCtrl->nTargetHeight = pNav->nPosY;        /* +0x34 @0x401630 */
+            pCtrl->bFlag51 = 1;                        /* @0x40162c */
+            return 1;
+        }
+    }
+    for (nSlot = 0; nSlot < 10; nSlot++) {             /* EBP 0x184..0x1ac @0x40163d */
+        nId = pRec->anListIds[nSlot];                  /* +0x184 @0x401650 */
+        if (pRec->abListTaken[nSlot] != 0 || nId <= 0) { /* +0x1ac @0x401644 */
+            continue;
+        }
+        nOcc = 0;
+        for (pObj = objGetPos(nId, 0, &vGoal.x, &nGoalHeight); pObj != NULL;
+             pObj = objGetPos(nId, ++nOcc, &vGoal.x, &nGoalHeight)) { /* @0x40f1b0 @0x401669 */
+            float flDx;
+            float flDz;
+            float flDist;
+            if (pObj->field_14 == 1) {                 /* +0x14 @0x401679 */
+                continue;                              /* @0x401746 */
+            }
+            flDx = vGoal.y - pCtrl->vSelfXZ.y;         /* @0x401683 gxVec2Sub */
+            flDz = vGoal.x - pCtrl->vSelfXZ.x;
+            if (fabsf(flDz) >= flBest || fabsf(flDx) >= flBest) { /* @0x40169f/0x4016c8 */
+                continue;
+            }
+            flDist = sqrtf(flDz * flDz + flDx * flDx); /* @0x4016fc */
+            if (flDist >= flBest) {                    /* @0x4016fe */
+                continue;
+            }
+            flBest = flDist;                           /* @0x40170f */
+            nBestId = nId;                             /* @0x401713 */
+            nBestOcc = nOcc;                           /* [ESP+0x28] @0x40171e */
+            objGetPos(nBestId, nBestOcc, &vGoal.x, &nGoalHeight); /* @0x401722 */
+        }
+    }
+    if (flBest == g_flFltMax) {                        /* @0x40177b */
+        return 0;
+    }
+    pCtrl->nTargetItemId = nBestId;                    /* +0x40 @0x401796 */
+    pCtrl->nTargetOccurrence = nBestOcc;               /* +0x3c @0x401799 */
+    if (g_nLevelIdx == 4) {                            /* @0x40179c */
+        nYMax = nGoalHeight + 10000;
+        nYMin = nGoalHeight - 10000;
+    } else {
+        nYMax = nGoalHeight + 1000;
+        nYMin = nGoalHeight - 400;
+    }
+    pNav = navPointFindNearestInYRange((int)vGoal.y, (int)vGoal.x,
+                                       nYMin, nYMax);  /* @0x4259d0 @0x4017d9 */
+    pCtrl->vTargetXZ.x = (float)pNav->nPosZ;           /* +0x2c @0x4017e4 */
+    pCtrl->vTargetXZ.y = (float)pNav->nPosX;           /* +0x30 @0x4017ea */
+    pCtrl->nTargetHeight = pNav->nPosY;                /* +0x34 @0x4017f4 */
+    pCtrl->bFlag51 = 1;                                /* @0x4017f0 */
+    return 1;
+}
+
+/* aiStateCartAction @0x401e40 — AI state 2 ("cart action"): drop any held
+ * item ("action drop item"); else, when not already grabbing (+0x2e8 != 3)
+ * and the cart is close (playerFindCart @0x40e180), dispatch "action grab
+ * cart" and raise bFlag51; otherwise pathfind from vSelfXZ to vWalkXZ. */
+int aiStateCartAction(AiController *pCtrl) /* @0x401e40 */
+{
+    PlayerRecord *pRec = pCtrl->pPlayerObj;
+
+    if (pRec->anHeldSlot[0] != 0) {                    /* +0x17c @0x401e4d */
+        commandDispatch((int)(size_t)pRec, SZ_ACTION_DROP_ITEM); /* @0x408b60 @0x401e8f */
+        return 0;                                      /* dispatch result, AL=0 */
+    }
+    if (pRec->nActionSubstate != 3 &&                  /* +0x2e8 @0x401e5b */
+        playerFindCart(pRec) != 0) {                   /* @0x40e180 @0x401e65 */
+        commandDispatch((int)(size_t)pRec, SZ_ACTION_GRAB_CART); /* @0x401e79 */
+        pCtrl->bFlag51 = 1;                            /* @0x401e81 */
+        return 0;
+    }
+    aiPathfindToTarget(pCtrl, &pCtrl->vSelfXZ.x, &pCtrl->vWalkXZ.x); /* @0x401ea5 */
+    return 0;
+}
+
+/* aiStateGrabObject @0x401eb0 — AI state 3: mode 3 re-targets anListIds[0]
+ * while an item is spawned (+0x40). Fetches the goal item's position via
+ * objGetPos(nTargetItemId, nTargetOccurrence). When a held slot (+0x17c)
+ * already holds the target id it returns 1 (-> state 4); holding something
+ * else dispatches "action drop item" (mode 3 returns 1 instead). When
+ * blocked (playerCheckBlocked @0x40ec40) it dispatches "action get item"
+ * into the free held slot or drops, else pathfinds from vSelfXZ to the
+ * item position. Returns 1 only in the already-held / mode-3-held cases. */
+int aiStateGrabObject(AiController *pCtrl) /* @0x401eb0 */
+{
+    PlayerRecord *pRec = pCtrl->pPlayerObj;
+    GxVec2 vItem;
+    int nItemHeight;
+    int nHeld;
+    EventObject *pObj;
+
+    if (g_nGameMode == 3 && g_nCurrentItemId != 0) {   /* @0x401ec0 */
+        pCtrl->nTargetItemId = pRec->anListIds[0];     /* +0x184 @0x401eda */
+    }
+    pObj = objGetPos(pCtrl->nTargetItemId, pCtrl->nTargetOccurrence,
+                     &vItem.x, &nItemHeight);          /* @0x40f1b0 @0x401eef */
+    (void)pObj;
+
+    nHeld = pRec->anHeldSlot[0];                       /* +0x17c @0x401f01 */
+    if (nHeld == pCtrl->nTargetItemId) {               /* @0x401f04 */
+        return 1;                                      /* already holding it */
+    }
+    if (nHeld != 0) {                                  /* @0x401f08 */
+        if (g_nGameMode == 3) {                        /* @0x401f0c */
+            return 1;                                  /* @0x401f6f */
+        }
+        commandDispatch((int)(size_t)pRec, SZ_ACTION_DROP_ITEM); /* @0x401f1f */
+    }
+    if (playerCheckBlocked(pRec) != 0) {               /* @0x40ec40 @0x401f35 */
+        if (pRec->anHeldSlot[0] == 0) {                /* @0x401f4b */
+            commandDispatch((int)(size_t)pRec, SZ_ACTION_GET_ITEM); /* @0x401f7d */
+        } else {
+            commandDispatch((int)(size_t)pRec, SZ_ACTION_DROP_ITEM); /* @0x401f5f */
+        }
+        return 0;
+    }
+    aiPathfindToTarget(pCtrl, &pCtrl->vSelfXZ.x, &vItem.x); /* @0x401f98 */
+    return 0;
+}
+
+/* aiStatePutObjectInCart @0x401fb0 — AI state 4: with no held item return 1
+ * (item delivered, -> state 6); when vSelfXZ is farther than 1100 (1210000)
+ * from vWalkXZ pathfind there; else dispatch "action drop item" (drop into
+ * the cart) — returns 1 only in the empty-handed case. */
+int aiStatePutObjectInCart(AiController *pCtrl) /* @0x401fb0 */
+{
+    PlayerRecord *pRec = pCtrl->pPlayerObj;
+    float flDx;
+    float flDz;
+
+    if (pRec->anHeldSlot[0] == 0) {                    /* +0x17c @0x401fbf */
+        return 1;                                      /* @0x401fd2 */
+    }
+    flDx = pCtrl->vSelfXZ.y - pCtrl->vWalkXZ.y;        /* @0x401fd8 */
+    flDz = pCtrl->vSelfXZ.x - pCtrl->vWalkXZ.x;
+    if (flDz * flDz + flDx * flDx >= g_fl1210000) {    /* @0x401ff3 */
+        aiPathfindToTarget(pCtrl, &pCtrl->vSelfXZ.x, &pCtrl->vWalkXZ.x); /* @0x402048 */
+        return 0;
+    }
+    commandDispatch((int)(size_t)pRec, SZ_ACTION_DROP_ITEM); /* @0x402038 */
+    return 0;
+}
+
+/* aiStateReturnHome @0x402060 — AI state 7: pathfind from vWalkXZ to the
+ * checkout ("goal" object via objGetCheckoutPos @0x40f6e0); the goal height
+ * band base is 8000 on level 3 and 2000 on level 4, 0 elsewhere (passed as
+ * the raw int third element of the target {z, x, height}). Returns
+ * aiPathfindToTarget's low byte (1 = arrived). */
+int aiStateReturnHome(AiController *pCtrl) /* @0x402060 */
+{
+    struct {                                           /* {z, x, height} layout */
+        GxVec2 vXZ;
+        int nHeight;
+    } target;
+    int nRet;
+
+    objGetCheckoutPos(&target.vXZ.x);                  /* @0x40f6e0 @0x402074 */
+    target.nHeight = 0;                                /* @0x402084 */
+    if (g_nLevelIdx == 3) {                            /* @0x402079 */
+        target.nHeight = 8000;                         /* 0x1f40 */
+    } else if (g_nLevelIdx == 4) {                     /* @0x402098 */
+        target.nHeight = 2000;                         /* 0x7d0 */
+    }
+    nRet = aiPathfindToTarget(pCtrl, &pCtrl->vWalkXZ.x, &target.vXZ.x); /* @0x4020b0 */
+    return nRet;
+}
+
+/* playerAiUpdate @0x401160 — the AI decision state machine for one player
+ * (called for two players per tick from playerUpdateDispatch @0x4010e0).
+ * Refreshes the self position/height, the nearest NavPoint (stored at +0x08
+ * and published to g_pNavPointSel @0x45e480) and the walk position, then
+ * runs the per-mode state machine:
+ *  - mode 4 (Vagnrace): state 0 picks anListIds[0] via objGetPos, state 1
+ *    steers (aiSteerToTarget until 1210000, then aiPathfindToTarget with
+ *    the bFlag52 latch), state 7 returns home; states route cart handling
+ *    through aiStateCartAction.
+ *  - modes 1..3: 0 SETTARGETITEM -> 1 GOTOITEM (aiPathfindToTarget until
+ *    arrival, then 5) -> 5 RELEASECART ("action release cart" / back to 3)
+ *    -> 3 GRABOBJECT (aiStateGrabObject -> 4) -> 4 PUTOBJECTINCART
+ *    (aiStatePutObjectInCart -> 6) -> 6 (cart gate -> 0 / aiStateCartAction)
+ *    -> 7 RETURNHOME (aiStateReturnHome -> 9). Mode 3 waits for the spawn
+ *    via state 2 (random NavPoint) whenever g_nCurrentItemId is 0.
+ * Every state change logs through the 0x401590 stub (no-op in release).
+ * The tail copies the record's input channels (+0x2e0/+0x2e4) into the
+ * controller's anim-sync slots (+0x48/+0x4c). Returns 1. */
+int playerAiUpdate(AiController *pCtrl) /* @0x401160 */
+{
+    PlayerRecord *pRec;
+    GxVec2 vSelfXZ;
+    GxVec2 vWalkXZ;
+    int nYMin;
+    int nYMax;
+    int nSelfHeight;
+    int nRet;
+
+    pRec = pCtrl->pPlayerObj;                          /* @0x401171 */
+    sceneObjGetPosXZ(pRec, &vSelfXZ.x);                /* @0x4099d0 @0x401178 */
+    pCtrl->vSelfXZ = vSelfXZ;                          /* +0x14 @0x40117f */
+    nSelfHeight = sceneObjGetHeightChar(pRec);         /* @0x409a90 @0x40118a */
+    pCtrl->nSelfHeight = nSelfHeight;                  /* +0x1c @0x40118f */
+    if (g_nLevelIdx == 4) {                            /* @0x401192 */
+        nYMax = nSelfHeight + 10000;
+        nYMin = nSelfHeight - 10000;
+    } else {
+        nYMax = nSelfHeight + 1000;
+        nYMin = nSelfHeight - 400;
+    }
+    pCtrl->pNavPoint = navPointFindNearestInYRange((int)vSelfXZ.y, (int)vSelfXZ.x,
+                                                   nYMin, nYMax); /* @0x4259d0 @0x4011ca */
+    playerGetPos(pRec, &vWalkXZ.x);                    /* @0x409a10 @0x4011df */
+    pCtrl->vWalkXZ = vWalkXZ;                          /* +0x20 @0x4011e6 */
+    pCtrl->nPosNodeHeight = sceneObjGetHeightCart(pRec); /* @0x409ad0 @0x4011f5 */
+    g_pNavPointSel = (NavPoint *)pCtrl->pNavPoint;     /* @0x45e480 @0x4011fb */
+
+    if (g_nGameMode == 4) {                            /* @0x401200 */
+        switch (pCtrl->nAiState) {                     /* @0x40120e */
+        case 0:                                        /* @0x4012f6 */
+            pCtrl->nTargetItemId = pRec->anListIds[0]; /* +0x184 @0x401302 */
+            if (objGetPos(pCtrl->nTargetItemId, 0, &pCtrl->vTargetXZ.x,
+                          &pCtrl->nTargetHeight) != NULL) { /* @0x40f1b0 @0x40130c */
+                pCtrl->nAiState = 1;                   /* @0x401318 */
+                nopDebugStub();                        /* log "AIMODE_SETTARGETITEM->
+                                                          AIMODE_GOTOITEM" @0x44e180 */
+            } else {
+                pCtrl->nAiState = 7;                   /* @0x40137f */
+                nopDebugStub();                        /* "AIMODE_SETTARGETITEM->
+                                                          AIMODE_GOAL" @0x44e130 */
+            }
+            break;
+        case 1:                                        /* @0x40124b */
+            if (pRec->field_174 != 1) {                /* @0x40124d */
+                aiStateCartAction(pCtrl);              /* @0x401e40 @0x4012dd */
+                if (pCtrl->bFlag51 != 0) {             /* @0x4012e2 */
+                    pCtrl->bFlag52 = 1;                /* @0x4012ed */
+                }
+                break;
+            }
+            if (pCtrl->bFlag52 == 0) {                 /* @0x40125a */
+                aiSteerToTarget(pCtrl, &pCtrl->vWalkXZ.x, &pCtrl->vTargetXZ.x); /* @0x4012a0 */
+                if (pCtrl->bFlag51 != 0) {             /* @0x4012a5 */
+                    pCtrl->bFlag52 = 1;                /* @0x4012ac */
+                }
+                {
+                    float flDx = vWalkXZ.y - pCtrl->vTargetXZ.y;
+                    float flDz = vWalkXZ.x - pCtrl->vTargetXZ.x;
+                    if (flDz * flDz + flDx * flDx < g_fl1210000) { /* @0x4012c5 */
+                        pCtrl->nAiState = 0;           /* @0x401288 */
+                        nopDebugStub();                /* "AIMODE_GOTOITEM->
+                                                          AIMODE_RELEASECART" @0x44e1a8 */
+                    }
+                }
+                break;
+            }
+            nRet = aiPathfindToTarget(pCtrl, &pCtrl->vWalkXZ.x,
+                                      &pCtrl->vTargetXZ.x); /* @0x401268 */
+            if (nRet == 2 || nRet == 1) {              /* @0x40126d */
+                pCtrl->bFlag52 = 0;                    /* @0x40127e */
+                if (nRet == 1) {                       /* @0x40127b */
+                    pCtrl->nAiState = 0;               /* @0x401288 */
+                    nopDebugStub();                    /* "AIMODE_GOTOITEM->
+                                                          AIMODE_RELEASECART" @0x44e1a8 */
+                }
+            }
+            break;
+        case 7:                                        /* @0x401226 */
+            if (pRec->field_174 == 1) {                /* @0x401230 */
+                if (aiStateReturnHome(pCtrl) == 1) {   /* @0x402060 @0x401239 */
+                    pCtrl->nAiState = 9;               /* @0x40152f */
+                    nopDebugStub();                    /* "AIMODE_GOAL->AIMODE_END"
+                                                          @0x44e060 */
+                }
+            } else {
+                aiStateCartAction(pCtrl);              /* @0x401502 */
+            }
+            break;
+        default:                                       /* @0x401545 */
+            break;
+        }
+    } else {
+        switch (pCtrl->nAiState) {                     /* jump table @0x401564 */
+        case 0:                                        /* @0x40133c */
+            if (aiStateSetTargetItem(pCtrl) == 1) {    /* @0x4015c0 @0x40133e */
+                if (g_nGameMode == 3) {                /* @0x40134c */
+                    if (g_nCurrentItemId != 0) {       /* @0x401351 */
+                        pCtrl->nAiState = 1;           /* @0x401318 */
+                        nopDebugStub();                /* "AIMODE_SETTARGETITEM->
+                                                          AIMODE_GOTOITEM" @0x44e180 */
+                    } else {
+                        pCtrl->nAiState = 2;           /* @0x40135a */
+                        nopDebugStub();                /* "AIMODE_SETTARGETITEM->
+                                                          AIMODE_GOTORANDITEM"
+                                                          @0x44e154 */
+                    }
+                } else {
+                    pCtrl->nAiState = 1;               /* @0x401318 */
+                    nopDebugStub();                    /* @0x44e180 */
+                }
+            } else {
+                if (g_nGameMode == 3) {                /* @0x40136b */
+                    if (pRec->anHeldSlot[1] != 5) {    /* +0x180 @0x401372 */
+                        break;                         /* wait @0x401545 */
+                    }
+                }
+                pCtrl->nAiState = 7;                   /* @0x40137f */
+                nopDebugStub();                        /* "AIMODE_SETTARGETITEM->
+                                                          AIMODE_GOAL" @0x44e130 */
+            }
+            break;
+        case 1:                                        /* @0x401390 */
+            if (g_nGameMode == 3 && pRec->anHeldSlot[1] == 5) { /* @0x40139a */
+                pCtrl->nAiState = 0;                   /* @0x4013a4 */
+                break;
+            }
+            if (pRec->field_174 != 1) {                /* @0x4013b2 */
+                aiStateCartAction(pCtrl);              /* @0x401500 */
+                break;
+            }
+            nRet = aiPathfindToTarget(pCtrl, &pCtrl->vWalkXZ.x,
+                                      &pCtrl->vTargetXZ.x); /* @0x4013c6 */
+            if (nRet == 2 || nRet == 1) {              /* @0x4013cb */
+                pCtrl->nAiState = 5;                   /* @0x4013d9 */
+                nopDebugStub();                        /* "AIMODE_GOTOITEM->
+                                                          AIMODE_RELEASECART"
+                                                          @0x44e1a8 */
+            }
+            break;
+        case 2:                                        /* @0x4013e6 */
+            if (g_nGameMode == 3 && pRec->anHeldSlot[1] == 5) { /* @0x4013eb */
+                pCtrl->nAiState = 0;                   /* @0x4013f6 */
+                break;
+            }
+            if (g_nCurrentItemId != 0) {               /* @0x401402 */
+                pCtrl->nAiState = 0;                   /* @0x40140b */
+                break;
+            }
+            if (pRec->field_174 == 1) {                /* @0x401419 */
+                aiPathfindToTarget(pCtrl, &pCtrl->vWalkXZ.x,
+                                   &pCtrl->vTargetXZ.x); /* @0x40142d */
+                break;
+            }
+            aiStateCartAction(pCtrl);                  /* @0x401500 */
+            break;
+        case 3:                                        /* @0x401464 */
+            if (g_nGameMode == 3 && pRec->anHeldSlot[1] == 5) { /* @0x401469 */
+                pCtrl->nAiState = 0;                   /* @0x401474 */
+                break;
+            }
+            if (aiStateGrabObject(pCtrl) == 1) {       /* @0x401eb0 @0x401482 */
+                pCtrl->nAiState = 4;                   /* @0x40148b */
+                nopDebugStub();                        /* "AIMODE_GRABOBJECT->
+                                                          AIMODE_PUTOBJECTINCART"
+                                                          @0x44e0c8 */
+            } else if (g_nGameMode == 3 && g_nCurrentItemId == 0) { /* @0x40149c */
+                pCtrl->nAiState = 0;                   /* @0x4014b6 */
+            }
+            break;
+        case 4:                                        /* @0x4014c2 */
+            if (g_nGameMode == 3 && pRec->anHeldSlot[1] == 5) { /* @0x4014c7 */
+                pCtrl->nAiState = 0;                   /* @0x4014d2 */
+                break;
+            }
+            if (aiStatePutObjectInCart(pCtrl) == 1) {  /* @0x401fb0 @0x4014dd */
+                pCtrl->nAiState = 6;                   /* @0x4014e6 */
+                nopDebugStub();                        /* "AIMODE_PUTOBJECTINCART->
+                                                          AIMODE_GRABCART"
+                                                          @0x44e0a0 */
+            }
+            break;
+        case 5:                                        /* @0x401437 */
+            if (pRec->field_174 != 0) {                /* @0x401439 */
+                commandDispatch((int)(size_t)pRec, SZ_ACTION_RELEASE_CART); /* @0x401449 */
+                break;
+            }
+            pCtrl->nAiState = 3;                       /* @0x401453 */
+            nopDebugStub();                            /* "AIMODE_RELEASECART->
+                                                          AIMODE_GRABOBJECT"
+                                                          @0x44e0f4 */
+            break;
+        case 6:                                        /* @0x4014f4 */
+            if (pRec->field_174 != 0) {                /* @0x4014f6 */
+                pCtrl->nAiState = 0;                   /* @0x401509 */
+                nopDebugStub();                        /* "AIMODE_GRABCART->
+                                                          AIMODE_SETTARGETITEM"
+                                                          @0x44e078 */
+            } else {
+                aiStateCartAction(pCtrl);              /* @0x401502 */
+            }
+            break;
+        case 7:                                        /* @0x401517 */
+            if (pRec->field_174 != 1) {                /* @0x40151f */
+                aiStateCartAction(pCtrl);              /* @0x401502 */
+                break;
+            }
+            if (aiStateReturnHome(pCtrl) == 1) {       /* @0x402060 @0x401526 */
+                pCtrl->nAiState = 9;                   /* @0x40152f */
+                nopDebugStub();                        /* "AIMODE_GOAL->AIMODE_END"
+                                                          @0x44e060 */
+            }
+            break;
+        default:                                       /* @0x401545 */
+            break;
+        }
+    }
+
+    memcpy(&pCtrl->nSavedAnimationFrame, &pRec->flInputTurn, 4);  /* +0x2e0 -> +0x48 @0x401548 */
+    memcpy(&pCtrl->nSavedAnimationTimer, &pRec->flInputAccel, 4); /* +0x2e4 -> +0x4c @0x401551 */
+    return 1;
+}
 /* aiTurnDiff — shared body of the three "aim at" helpers: wrap pNode's
  * flScaleA into ±3.1415 (AI_WRAP_SCALEA), relax the difference into ±pi
  * (g_flPiLoop @0x44b29c / g_flNegPiLoop @0x44b294, step g_flTwoPiLoop
@@ -468,7 +1188,7 @@ EventObject *playerFindNearestTarget(PlayerRecord *pRec) /* @0x40ed10 */
         }
         nItemId = pObj->nId;                        /* +0x08 @0x40edae */
         if (pRec->nControlType != 2 && nItemId == 0x1f) {    /* burger @0x40edae */
-            if (pObj->flHeightA > flAvgFront - g_fl1500 &&   /* +0x40 @0x40edb4 */
+            if (flAvgFront > pObj->flHeightA - g_fl1500 &&   /* @0x40edb4: NOT(flAvgFront <= h-1500) */
                 flAvgFront < pObj->flHeightA + g_fl1500) {   /* @0x40edcb */
                 flDz = (float)nWalkZ - pObj->flOriginX;   /* +0x38 @0x40ede0 */
                 flDy = (float)nWalkX - pObj->flOriginZ;   /* +0x3c @0x40ede7 */
@@ -530,9 +1250,11 @@ EventObject *playerFindNearestTarget(PlayerRecord *pRec) /* @0x40ed10 */
  * (class mesh 8, y=300, orient zeroed), EventObject removed from the hash.
  * Backref path (item +0x14 set, +0x24 thrown record): held slot = id, +0x40
  * = the thrown mesh, which is detached, hashed out, freed. Default path:
- * held = id, mesh allocated from the per-id table @0x4583b8 (ids <= 0x1e);
- * mode 3 resets g_nCurrentItemId (+0x10 log call) and pings peers
- * (server 0x20 / client 0x3e). */
+ * held = id, mesh = g_apLevelItemSlots[id-1].nMeshId — the SceneObjTypeDef*
+ * from levelSetup's items[%d]/mesh lookup (original read [id*0x2c+0x4583b8]
+ * == slot[id-1].nMeshId @0x4583e4+(id-1)*0x2c, ids <= 0x1e); mode 3 resets
+ * g_nCurrentItemId (+0x10 log call) and pings peers (server 0x20 / client
+ * 0x3e). */
 int playerAiGrabItem(PlayerRecord *pRec) /* @0x40ea20 */
 {
     EventObject *pObj;
@@ -577,8 +1299,8 @@ int playerAiGrabItem(PlayerRecord *pRec) /* @0x40ea20 */
     nItemId = pObj->nId;                                /* +0x08 @0x40eb78 */
     if (nItemId <= 0x1e) {                              /* @0x40eb7b */
         pRec->pGrabSceneObj = (SceneNode *)sceneryObjAlloc(  /* @0x430200 @0x40eba3 */
-            pRec->pCharSceneObj, nItemId * 5, 8, 0, 0, 300, 0, 0,
-            &g_apGrabbMesh[nItemId]);                  /* 0x2c-stride table @0x4583b8 */
+            pRec->pCharSceneObj, 8, 0, 300, 0, 0, 0, 0,
+            (void *)g_apLevelItemSlots[nItemId - 1].nMeshId); /* slot[id-1].nMeshId @0x4583b8+id*0x2c */
     }
     if (g_nGameMode == 3) {                             /* @0x40ebae */
         g_nCurrentItemId = 0;                           /* @0x458128 @0x40ebbe */

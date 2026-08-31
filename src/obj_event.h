@@ -61,9 +61,9 @@ typedef struct EventObject {
 
 #define OBJ_HASH_BUCKETS 0xff
 
-/* g_apGrabbMesh @0x4583b8 — SceneObjTypeDef table indexed by world item id
- * (0x2c-byte stride: index = id * 11 in the original dword addressing). */
-extern SceneObjTypeDef g_apGrabbMesh[31];           /* @0x4583b8 */
+/* Pickup-mesh reads at 0x4583b8 + id*0x2c (playerAiGrabItem @0x40eb89,
+ * playerGrabCart @0x40e9eb) alias g_apLevelItemSlots[id-1].nMeshId
+ * @0x4583e4+(id-1)*0x2c (see level.h) — no separate table exists. */
 
 /* objHashRemoveFree @0x414990 — unlink the EventObject from its id-hash
  * bucket (bucket head, +0x48 next and +0x4c prev links), then objHashDtor
@@ -80,6 +80,14 @@ EventObject *objFindById(int nId, int nIndex);
  * the id-hash chain, or NULL when the chain ends or the next object has a
  * different id. */
 EventObject *objHashNextSame(EventObject *pObj);
+
+/* objGetPos @0x40f1b0 — objFindById(nId, nOccurrence) + origin (+0x38/+0x3c)
+ * and floored +0x40 height out; used by the AI controller cluster and
+ * gameObjectUpdate. */
+EventObject *objGetPos(int nId, int nOccurrence, float *pOutXZ, int *pOutHeight);
+
+/* objGetCheckoutPos @0x40f6e0 — position of the "goal" checkout object. */
+void objGetCheckoutPos(float *pOutPos);
 
 /* objContainsPoint @0x414bb0 — 2D point-in-zone test over the polygon
  * line list: ray-casts a horizontal line at the point, finds the closest

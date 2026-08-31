@@ -29,11 +29,11 @@ int g_nObjHashInit;                                 /* @0x4598fc */
 
 static const float g_flHalfPi = 1.5707964f;  /* @0x44b270 (bytes DB 0F C9 3F) */
 
-/* g_apGrabbMesh @0x4583b8 — SceneObjTypeDef table indexed by world item
- * id (0x2c-byte stride, ids 1..0x1e), read by playerAiGrabItem.
- * TODO: filled by the object loader (not yet decoded); stays zeroed
- * so pickups allocate a sub-channel-less mesh placeholder. */
-SceneObjTypeDef g_apGrabbMesh[31];                 /* @0x4583b8 */
+/* Note: the original pickup-mesh reads at 0x4583b8 + id*0x2c
+ * (playerAiGrabItem @0x40eb89, playerGrabCart @0x40e9eb) alias
+ * g_apLevelItemSlots[id-1].nMeshId @0x4583e4+(id-1)*0x2c — the
+ * SceneObjTypeDef* written by levelSetup from items[%d]/mesh. There is no
+ * separate grabb-mesh table. */
 
 /* objFindById @0x414a90 — bucket = nId % 0xff; walk the +0x48 chain, walk the +0x48 chain,
  * match +0x08 == nId; the (nIndex+1)-th match is returned. The bucket
@@ -86,6 +86,39 @@ EventObject *objFindByIdInRange(int nIdMin, int nIdMax, int nIndex) /* @0x414af0
         }
     }
     return NULL;                                       /* @0x414b57 */
+}
+
+/* objGetPos @0x40f1b0 — objFindById lookup; writes the EventObject origin
+ * (+0x38/+0x3c, the {vPos.x, vPos.y} axes) to pOutXZ and the floored
+ * +0x40 height to *pOutHeight. Returns the EventObject or NULL. Used by
+ * playerAiUpdate (mode 4), aiStateSetTargetItem and aiStateGrabObject. */
+EventObject *objGetPos(int nId, int nOccurrence, float *pOutXZ, int *pOutHeight) /* @0x40f1b0 */
+{
+    EventObject *pObj = objFindById(nId, nOccurrence); /* @0x414a90 @0x40f1bb */
+
+    if (pObj != NULL) {
+        pOutXZ[0] = pObj->flOriginX;                   /* +0x38 @0x40f1c9 */
+        pOutXZ[1] = pObj->flOriginZ;                   /* +0x3c @0x40f1d2 */
+        *pOutHeight = (int)pObj->flHeightA;            /* ftol +0x40 @0x40f1db */
+        return pObj;                                   /* @0x40f1e6 */
+    }
+    return NULL;                                       /* @0x40f1ea */
+}
+
+/* objGetCheckoutPos @0x40f6e0 — objFindById("goal", 0) and write +0x38/+0x3c
+ * (the checkout EventObject position, {z, x} axes) to pOutPos; 0,0 when the
+ * checkout object is missing. Used by aiStateReturnHome. */
+void objGetCheckoutPos(float *pOutPos) /* @0x40f6e0 */
+{
+    EventObject *pObj = objFindById(0x6C6F6767, 0);    /* *(int*)"goal" @0x44f4e4 @0x40f6e5 */
+
+    if (pObj != NULL) {
+        pOutPos[0] = pObj->flOriginX;                  /* +0x38 @0x40f6ea */
+        pOutPos[1] = pObj->flOriginZ;                  /* +0x3c @0x40f6ef */
+        return;
+    }
+    pOutPos[0] = 0.0f;
+    pOutPos[1] = 0.0f;
 }
 
 /* objHashNextSame @0x414a40 — next EventObject with the same 4-byte id in

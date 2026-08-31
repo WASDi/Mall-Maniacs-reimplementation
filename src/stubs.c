@@ -82,15 +82,6 @@ void consoleHandleKey(int nKey) /* @0x4086e0 */
 }
 
 
-/* playerAiUpdate @0x401160 — the original AI state machine needs world
- * objects, nav points, item rules, and player commands not reconstructed yet.
- * The dispatcher preserves its scheduling contract while this safe TODO keeps
- * active AI records unchanged. */
-void playerAiUpdate(AiController *pCtrl)
-{
-    (void)pCtrl;
-}
-
 /* movieFrameUpdate @0x40af80 — records or replays per-player input against
  * the original config-node database. The offline game has neither movie data
  * nor config-node ownership yet, so this safe TODO preserves idle playback. */

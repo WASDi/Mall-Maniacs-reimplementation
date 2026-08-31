@@ -15,31 +15,32 @@ struct PlayerRecord;
 typedef struct AiController {
     struct PlayerRecord *pPlayerObj; /* +0x00 back-pointer to the record (ctor arg) */
     int nAiState;                    /* +0x04 state-machine state */
-    void *pNavPoint;                 /* +0x08 nav-point search result (0x40f1b0) */
-    int field_0c;                    /* +0x0c */
-    int field_10;                    /* +0x10 */
-    float field_14;                  /* +0x14 float consumed by playerAiUpdate */
-    float field_18;                  /* +0x18 float */
-    int field_1c;                    /* +0x1c */
-    int field_20;                    /* +0x20 vec2 out of 0x409a10 */
-    int field_24;                    /* +0x24 */
-    int field_28;                    /* +0x28 result of 0x409ad0 */
-    int field_2c;                    /* +0x2c vec2 (target pos for 0x401800/0x401ae0) */
-    int field_30;                    /* +0x30 */
-    int field_34;                    /* +0x34 vec2 out of 0x40f1b0 */
-    int field_38;                    /* +0x38 */
-    int field_3c;                    /* +0x3c */
-    int field_40;                    /* +0x40 list id stored by the 0x40f1b0 search */
-    int nCtrlSpeed;                  /* +0x44 g_aflAiCtrlSpeed[g_nModeSel] (difficulty) */
+    void *pNavPoint;                 /* +0x08 nav point nearest to the player
+                                      * (navPointFindNearestInYRange of the
+                                      * self XZ/height, refreshed per update) */
+    void *pNavTarget;                /* +0x0c nav point of the current goal
+                                      * (aiStateSetTargetItem/aiPathfindToTarget) */
+    void *pNavCurrent;               /* +0x10 current waypoint along the link graph */
+    GxVec2 vSelfXZ;                  /* +0x14 sceneObjGetPosXZ (vPos {z, x}) */
+    int nSelfHeight;                 /* +0x1c walk-node channel height, ftol (0x409a90) */
+    GxVec2 vWalkXZ;                  /* +0x20 playerGetPos (+0x409a10) {z, x} */
+    int nPosNodeHeight;              /* +0x28 nodeChannelAvgFloat(pos node, cart key) ftol */
+    GxVec2 vTargetXZ;                /* +0x2c goal {z, x} (aiStateSetTargetItem /
+                                      * mode-4 objGetPos / objGetCheckoutPos) */
+    int nTargetHeight;               /* +0x34 goal nav Y band base */
+    int field_38;                    /* +0x38 unused */
+    int nTargetOccurrence;           /* +0x3c objGetPos occurrence of the goal item */
+    int nTargetItemId;               /* +0x40 goal item id */
+    float flCtrlSpeed;               /* +0x44 g_aflAiCtrlSpeed[g_nModeSel] copied
+                                      * raw (aiControllerCtor @0x4010c9) */
     int nSavedAnimationFrame;        /* +0x48 saved animation frame (sync) */
     int nSavedAnimationTimer;        /* +0x4c saved animation timer (sync) */
-    unsigned char bFlag50;           /* +0x50 */
-    unsigned char bFlag51;           /* +0x51 */
-    unsigned char bFlag52;           /* +0x52 */
+    unsigned char bFlag50;           /* +0x50 waypoint reached (aiPathfindToTarget) */
+    unsigned char bFlag51;           /* +0x51 stuck 875-tick escape / action request */
+    unsigned char bFlag52;           /* +0x52 mode-4 steering latch */
     unsigned char _pad53;            /* +0x53 */
-    int field_54;                    /* +0x54 */
-    int field_58;                    /* +0x58 */
-    int field_5c;                    /* +0x5c */
+    int nStuckTicks;                 /* +0x54 stuck counter (g_nObjUpdateTime units) */
+    GxVec2 vStuckPos;                /* +0x58 last stuck-check position sample */
 } AiController;                      /* 0x60 */
 
 typedef char AiControllerSizeMustBe0x60[(sizeof(AiController) == 0x60) ? 1 : -1];
@@ -224,10 +225,7 @@ typedef char ThrownItemSizeMustBe0x30[(sizeof(ThrownItem) == 0x30) ? 1 : -1];
 #include "player_camera.h"
 #include "player_physics.h"
 
-/* playerAiUpdate is a deferred stub (stubs.h) but historically declared
- * here for the AI dispatch. Keep forward decl for callers that only
- * include player.h. */
-struct AiController;
-void playerAiUpdate(struct AiController *pCtrl);       /* @0x401160 — stub in stubs.h */
+/* playerAiUpdate @0x401160 — the AI decision state machine; implemented in
+ * player_ai.c and declared there (see player_ai.h). */
 
 #endif /* PLAYER_H */

@@ -29,7 +29,6 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
  * and level startup scripts' "eload <file>.eo" to eloadCmd (src/obj_event.c). */
 void unloadGameWorld(void);                                  /* gameplay teardown */
 unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand); /* @0x408b60 */
-void playerAiUpdate(AiController *pCtrl);                    /* @0x401160 */
 void movieFrameUpdate(void);                                 /* @0x40af80 */
 void netGameUpdate(void);                                    /* @0x414fa0 */
 void zoneConnUpdateCulling(void);                            /* @0x42b8f0 */

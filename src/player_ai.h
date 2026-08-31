@@ -18,6 +18,22 @@ extern const float g_aflAiCtrlSpeed[3];/* @0x44b230 */
  * MCDMAN burger delivery (phase 0xa/0xb) and the input-impulse damping. */
 void playerUpdateAI(void);                            /* @0x40b510 */
 
+/* AI decision cluster (0x4015c0..0x402060) — implemented in player_ai.c */
+int  playerAiUpdate(struct AiController *pCtrl);                    /* @0x401160 */
+int  aiPathfindToTarget(struct AiController *pCtrl, float *pFromPos,
+                        float *pToPos);                             /* @0x401800 */
+void aiSteerToTarget(struct AiController *pCtrl, float *pFromPos,
+                     float *pToPos);                                /* @0x401ae0 */
+int  aiStateSetTargetItem(struct AiController *pCtrl);              /* @0x4015c0 */
+int  aiStateCartAction(struct AiController *pCtrl);                 /* @0x401e40 */
+int  aiStateGrabObject(struct AiController *pCtrl);                 /* @0x401eb0 */
+int  aiStatePutObjectInCart(struct AiController *pCtrl);            /* @0x401fb0 */
+int  aiStateReturnHome(struct AiController *pCtrl);                 /* @0x402060 */
+void sceneObjGetPosXZ(struct PlayerRecord *pRec, float *pOut);      /* @0x4099d0 */
+void playerGetPos(struct PlayerRecord *pRec, float *pOut);          /* @0x409a10 */
+int  sceneObjGetHeightChar(struct PlayerRecord *pRec);              /* @0x409a90 */
+int  sceneObjGetHeightCart(struct PlayerRecord *pRec);              /* @0x409ad0 */
+
 /* AI movement / pickup cluster (0x40e180..0x40f760) */
 int playerFindCart(PlayerRecord *pRec);                             /* @0x40e180 */
 int aiStateCartApproach(PlayerRecord *pRec, int *pAnimState);        /* @0x40e1d0 */
