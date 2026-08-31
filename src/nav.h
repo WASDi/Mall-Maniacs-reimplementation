@@ -39,6 +39,8 @@ extern NavPoint *g_pNavPointHead;          /* @0x45d4d0 */
 extern NavPoint *g_pNavPointTail;          /* @0x45d4d4 */
 extern int   g_nNavPointCount;             /* @0x45d4d8 */
 extern NavPoint *g_pNavPointSel;           /* @0x45e480 editor selection (deferred) */
+extern void *g_pEditorHover;               /* @0x45e498 editor hover node (cleared by roundTeardown) */
+extern void *g_pEditorDrag;                /* @0x45e49c editor drag node (cleared by roundTeardown) */
 
 /* AI nav edges (0x3c AiNavEdge records, see zone.h). */
 void aiNavEdgeCtor(AiNavEdge *pEdge, int nV0x, int nV0y, int nV0z,

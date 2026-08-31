@@ -844,6 +844,23 @@ void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount) /*
     pGrid->nColsFilled++;                                 /* +0x08 @0x42b0a8 */
 }
 
+/* sceneDetailGridFree @0x42b190 — release the grid's three pool buffers
+ * (pCells +0x14, pRowBuf +0x18, pColScales +0x1c) via memPoolFree pool 0.
+ * The SceneDetailGrid record itself is freed by the caller
+ * (roundTeardown @0x40abcf). */
+void sceneDetailGridFree(SceneDetailGrid *pGrid) /* @0x42b190 */
+{
+    if (pGrid->pCells != NULL) {                     /* +0x14 @0x42b194 */
+        memPoolFree(0, pGrid->pCells);               /* @0x42b199 */
+    }
+    if (pGrid->pRowBuf != NULL) {                    /* +0x18 @0x42b19f */
+        memPoolFree(0, pGrid->pRowBuf);              /* @0x42b1a4 */
+    }
+    if (pGrid->pColScales != NULL) {                 /* +0x1c @0x42b1ad */
+        memPoolFree(0, pGrid->pColScales);           /* @0x42b1b2 */
+    }
+}
+
 /* sceneObjSetClassMesh @0x430db0 — re-parent a scene object to a class mesh
  * node. pClassNode == 0 -> g_rootNode. nMode low nibble 3 unlinks the
  * object from its old parent (obj+4) and relinks it into pClassNode's

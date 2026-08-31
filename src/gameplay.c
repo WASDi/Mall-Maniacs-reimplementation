@@ -4,6 +4,7 @@
 #include "gameplay.h"
 #include "anim.h"
 #include "config.h"
+#include "font.h"
 #include "gx.h"
 #include "hud.h"
 #include "input.h"
@@ -11,11 +12,13 @@
 #include "level0.h"
 #include "levelselect.h"
 #include "menu.h"
+#include "nav.h"
 #include "obj.h"
 #include "player.h"
 #include "pool.h"
 #include "quest.h"
 #include "scene.h"
+#include "scene_render.h"
 #include "scene_text.h"
 #include "sen.h"
 #include "sound.h"
@@ -606,11 +609,151 @@ int runCmd(int nContext, LPCSTR pszArgs)
     return 0;
 }
 
+/* roundTeardown @0x40aa10 — round-end teardown, called from killCmd
+ * @0x407870 and WinMain @0x4160a0. Verified 2026-08-31 against the full
+ * disassembly 0x40aa10..0x40ad5e. Sequence: g_bGameActive gate (0 -> log +
+ * return, @0x44f440), netExit @0x414f60, mciStopCdaudio @0x416c80, free
+ * every SndEmitter (g_pSndEmitterHead @0x45e5f0, next +0x04) +
+ * sndShutdown @0x437cb0, free every ZoneConn (g_pZoneConnHead @0x45e5e8,
+ * toward-tail link +0x04) via zoneConnUnlink @0x42b890, release the HUD
+ * flingbjorn texture (memPoolFree of g_nTexHudFlingbjorn @0x458348) +
+ * fontPoolDestroy @0x408fc0, per-level director Cleanup dispatch (jump
+ * table @0x40ad60 on g_nLevelIdx; L1..L4 remain stubs), free each player
+ * record's three WorldNodes pSubObjA/B/C (+0x224/+0x264/+0x2a4) via
+ * objDtor @0x402ab0, free the thrown-item list (g_pThrownItemHead
+ * @0x45896c via thrownItemFree @0x40f8d0), the quest list (g_pQuestHead
+ * @0x458978 via questRecordDtor @0x40ff50) and the scene detail grid
+ * (g_pSceneDetailGrid @0x45838c via sceneDetailGridFree @0x42b190), free
+ * the 11 per-record AnmSets (apAnmSets +0x2a8..+0x2d0) via anmSetFree
+ * @0x434500, then sceneTextAnimClose @0x434bf0, scenNameTableFree
+ * @0x431e00, sceneSystemClose @0x42f180, zoneWallListFree @0x42a150, the
+ * NavPoint list (navPointListGetHead @0x425ad0 + navPointListFreeAll
+ * @0x4257a0), objHashFreeAll @0x414950, winmmRestoreTimerRes @0x40e030,
+ * memPoolSystemShutdown @0x419bb0, and finally clears the editor/nav
+ * selection slots 0x45e480/0x45e498/0x45e49c. The inter-block nopDebugStub
+ * logs (@0x44f42c..0x44f3c0) are no-ops. */
+void roundTeardown(void) /* @0x40aa10 */
+{
+    SndEmitter *pEmitter;
+    SndEmitter *pNextEmitter;
+    ZoneConn *pConn;
+    ZoneConn *pNextConn;
+    ThrownItem *pItem;
+    ThrownItem *pNextItem;
+    QuestRecord *pRec;
+    QuestRecord *pNextRec;
+    NavPoint *pNavHead;
+    int i;
+    int j;
+
+    if (g_bGameActive == 0) {                        /* @0x40aa18 */
+        nopDebugStub();                              /* @0x44f440 @0x40aa1c */
+        return;                                      /* @0x40aa2b */
+    }
+    g_bGameActive = 0;                               /* @0x4580f8 @0x40aa2e */
+    netExit();                                       /* @0x414f60 @0x40aa34 */
+    mciStopCdaudio();                                /* @0x416c80 @0x40aa39 */
+    for (pEmitter = g_pSndEmitterHead; pEmitter != NULL; /* @0x40aa3e */
+         pEmitter = pNextEmitter) {
+        pNextEmitter = pEmitter->pPrev;              /* +0x04 @0x40aa48 */
+        sndEmitterFree(pEmitter);                    /* @0x42bec0 @0x40aa51 */
+        memFreeDirect(pEmitter);                     /* @0x43dd37 @0x40aa57 */
+    }
+    g_pSndEmitterHead = NULL;                        /* @0x45e5f0 @0x40aa65 */
+    g_pSndEmitterTail = NULL;                        /* @0x45e5f4 @0x40aa6b */
+    sndShutdown();                                   /* @0x437cb0 @0x40aa71 */
+    for (pConn = (ZoneConn *)g_pZoneConnHead; pConn != NULL; /* @0x40aa76 */
+         pConn = pNextConn) {
+        pNextConn = pConn->pPrev;                    /* +0x04 @0x40aa80 */
+        zoneConnUnlink(pConn);                       /* @0x42b890 @0x40aa89 */
+        memFreeDirect(pConn);                        /* @0x43dd37 @0x40aa8f */
+    }
+    g_pZoneConnHead = NULL;                          /* @0x45e5e8 @0x40aaa2 */
+    g_pZoneConnTail = NULL;                          /* @0x45e5ec @0x40aaaa */
+    memPoolFree(0, (void *)(size_t)g_nTexHudFlingbjorn); /* @0x419a60 @0x40aab0 */
+    fontPoolDestroy();                               /* @0x408fc0 @0x40aab8 */
+    switch (g_nLevelIdx) {                           /* @0x458100 @0x40aabd, jump table @0x40ad60 */
+    case 0: levelEventDirector_L0_Cleanup(); break;  /* @0x416f70 @0x40aace */
+    case 1: levelEventDirector_L1_Cleanup(); break;  /* @0x417860 @0x40aad5 */
+    case 2: levelEventDirector_L2_Cleanup(); break;  /* @0x417fa0 @0x40aadc */
+    case 3: levelEventDirector_L3_Cleanup(); break;  /* @0x4189d0 @0x40aae3 */
+    case 4: levelEventDirector_L4_Cleanup(); break;  /* @0x419240 @0x40aaea */
+    }
+    nopDebugStub();                                  /* @0x44f42c @0x40aaf6 */
+    for (i = 0; i < 8; i++) {                        /* ESI 0x456474..0x458014 @0x40aafe */
+        PlayerRecord *pRecPlayer = &g_playerRecords[i];
+        if (pRecPlayer->pSubObjA != NULL) {          /* +0x224 @0x40ab03 */
+            objDtor((WorldNode *)pRecPlayer->pSubObjA);       /* @0x402ab0 @0x40ab0c */
+            memFreeDirect(pRecPlayer->pSubObjA);               /* @0x43dd37 @0x40ab12 */
+        }
+        pRecPlayer->pSubObjA = NULL;                 /* @0x40ab1a */
+        if (pRecPlayer->pSubObjB != NULL) {          /* +0x264 @0x40ab1d */
+            objDtor((WorldNode *)pRecPlayer->pSubObjB);       /* @0x40ab25 */
+            memFreeDirect(pRecPlayer->pSubObjB);              /* @0x40ab2b */
+        }
+        pRecPlayer->pSubObjB = NULL;                 /* @0x40ab33 */
+        if (pRecPlayer->pSubObjC != NULL) {          /* +0x2a4 @0x40ab35 */
+            objDtor((WorldNode *)pRecPlayer->pSubObjC);       /* @0x40ab3e */
+            memFreeDirect(pRecPlayer->pSubObjC);              /* @0x40ab44 */
+        }
+        pRecPlayer->pSubObjC = NULL;                 /* @0x40ab4c */
+    }
+    for (pItem = g_pThrownItemHead; pItem != NULL;   /* @0x40ab5d */
+         pItem = pNextItem) {
+        pNextItem = pItem->pNext;                    /* +0x04 @0x40ab67 */
+        thrownItemFree(pItem);                       /* @0x40f8d0 @0x40ab70 */
+        memFreeDirect(pItem);                        /* @0x43dd37 @0x40ab76 */
+    }
+    g_pThrownItemHead = NULL;                        /* @0x45896c @0x40ab8a */
+    g_pThrownItemTail = NULL;                        /* @0x458970 @0x40ab92 */
+    for (pRec = g_pQuestHead; pRec != NULL;          /* @0x40ab84 */
+         pRec = pNextRec) {
+        pNextRec = pRec->pNext;                      /* @0x40ab9a */
+        questRecordDtor(pRec);                       /* @0x40ff50 @0x40aba3 */
+        memFreeDirect(pRec);                         /* @0x43dd37 @0x40aba9 */
+    }
+    g_pQuestHead = NULL;                             /* @0x458978 @0x40abbd */
+    g_pQuestTail = NULL;                             /* @0x45897c @0x40abc5 */
+    if (g_pSceneDetailGrid != NULL) {                /* @0x45838c @0x40abcb */
+        sceneDetailGridFree((SceneDetailGrid *)g_pSceneDetailGrid); /* @0x42b190 @0x40abcf */
+        memFreeDirect(g_pSceneDetailGrid);           /* @0x43dd37 @0x40abd5 */
+    }
+    nopDebugStub();                                  /* @0x44f41c @0x40abdd */
+    for (i = 0; i < 8; i++) {                        /* ESI 0x4564d4..0x458074 @0x40abec */
+        for (j = 0; j < 11; j++) {                   /* apAnmSets +0x2a8..+0x2d0 @0x40abf1 */
+            if (g_playerRecords[i].apAnmSets[j] != NULL) {
+                anmSetFree(g_playerRecords[i].apAnmSets[j]);   /* @0x434500 @0x40abf9 */
+            }
+        }
+    }
+    sceneTextAnimClose();                            /* @0x434bf0 @0x40acb2 */
+    nopDebugStub();                                  /* @0x44f40c @0x40acb7 */
+    scenNameTableFree();                             /* @0x431e00 @0x40acc3 */
+    nopDebugStub();                                  /* @0x44f3fc @0x40acc8 */
+    sceneSystemClose();                              /* @0x42f180 @0x40acd4 */
+    nopDebugStub();                                  /* @0x44f3ec @0x40acde */
+    zoneWallListFree();                              /* @0x42a150 @0x40ace5 */
+    nopDebugStub();                                  /* @0x44f3e4 @0x40acea */
+    pNavHead = navPointListGetHead();                /* @0x425ad0 @0x40acf9 */
+    if (pNavHead != NULL) {                          /* @0x40ad00 */
+        navPointListFreeAll(pNavHead);               /* @0x4257a0 @0x40ad06 */
+        memFreeDirect(pNavHead);                     /* @0x43dd37 @0x40ad0c */
+    }
+    nopDebugStub();                                  /* @0x44f3d8 @0x40ad14 */
+    objHashFreeAll();                                /* @0x414950 @0x40ad1f */
+    nopDebugStub();                                  /* @0x44f3cc @0x40ad24 */
+    winmmRestoreTimerRes();                          /* @0x40e030 @0x40ad30 */
+    nopDebugStub();                                  /* @0x44f3c0 @0x40ad35 */
+    memPoolSystemShutdown();                         /* @0x419bb0 @0x40ad44 */
+    g_pNavPointSel = NULL;                           /* @0x45e480 @0x40ad4a */
+    g_pEditorHover = NULL;                           /* @0x45e498 @0x40ad50 */
+    g_pEditorDrag = NULL;                            /* @0x45e49c @0x40ad56 */
+}
+
 /* killCmd @0x407870 — console "kill" (command table @0x44b384, name
  * "kill" @0x44e548, desc "Kill current game" @0x44e534). Ends the live
- * round: roundTeardown then g_bGameActive = 0 + g_nReturnToMenu = 1.
- * roundTeardown is a documented no-op stub (stubs.c) until the real
- * teardown sequence lands. Dispatched by commandDispatch (stubs.c) for
+ * round: roundTeardown (gameplay.c) then g_bGameActive = 0 +
+ * g_nReturnToMenu = 1. Dispatched by commandDispatch (stubs.c) for
  * gameKeyHandler's quit-confirm and results-screen tails. */
 int killCmd(int nContext, LPCSTR pszArgs) /* @0x407870 */
 {

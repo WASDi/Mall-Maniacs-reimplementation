@@ -610,6 +610,60 @@ void zoneWallListBuild(void) /* @0x42a650 */
     }
 }
 
+/* zoneConnUnlink @0x42b890 — free the node's mesh-index array (+0x10,
+ * memPoolFree pool 0) when set, fix the list head (g_pZoneConnHead
+ * @0x45e5e8) / tail (g_pZoneConnTail @0x45e5ec) when they point at this
+ * node, and splice the neighbors together (+0x04 = toward the tail, +0x08
+ * = toward the head). The caller frees the node record itself. */
+void zoneConnUnlink(ZoneConn *pConn) /* @0x42b890 */
+{
+    if (pConn->pMeshIdx != NULL) {                       /* @0x42b894 */
+        memPoolFree(0, pConn->pMeshIdx);                 /* @0x42b899 */
+    }
+    if ((ZoneConn *)g_pZoneConnHead == pConn) {          /* @0x42b89b */
+        g_pZoneConnHead = pConn->pPrev;                  /* @0x42b8a1 */
+    }
+    if ((ZoneConn *)g_pZoneConnTail == pConn) {          /* @0x42b8a5 */
+        g_pZoneConnTail = pConn->pNext;                  /* @0x42b8af */
+    }
+    if (pConn->pPrev != NULL) {                          /* @0x42b8b4 */
+        pConn->pPrev->pNext = pConn->pNext;              /* @0x42b8be */
+    }
+    if (pConn->pNext != NULL) {                          /* @0x42b8c2 */
+        pConn->pNext->pPrev = pConn->pPrev;              /* @0x42b8c8 */
+    }
+}
+
+/* zoneWallListFree @0x42a150 — free the whole AiNavNode list (see zone.h).
+ * Per node the walk-edge list (+0x3c) is released first, then the
+ * cross-mesh connection list (+0x38), then the node itself; iteration
+ * follows pNext (+0x40) and the head g_pNavNodeList @0x45e5e0 ends NULL
+ * (both the empty-list and post-loop paths store 0). */
+void zoneWallListFree(void) /* @0x42a150 */
+{
+    AiNavNode *pNode = g_pNavNodeList;                   /* @0x42a151 */
+    AiNavNode *pNext;
+    AiNavEdge *pEdge;
+
+    if (pNode == NULL) {                                 /* @0x42a159 */
+        g_pNavNodeList = NULL;                           /* @0x42a1a9 */
+        return;
+    }
+    for (; pNode != NULL; pNode = pNext) {               /* @0x42a15d */
+        pNext = pNode->pNext;                            /* +0x40 @0x42a160 */
+        pEdge = pNode->pEdgeList;                        /* +0x3c @0x42a15d */
+        for (; pEdge != NULL; pEdge = pEdge->pNext) {    /* @0x42a167 */
+            memFreeDirect(pEdge);                        /* @0x43dd37 @0x42a16a */
+        }
+        pEdge = pNode->pConnList;                        /* +0x38 @0x42a178 */
+        for (; pEdge != NULL; pEdge = pEdge->pNext) {    /* @0x42a17f */
+            memFreeDirect(pEdge);                        /* @0x43dd37 @0x42a182 */
+        }
+        memFreeDirect(pNode);                            /* @0x43dd37 @0x42a191 */
+    }
+    g_pNavNodeList = NULL;                               /* @0x42a19f */
+}
+
 /* --- zoneAvoidWalls @0x4023e0 — camera wall-avoidance push (verified
  * 2026-08-30 against the disassembly). --- */
 static const float g_flZero = 0.0f;           /* @0x44b244 (bytes 00 00 00 00) */

@@ -60,6 +60,7 @@ int   g_nCharModelSwapFlag = 0; /* @0x45d494 */
 void *g_anMenuCharTex[10] = {0};/* @0x45a660 per-char tex */
 void *g_hMenuTexTom = NULL;     /* @0x45a688 */
 void *g_pCharSelAnimData = NULL;/* @0x45a6d0 anim-data pointer passed to anmLoad */
+void *g_pThrowAnimData = NULL;  /* @0x45a6d4 anim-data block (fileReadRaw of anim\s_throw2.an; also read by endScene @0x425076) */
 
 /* Rebuilt tables (original @0x45013c / 0x450164 / 0x4501b4). Order matches
  * original indexing: EAX*4+0x45013c where EAX=g_nCharSelIdx. Display names

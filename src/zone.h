@@ -153,6 +153,17 @@ void zoneWallCalcPlane(AiNavNode *pMesh);                         /* @0x42a1c0 *
 void zoneWallMergeDupesSameDir(AiNavNode *pMesh);                 /* @0x42a360 */
 void zoneWallListBuild(void);                                     /* @0x42a650 */
 
+/* zoneConnUnlink @0x42b890 — free a connection node's mesh-index array
+ * (memPoolFree 0) and unlink it from the g_pZoneConnHead/Tail list. The
+ * node itself is freed by the caller (roundTeardown @0x40aa8f). */
+void zoneConnUnlink(ZoneConn *pConn);                             /* @0x42b890 */
+
+/* zoneWallListFree @0x42a150 — free every AiNavNode on g_pNavNodeList
+ * (per node: the pEdgeList +0x3c walk-edge records, then the pConnList
+ * +0x38 connection records, then the node; walk order via pNext +0x40)
+ * and clear the list head. Called by roundTeardown @0x40aae5. */
+void zoneWallListFree(void);                                      /* @0x42a150 */
+
 /* zoneAvoidWalls @0x4023e0 — camera wall-avoidance push (see zone.c).
  * Returns 1 if *pPoint was repositioned out of a wall, 0 = no contact. */
 int zoneAvoidWalls(GxVec2 *pPoint, GxVec2 *pRef, float flRadius);

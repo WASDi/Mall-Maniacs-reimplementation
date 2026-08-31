@@ -27,7 +27,8 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
 /* Gameplay entry contracts used by stateLevelInit0..4. Player/world setup is
  * still deferred; commandDispatch routes the original run command to runCmd
  * and level startup scripts' "eload <file>.eo" to eloadCmd (src/obj_event.c). */
-void unloadGameWorld(void);                                  /* gameplay teardown */
+void unloadGameWorld(void);                                  /* @0x41a670 */
+void netExit(void);                                          /* @0x426b30 */
 unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand); /* @0x408b60 */
 void movieFrameUpdate(void);                                 /* @0x40af80 */
 void netGameUpdate(void);                                    /* @0x414fa0 */
@@ -118,10 +119,12 @@ void levelEventDirector_L4_Init(void);                       /* @0x418f30 */
 /* levelEventDirector_L1_Cleanup..L4_Cleanup @0x417860/0x417fa0/0x4189d0/
  * 0x419240 — per-level director anim teardown, dispatched by roundTeardown
  * @0x40aa10 (jump table 0x40ad60) on g_nLevelIdx 1..4 (L0_Cleanup lives in
- * level0.c). The stub roundTeardown below is a safe no-op until the real
- * teardown sequence (director Cleanup dispatch + world/scene unload) lands,
- * so the L1..L4 Cleanups still have no rebuild-side callers. */
-void roundTeardown(void);                                    /* @0x40aa10 */
+ * level0.c; roundTeardown itself is implemented in gameplay.c and declared
+ * in gameplay.h). Documented no-op stubs until the director bodies land. */
+void levelEventDirector_L1_Cleanup(void);                    /* @0x417860 */
+void levelEventDirector_L2_Cleanup(void);                    /* @0x417fa0 */
+void levelEventDirector_L3_Cleanup(void);                    /* @0x4189d0 */
+void levelEventDirector_L4_Cleanup(void);                    /* @0x419240 */
 
 /* consoleHandleKey @0x4086e0 — console line editor (backspace/tab-completion/
  * enter/esc/history). The in-game console is out of scope for the offline

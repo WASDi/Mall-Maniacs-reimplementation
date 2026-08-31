@@ -26,6 +26,8 @@ NavPoint *g_pNavPointHead;            /* @0x45d4d0 */
 NavPoint *g_pNavPointTail;            /* @0x45d4d4 */
 int   g_nNavPointCount;               /* @0x45d4d8 */
 NavPoint *g_pNavPointSel;             /* @0x45e480 */
+void *g_pEditorHover;                 /* @0x45e498 editor hover selection (cleared by roundTeardown) */
+void *g_pEditorDrag;                  /* @0x45e49c editor drag selection (cleared by roundTeardown) */
 extern int g_nNavPtSearchCount;       /* @0x45d4dc via player_ai */
 
 static const float g_flHalfPi = 1.5707964f;  /* @0x44b270 (bytes DB 0F C9 3F) */

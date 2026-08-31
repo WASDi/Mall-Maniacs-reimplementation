@@ -765,8 +765,10 @@ void menuInit(int nRestartMode)
      * anim\s_throw2.an), then the two .SEN scenes. These must be ready
      * before stateCharacterSelect is ever entered; stateCharacterSelect
      * only consumes them (it does not load anything itself). */
-    fileReadRaw(0, "anim\\s_throw2.an");                 /* @0x45a6d4 */
-    g_pCharSelAnimData = fileReadRaw(0, "anim\\s_run.anm"); /* @0x45a6d0 */
+    g_pThrowAnimData = fileReadRaw(0, "anim\\s_throw2.an"); /* @0x45a6d4 @0x41a025 */
+    g_pCharSelAnimData = fileReadRaw(0, "anim\\s_run.anm"); /* @0x45a6d0 @0x41a034 */
+    g_pCharAnim = NULL;                              /* @0x45a6d8 @0x41a039 */
+    g_pCharAnimPrev = NULL;                          /* @0x45a6dc @0x41a03f */
     if (g_pCharSelAnimData == NULL) {
         appLog("[menu] WARNING anim\\s_run.anm missing (char preview anim)");
     } else {

@@ -4,11 +4,16 @@
 #include "stubs.h"
 #include "time.h"
 #include "menu.h"
+#include "charselect.h"
 #include "gx.h"
 #include "pool.h"
 #include "player.h"
 #include "obj.h"
 #include "nav.h"
+#include "sen.h"
+#include "font.h"
+#include "scene_system.h"
+#include "sound.h"
 #include "custom_helpers.h"
 
 extern HWND g_hWnd;
@@ -37,40 +42,64 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType)
     return 0;
 }
 
+/* netExit @0x426b30 (thunk 0x414f60) — session teardown: nopDebugStub,
+ * netShutdown (Winsock cleanup — out of scope for the offline rebuild),
+ * then clears the client/server flags. The stub performs the observable
+ * offline part (flag clear) and documents the omitted Winsock call. */
+void netExit(void) /* @0x426b30 */
+{
+    nopDebugStub();                                /* @0x426b3a */
+    g_nNetIsServer = 0;                            /* @0x45e598 @0x426b45 */
+    g_nNetIsClient = 0;                            /* @0x45e59c @0x426b4d */
+}
+
 /* unloadGameWorld @0x41a670 — world/round teardown, called by stateLevelInit0
  * (each frame while it is the state func) and by the original roundTeardown.
- * VERIFIED 2026-08-30 vs disassembly @0x41a670..0x41a72a: when g_nMenuInit
+ * VERIFIED 2026-08-31 vs disassembly @0x41a670..0x41a72a: when g_nMenuInit
  * @0x45a658 is nonzero it logs "menu exit" @0x4507b8, clears the deferred
  * resume slot g_pResumeStateFunc @0x45a710, resets g_nMenuInit = 0 (the next
  * gameFrameUpdate re-runs menuInit @0x419c20 and lands back on menuUpdate),
- * then frees the two menu anim blocks (@0x45a6dc/@0x45a6d8 via anmFree
- * @0x434050), unloads the sprite/font handles (@0x419a60), clears/flips, and
- * tears the scene/sound down (@0x431e00/@0x42f180/@0x437cb0/@0x408fc0/
- * @0x419bb0/winmmRestoreTimerRes/gxSetMode @0x416c80). The resource-freeing
- * tail is deferred (TODO) — menuInit re-loads everything it needs on the
- * next menuInit pass — but the g_nMenuInit reset is the live contract that
- * makes killCmd @0x407870 ("J" on the quit prompt) return to the main menu. */
+ * then frees the two char-select anim blocks (g_pCharAnimPrev @0x45a6dc /
+ * g_pCharAnim @0x45a6d8 via anmFree @0x434050 when nonzero), the two anim
+ * data blocks (g_pCharSelAnimData @0x45a6d0 / g_pThrowAnimData @0x45a6d4,
+ * memPoolFree 0, unconditional), does the gxFlip/gxClearScreen(1,
+ * g_nClearColor @0x45892c) x2 cycle, then tears the systems down:
+ * scenNameTableFree @0x431e00, sceneSystemClose @0x42f180, sndShutdown
+ * @0x437cb0, fontPoolDestroy @0x408fc0, memPoolSystemShutdown @0x419bb0,
+ * winmmRestoreTimerRes @0x40e030 and the tail-jmp mciStopCdaudio
+ * @0x416c80. roundStartInit re-inits every one of these pools/systems
+ * behind its gxInit/memPoolSystemInit/sceneSystemInit cycle. */
 void unloadGameWorld(void) /* @0x41a670 */
 {
     if (g_nMenuInit == 0) {
         return;                                    /* @0x41a677 */
     }
-    nopDebugStub();                                /* "menu exit" @0x4507b8 @0x41a698 */
     g_pResumeStateFunc = NULL;                     /* @0x45a710 @0x41a684 */
     g_nMenuInit = 0;                               /* @0x45a658 @0x41a68e */
-    /* TODO: anmFree(@0x45a6dc/@0x45a6d8), sprite/font unload (@0x419a60),
-     * gxClearScreen/gxFlip cycle, scene + sound teardown, gxSetMode. */
+    nopDebugStub();                                /* "menu exit" @0x4507b8 @0x41a698 */
+    if (g_pCharAnimPrev != NULL) {                 /* @0x45a6dc @0x41a6a5 */
+        anmFree(g_pCharAnimPrev);                  /* @0x434050 @0x41a6aa */
+    }
+    if (g_pCharAnim != NULL) {                     /* @0x45a6d8 @0x41a6b2 */
+        anmFree(g_pCharAnim);                      /* @0x41a6bc */
+    }
+    memPoolFree(0, g_pCharSelAnimData);            /* @0x45a6d0 @0x41a6cc */
+    memPoolFree(0, g_pThrowAnimData);              /* @0x45a6d4 @0x41a6da */
+    gxFlip();                                      /* @0x433340 @0x41a6df */
+    gxClearScreen(1, g_nClearColor);               /* @0x433350 @0x41a6ed */
+    gxFlip();                                      /* @0x41a6f2 */
+    gxClearScreen(1, g_nClearColor);               /* @0x41a6ff */
+    scenNameTableFree();                           /* @0x431e00 @0x41a707 */
+    sceneSystemClose();                            /* @0x42f180 @0x41a70c */
+    sndShutdown();                                 /* @0x437cb0 @0x41a711 */
+    fontPoolDestroy();                             /* @0x408fc0 @0x41a716 */
+    memPoolSystemShutdown();                       /* @0x419bb0 @0x41a71b */
+    winmmRestoreTimerRes();                        /* @0x40e030 @0x41a720 */
+    mciStopCdaudio();                              /* tail-jmp @0x416c80 @0x41a725 */
 }
 
-/* roundTeardown @0x40aa10 — round-end teardown: per-level director Cleanup
- * dispatch (jump table @0x40ad60; L0_Cleanup lives in level0.c, L1..L4 are
- * stubs) plus quest/thrown-item/scene-object world unload. The full teardown
- * sequence is not reconstructed yet; the stub is a safe no-op so killCmd
- * @0x407870 ends the round (g_bGameActive = 0) without the freed-resource
- * steps. TODO: replace with the real jump-table teardown. */
-void roundTeardown(void) /* @0x40aa10 */
-{
-}
+/* roundTeardown @0x40aa10 — implemented in gameplay.c (full teardown
+ * sequence); the declaration lives in gameplay.h. */
 
 /* consoleHandleKey @0x4086e0 — console line editor. Out of scope: the
  * offline rebuild never opens the console overlay (g_nScrollText stays 0),
@@ -208,6 +237,28 @@ void *musicModuleInit(void *pModuleEntry) /* @0x437b10 */
 {
     (void)pModuleEntry;
     return NULL;
+}
+
+/* levelEventDirector_L1_Cleanup..L4_Cleanup @0x417860/0x417fa0/0x4189d0/
+ * 0x419240 — per-level director anim teardown, dispatched by roundTeardown
+ * @0x40aa10 (jump table @0x40ad60) on g_nLevelIdx 1..4 (L0_Cleanup lives in
+ * level0.c). Each frees its level's seven event anims (anmFree) and resets
+ * the director step state; the director bodies are deferred, so these stay
+ * documented no-op stubs preserving the dispatch call sites. */
+void levelEventDirector_L1_Cleanup(void) /* @0x417860 */
+{
+}
+
+void levelEventDirector_L2_Cleanup(void) /* @0x417fa0 */
+{
+}
+
+void levelEventDirector_L3_Cleanup(void) /* @0x4189d0 */
+{
+}
+
+void levelEventDirector_L4_Cleanup(void) /* @0x419240 */
+{
 }
 
 /* levelEventDirector_L1..L4 — see stubs.h. The L0 director is implemented
