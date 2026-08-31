@@ -484,9 +484,46 @@ int sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float
 }
 
 /* ===================================================================
- * sceneNodeUpdateBounds @0x4303c0 (simplified — bounds not needed for menu)
+ * sceneNodeUpdateBounds @0x4303c0
+ * Recompute nBoundingRadiusB up the ancestor chain. For each node,
+ *   best = (float)nBoundingRadiusA
+ *   for each child:
+ *     d = sqrt(childChannel.x^2 + y^2 + z^2) + (float)child.nBoundingRadiusB
+ *     if (childChannel.nIdx != 0) d += (float)parent.nBoundingRadiusA
+ *     best = max(best, d)
+ *   if ((float)parent.nBoundingRadiusB == best) stop
+ *   parent.nBoundingRadiusB = (int)best  // __ftol truncation
+ *   parent = parent->pParent; stop at g_rootNode.
+ * Verified vs disasm 0x4303c0..0x430453 (FILD/FSQRT/FIADD/__ftol).
  * =================================================================== */
-void sceneNodeUpdateBounds(SceneNode *pNode) { (void)pNode; }
+void sceneNodeUpdateBounds(SceneNode *pNode) /* @0x4303c0 */
+{
+    SceneNode *cur = pNode;
+    while (1) {
+        float fBest = (float)cur->nBoundingRadiusA;
+        for (SceneNode *child = cur->pChild; child != NULL; child = child->pNextSib) {
+            SceneChannel *ch = child->pChannels;
+            float fx = (float)ch->x;
+            float fy = (float)ch->y;
+            float fz = (float)ch->z;
+            float d = sqrtf(fx * fx + fy * fy + fz * fz) + (float)child->nBoundingRadiusB;
+            if (ch->nIdx != 0) {
+                d += (float)cur->nBoundingRadiusA;
+            }
+            if (fBest < d) {
+                fBest = d;
+            }
+        }
+        if ((float)cur->nBoundingRadiusB == fBest) {
+            break;
+        }
+        cur->nBoundingRadiusB = (int)fBest; /* __ftol @0x43dd10 truncation */
+        cur = cur->pParent;
+        if (cur == &g_rootNode) {
+            return;
+        }
+    }
+}
 
 /* ===================================================================
  * sceneObjSetSubPos @0x430a90 — sub-channel orientation/position setter.

@@ -134,6 +134,9 @@ void *sceneryObjAlloc(SceneNode *pParent, int nChanPtr, int nChanPtr2, int nChan
     n->nChannelCount = (unsigned char)(nSub + 1);
     n->pChannels = &n->ch;
     n->pTypeDef = td;
+    /* Bounds: original copies *(pTypeDef+0x18) to both node+0x18/+0x1c (disasm 0x430288..0x430291) */
+    n->nBoundingRadiusA = td->field_18;
+    n->nBoundingRadiusB = td->field_18;
     /* Channel 0 holds the incoming scales/chanPtrs: original writes rot[3] = scales, nIdx/x/y/z = chanPtrs */
     {
         SceneChannel *ch0 = &n->ch;
