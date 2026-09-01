@@ -769,6 +769,8 @@ void menuInit(int nRestartMode)
     g_pCharSelAnimData = fileReadRaw(0, "anim\\s_run.anm"); /* @0x45a6d0 @0x41a034 */
     g_pCharAnim = NULL;                              /* @0x45a6d8 @0x41a039 */
     g_pCharAnimPrev = NULL;                          /* @0x45a6dc @0x41a03f */
+    g_pCharModelNode = NULL;                         /* @0x45a6c4 @0x41a077 */
+    g_pCharModelNodePrev = NULL;                     /* @0x45a6c8 @0x41a07f */
     if (g_pCharSelAnimData == NULL) {
         appLog("[menu] WARNING anim\\s_run.anm missing (char preview anim)");
     } else {
