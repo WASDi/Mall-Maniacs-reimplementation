@@ -63,6 +63,11 @@ int g_nGameUpdateTick;   /* @0x45e5dc */
 int g_nMovieRecord;      /* @0x455e8c */
 int g_nMoviePlay;        /* @0x455e90 */
 
+/* g_flGameObjSpeed @0x45895c — cart arrow anim phase (gameObjectUpdate). */
+float g_flGameObjSpeed;  /* @0x45895c */
+float g_flGameObjSpeed2; /* @0x458960 goods arrow phase */
+float g_flGameObjSpeed3; /* @0x458964 item-slot bob phase */
+
 /* roundStartInit @0x40a4d0 — round-start / level setup, called from runCmd
  * @0x4084c0. Two scene-system cycles: the first (scenNameTableInit
  * 10000/10000) hosts the levelSceneTexturesLoad @0x4104b0 world pre-pass
@@ -979,10 +984,412 @@ void gameWorldUpdate(void)
     }
 }
 
-/* gameObjectUpdate @0x40cf40 — alternating object update dependency. */
+/* gameObjectUpdate @0x40cf40 — per-frame targeting + pointer update for the
+ * LOCAL player (g_nLocalPlayerIdx @0x458104, record = g_playerRecords +
+ * idx*0x374), called from gameRunFrame (alternating with gameWorldUpdate).
+ * Five stages verified against the full disassembly 0x40cf40..0x40db52:
+ *  1) resolve player's current zone (objContainsPoint over ARE1/ARE2/ARE4 on
+ *     level 4, else PUNK loop).
+ *  2) pick target obj (jump table @0x40db54 on g_nGameMode-1: mode 3 vs 1/2/4).
+ *  2b) retarget across zones (exit objects EXI1..4 or zone rect logic).
+ *  3) cart arrow (VAGNPIL) position + bob anim via sceneNodeFacePos / sin.
+ *     Goods arrow (VARUPIL) over the target item.
+ *  4) 30 item-slot pass (hide/reset per mode, then bob visible slots).
+ * The original inlines the zone-resolution block three times; the rebuild keeps
+ * it inline to preserve the call hierarchy (see gameobjectupdate-notes.md). */
 void gameObjectUpdate(void)
 {
-    /* TODO: update non-player scene objects. */
+    /* 4-byte zone / goal ids (.rdata verified 2026-08-31) */
+    static const int kIdGoal = 0x6C6F6767; /* "goal" @0x44f4e4 */
+    static const int kIdAre1 = 0x31455241; /* "ARE1" @0x44f550 */
+    static const int kIdAre2 = 0x32455241; /* "ARE2" @0x44f548 */
+    static const int kIdAre4 = 0x34455241; /* "ARE4" @0x44f540 */
+    static const int kIdPunk = 0x4B4E5550; /* "PUNK" @0x44f538 */
+    static const int kIdExi1 = 0x31495845; /* "EXI1" @0x44f530 */
+    static const int kIdExi2 = 0x32495845; /* "EXI2" @0x44f520 */
+    static const int kIdExi3 = 0x33495845; /* "EXI3" @0x44f518 */
+    static const int kIdExi4 = 0x34495845; /* "EXI4" @0x44f528 */
+    static const float kFlSpeedInc = 0.3f;
+    static const double kDblCartPh1 = 0.123;
+    static const double kDblCartPh2 = 1.37;
+    static const double kDblWalkPh1 = 0.97;
+    static const double kDblWalkPh2 = 0.21;
+    static const double kDblGoodsCartPh1 = 0.14;
+    static const double kDblGoodsCartPh2 = 0.3;
+    static const double kDblGoodsWalkPh1 = 0.237;
+    static const double kDblGoodsWalkPh2 = 0.42;
+    static const double kDblSlotBob100 = 100.0;
+    static const float kFlCartMul1 = 17.0f;
+    static const float kFlCartMul2 = 16.0f;
+    static const float kFlWalkMul1 = 11.0f;
+    static const float kFlWalkMul2 = 14.0f;
+    static const float kFlGoodsCartMul1 = 12.0f;
+    static const float kFlGoodsCartMul2 = 17.0f;
+    static const float kFlGoodsWalkMul1 = 14.0f;
+    static const float kFlGoodsWalkMul2 = 10.0f;
+
+    PlayerRecord *pRec = &g_playerRecords[g_nLocalPlayerIdx];
+    float vPos[2];
+    float flSelfZ;
+    float flSelfX;
+    EventObject *pPlayerZone = NULL;
+    EventObject *pTarget = NULL;
+
+    sceneObjGetPosXZ(pRec, vPos);
+    flSelfZ = vPos[0];
+    flSelfX = vPos[1];
+
+    /* Stage 1 — resolve player's current zone (0x40cf6a..0x40d03f) */
+    if (g_nLevelIdx == 4) {
+        pPlayerZone = objFindById(kIdAre1, 0);
+        if (pPlayerZone == NULL || objContainsPoint(pPlayerZone, flSelfZ, flSelfX) == 0) {
+            pPlayerZone = objFindById(kIdAre2, 0);
+            if (pPlayerZone == NULL || objContainsPoint(pPlayerZone, flSelfZ, flSelfX) == 0) {
+                pPlayerZone = objFindById(kIdAre4, 0);
+            }
+        }
+    } else {
+        int occ = 0;
+        pPlayerZone = objFindById(kIdPunk, occ);
+        occ = 1;
+        while (pPlayerZone != NULL && objContainsPoint(pPlayerZone, flSelfZ, flSelfX) == 0) {
+            pPlayerZone = objFindById(kIdPunk, occ);
+            occ++;
+        }
+    }
+
+    /* Stage 2 — pick target obj (jump table @0x40db54, index = g_nGameMode-1) */
+    switch (g_nGameMode) {
+    case 3: {
+        if (pRec->anHeldSlot[1] == 5) {
+            pTarget = objFindById(kIdGoal, 0);
+        } else if (g_nCurrentItemId != 0) {
+            pTarget = objFindById(g_nCurrentItemId, 0);
+        } else {
+            pTarget = NULL;
+        }
+        break;
+    }
+    case 1:
+    case 2:
+    case 4: {
+        if (pRec->anHeldSlot[1] == 10) {
+            pTarget = objFindById(kIdGoal, 0);
+        } else {
+            float flBest = 3.4028235e38f; /* FLT_MAX 0x7f7fffff @0x40d170 */
+            GxVec2 vZeroA;
+            GxVec2 vZeroB;
+            gxVec2SetAngleZero(&vZeroA);
+            gxVec2SetAngleZero(&vZeroB);
+            if (pRec->anHeldSlot[0] != 0) {
+                pTarget = NULL;
+            } else if (pRec->nQuestFlags != -1 &&
+                       pRec->abListTaken[pRec->nQuestFlags] == 0) {
+                pTarget = objFindById(pRec->anListIds[pRec->nQuestFlags], 0);
+            } else {
+                int i;
+                for (i = 0; i < 10; i++) {
+                    if (pRec->abListTaken[i] != 0) continue;
+                    if (g_nGameMode == 1 && pRec->nQuestTargetId == pRec->anListIds[i]) continue;
+                    if (g_nGameMode == 3 && g_nCurrentItemId != 0) continue; /* dead branch for 1/2/4 @0x40d1f1 */
+                    if (pRec->anListIds[i] <= 0) continue;
+                    {
+                        int occ = 0;
+                        EventObject *pObj = objFindById(pRec->anListIds[i], occ);
+                        occ = 1;
+                        while (pObj != NULL) {
+                            GxVec2 vDelta;
+                            GxVec2 vPolar;
+                            vDelta.x = pObj->flOriginX - flSelfZ;
+                            vDelta.y = pObj->flOriginZ - flSelfX;
+                            mathVec2Polar(&vPolar, &vDelta);
+                            if (vPolar.x < flBest) { /* length @0x40d24b..0x40d264 */
+                                flBest = vPolar.x;
+                                pRec->nQuestFlags = i;
+                                pTarget = pObj;
+                            }
+                            pObj = objFindById(pRec->anListIds[i], occ);
+                            occ++;
+                        }
+                    }
+                }
+            }
+        }
+        break;
+    }
+    default:
+        pTarget = NULL;
+        break;
+    }
+
+    /* Stage 2b — retarget across zones when target != NULL (@0x40d096) */
+    if (pTarget != NULL) {
+        if (g_nLevelIdx == 4) {
+            EventObject *pTargetZone = objFindById(kIdAre1, 0);
+            if (pTargetZone == NULL || objContainsPoint(pTargetZone, pTarget->flOriginX, pTarget->flOriginZ) == 0) { /* +0x38/+0x3c @0x40d0d3 */
+                pTargetZone = objFindById(kIdAre2, 0);
+                if (pTargetZone == NULL || objContainsPoint(pTargetZone, pTarget->flOriginX, pTarget->flOriginZ) == 0) {
+                    pTargetZone = objFindById(kIdAre4, 0);
+                }
+            }
+            if (pPlayerZone != pTargetZone) {
+                int nPlayerId = (pPlayerZone != NULL) ? pPlayerZone->nId : 0;
+                if (nPlayerId == kIdAre1) {
+                    EventObject *pExit = objFindById(kIdExi1, 0);
+                    if (pExit != NULL) pTarget = pExit;
+                } else if (nPlayerId == kIdAre4) {
+                    EventObject *pExit = objFindById(kIdExi4, 0);
+                    if (pExit != NULL) pTarget = pExit;
+                } else if (nPlayerId == kIdAre2) {
+                    int nTargetId = (pTargetZone != NULL) ? pTargetZone->nId : 0;
+                    if (nTargetId == kIdAre1) {
+                        EventObject *pExit = objFindById(kIdExi2, 0);
+                        if (pExit != NULL) pTarget = pExit;
+                    } else {
+                        EventObject *pExit = objFindById(kIdExi3, 0);
+                        if (pExit != NULL) pTarget = pExit;
+                    }
+                }
+            }
+        } else { /* levels 0-3: PUNK loop over target pos @0x40d313..@0x40d3d0 */
+            EventObject *pTargetZone = objFindById(kIdPunk, 0);
+            int occ = 1;
+            while (pTargetZone != NULL && objContainsPoint(pTargetZone, pTarget->flOriginX, pTarget->flOriginZ) == 0) {
+                pTargetZone = objFindById(kIdPunk, occ);
+                occ++;
+            }
+            if (pPlayerZone != pTargetZone) {
+                if (pPlayerZone == NULL) {
+                    if (pTargetZone != NULL) {
+                        float fdx = fabsf(pTargetZone->flOriginX - flSelfZ);
+                        float fdy = fabsf(pTargetZone->flOriginZ - flSelfX);
+                        int bOutside = ((float)pTargetZone->field_10 <= fdx || (float)pTargetZone->field_14 <= fdy); /* +0x10/+0x14 @0x40d3af/@0x40d3c4 */
+                        if (bOutside) pTarget = pTargetZone;
+                    }
+                } else {
+                    float fdxP = fabsf(pPlayerZone->flOriginX - flSelfZ);
+                    float fdyP = fabsf(pPlayerZone->flOriginZ - flSelfX);
+                    int bInsideP = ((float)pPlayerZone->field_10 > fdxP && (float)pPlayerZone->field_14 > fdyP); /* < both @0x40d37b/@0x40d390 */
+                    if (bInsideP) {
+                        if (pTargetZone != NULL) {
+                            float fdxT = fabsf(pTargetZone->flOriginX - flSelfZ);
+                            float fdyT = fabsf(pTargetZone->flOriginZ - flSelfX);
+                            int bOutsideT = ((float)pTargetZone->field_10 <= fdxT || (float)pTargetZone->field_14 <= fdyT);
+                            if (bOutsideT) pTarget = pTargetZone;
+                        }
+                    } else {
+                        pTarget = pPlayerZone;
+                    }
+                }
+            }
+        }
+    }
+
+    /* Stage 3 — cart arrow (VAGNPIL, @0x40d3d4..0x40d780) */
+    if (pRec->field_174 != 0 || g_nResultsScreen != 0) {
+        sceneNodeSetHiddenFlag(g_pCartArrowObj, 2);
+    } else {
+        int nSlotX; /* base+0x50: X-ish = +0x3c / objPolarPosLookup(+0x24) */
+        int nSlotZ; /* base+0x58: Z-ish = +0x38 / objPolarPosLookup2(+0x20) */
+        EventObject *pCartZone = NULL;
+
+        nSlotX = objPolarPosLookup((WorldNode *)pRec->pSubObjB, (int)(size_t)pRec->pCartSceneObj);
+        (void)nodeChannelAvgFloat((WorldNode *)pRec->pSubObjB, (int)(size_t)pRec->pCartSceneObj);
+        nSlotZ = objPolarPosLookup2((WorldNode *)pRec->pSubObjB, (int)(size_t)pRec->pCartSceneObj);
+
+        /* zone re-resolution on the CART pos */
+        if (g_nLevelIdx == 4) {
+            pCartZone = objFindById(kIdAre1, 0);
+            if (pCartZone == NULL || objContainsPoint(pCartZone, (float)nSlotZ, (float)nSlotX) == 0) { /* FILD @0x40d44e etc */
+                pCartZone = objFindById(kIdAre2, 0);
+                if (pCartZone == NULL || objContainsPoint(pCartZone, (float)nSlotZ, (float)nSlotX) == 0) {
+                    pCartZone = objFindById(kIdAre4, 0);
+                }
+            }
+            if (pPlayerZone != pCartZone) {
+                int nPlayerId = (pPlayerZone != NULL) ? pPlayerZone->nId : 0;
+                EventObject *pExit = NULL;
+                if (nPlayerId == kIdAre1) {
+                    pExit = objFindById(kIdExi1, 0);
+                } else if (nPlayerId == kIdAre4) {
+                    pExit = objFindById(kIdExi4, 0);
+                } else if (nPlayerId == kIdAre2) {
+                    int nCartId = (pCartZone != NULL) ? pCartZone->nId : 0;
+                    if (nCartId == kIdAre1) pExit = objFindById(kIdExi2, 0);
+                    else pExit = objFindById(kIdExi3, 0);
+                }
+                if (pExit != NULL) {
+                    nSlotZ = (int)pExit->flOriginX; /* +0x38 ftol @0x40d5ec */
+                    nSlotX = (int)pExit->flOriginZ; /* +0x3c ftol @0x40d5f4 */
+                }
+            }
+        } else { /* PUNK loop @0x40d51a..@0x40d5fd */
+            pCartZone = objFindById(kIdPunk, 0);
+            {
+                int occ = 1;
+                while (pCartZone != NULL && objContainsPoint(pCartZone, (float)nSlotZ, (float)nSlotX) == 0) {
+                    pCartZone = objFindById(kIdPunk, occ);
+                    occ++;
+                }
+            }
+            if (pPlayerZone != pCartZone) {
+                if (pPlayerZone != NULL) {
+                    float fdxP = fabsf(pPlayerZone->flOriginX - flSelfZ);
+                    float fdyP = fabsf(pPlayerZone->flOriginZ - flSelfX);
+                    int bOutsideP = ((float)pPlayerZone->field_10 <= fdxP || (float)pPlayerZone->field_14 <= fdyP);
+                    if (bOutsideP) {
+                        nSlotZ = (int)pPlayerZone->flOriginX;
+                        nSlotX = (int)pPlayerZone->flOriginZ;
+                    } else if (pCartZone != NULL) {
+                        float fdxT = fabsf(pCartZone->flOriginX - flSelfZ);
+                        float fdyT = fabsf(pCartZone->flOriginZ - flSelfX);
+                        int bOutsideT = ((float)pCartZone->field_10 <= fdxT || (float)pCartZone->field_14 <= fdyT);
+                        if (bOutsideT) {
+                            nSlotZ = (int)pCartZone->flOriginX;
+                            nSlotX = (int)pCartZone->flOriginZ;
+                        }
+                    }
+                } else if (pCartZone != NULL) {
+                    float fdxT = fabsf(pCartZone->flOriginX - flSelfZ);
+                    float fdyT = fabsf(pCartZone->flOriginZ - flSelfX);
+                    int bOutsideT = ((float)pCartZone->field_10 <= fdxT || (float)pCartZone->field_14 <= fdyT);
+                    if (bOutsideT) {
+                        nSlotZ = (int)pCartZone->flOriginX;
+                        nSlotX = (int)pCartZone->flOriginZ;
+                    }
+                }
+            }
+        }
+
+        /* Arrow anim — per side cart then goods share the same pattern */
+        {
+            float flSpeed = g_flGameObjSpeed + kFlSpeedInc;
+            int anWorld[3];
+            short anRotBefore[3];
+            short anRotAfter[3];
+            int nBob1;
+            int nBob2;
+
+            g_flGameObjSpeed = flSpeed;
+            sceneNodeGetPosWorld(g_pSceneRoot, (float *)anWorld, 2);
+            sceneObjGetPos(g_pSceneRoot, anRotBefore, 2);
+            sceneNodeFacePos(g_pSceneRoot, 0, (float)nSlotX, (float)anWorld[1], (float)nSlotZ, 2);
+            sceneObjGetPos(g_pSceneRoot, anRotAfter, 2);
+            sceneObjSetPosOrient(g_pCartArrowMesh, (short)(anRotAfter[0] - anRotBefore[0]), 0, (short)(anRotAfter[2] - anRotBefore[2]), 2);
+
+            if (pRec->field_174 != 0) {
+                nBob1 = (int)(sin(g_flGameObjSpeed + kDblCartPh1) * (pRec->flCartTurnAccum + pRec->flCartCurSpeed) * kFlCartMul1);
+                nBob2 = (int)(sin(g_flGameObjSpeed + kDblCartPh2) * (pRec->flCartTurnAccum + pRec->flCartCurSpeed) * kFlCartMul2);
+            } else {
+                nBob1 = (int)(sin(g_flGameObjSpeed + kDblWalkPh1) * (pRec->flTurnAccum + pRec->flCurSpeed) * kFlWalkMul1);
+                nBob2 = (int)(sin(g_flGameObjSpeed + kDblWalkPh2) * (pRec->flTurnAccum + pRec->flCurSpeed) * kFlWalkMul2);
+            }
+            sceneObjSetPosOrient(g_pCartArrowObj, (short)nBob2, (short)(anRotAfter[1] - anRotBefore[1]), (short)nBob1, 2);
+            sceneObjSetPosOrient(g_pSceneRoot, anRotBefore[0], anRotBefore[1], anRotBefore[2], 2); /* restore @0x40d76a */
+            sceneObjResetFlags(g_pCartArrowObj, 2);
+        }
+    }
+
+    /* Goods arrow target position */
+    if (pTarget == NULL || g_nResultsScreen != 0) {
+        sceneNodeSetHiddenFlag(g_pGoodsArrowObj, 2);
+    } else {
+        int nSlotX;
+        int nSlotZ;
+        float flSpeed;
+        int anWorld[3];
+        short anRotBefore[3];
+        short anRotAfter[3];
+        int nBob1;
+        int nBob2;
+
+        g_flGameObjSpeed2 += kFlSpeedInc;
+        nSlotX = (int)pTarget->flOriginZ; /* +0x3c ftol @0x40d7c1 */
+        nSlotZ = (int)pTarget->flOriginX; /* +0x38 ftol @0x40d7c6 */
+
+        sceneNodeGetPosWorld(g_pSceneRoot, (float *)anWorld, 2);
+        sceneObjGetPos(g_pSceneRoot, anRotBefore, 2);
+        sceneNodeFacePos(g_pSceneRoot, 0, (float)nSlotX, (float)anWorld[1], (float)nSlotZ, 2);
+        sceneObjGetPos(g_pSceneRoot, anRotAfter, 2);
+        sceneObjSetPosOrient(g_pGoodsArrowMesh, (short)(anRotAfter[0] - anRotBefore[0]), 0, (short)(anRotAfter[2] - anRotBefore[2]), 2);
+        flSpeed = g_flGameObjSpeed2;
+        if (pRec->field_174 != 0) {
+            nBob1 = (int)(sin(flSpeed + kDblGoodsCartPh1) * (pRec->flCartTurnAccum + pRec->flCartCurSpeed) * kFlGoodsCartMul1);
+            nBob2 = (int)(sin(flSpeed + kDblGoodsCartPh2) * (pRec->flCartTurnAccum + pRec->flCartCurSpeed) * kFlGoodsCartMul2);
+        } else {
+            nBob1 = (int)(sin(flSpeed + kDblGoodsWalkPh1) * (pRec->flTurnAccum + pRec->flCurSpeed) * kFlGoodsWalkMul1);
+            nBob2 = (int)(sin(flSpeed + kDblGoodsWalkPh2) * (pRec->flTurnAccum + pRec->flCurSpeed) * kFlGoodsWalkMul2);
+        }
+        sceneObjSetPosOrient(g_pGoodsArrowObj, (short)nBob2, (short)(anRotAfter[1] - anRotBefore[1]), (short)nBob1, 2);
+        sceneObjSetPosOrient(g_pSceneRoot, anRotBefore[0], anRotBefore[1], anRotBefore[2], 2);
+        sceneObjResetFlags(g_pGoodsArrowObj, 2);
+    }
+
+    /* Stage 4 — 30 item-slot pass (@0x40d955..0x40db4b) */
+    g_flGameObjSpeed3 += kFlSpeedInc;
+    {
+        int i;
+        for (i = 0; i < 30; i++) {
+            LevelItemSlot *pSlot = &g_apLevelItemSlots[i]; /* @0x4583c8 + i*0x2c @0x40d97c */
+            sceneNodeSetHiddenFlag((SceneNode *)pSlot->pSubObj, 2);
+            switch (g_nGameMode) {
+            case 1: {
+                int j;
+                for (j = 0; j < 10; j++) {
+                    if (pRec->abListTaken[j] != 0) continue;
+                    if (pRec->anListIds[j] != i + 1) continue;
+                    if (pRec->nQuestTargetId == i + 1) continue;
+                    if (pRec->anHeldSlot[0] == i + 1) continue;
+                    if (pRec->nLastThrownItemId == i + 1) continue;
+                    if (pSlot->pEventObj != NULL) {
+                        sceneObjResetFlags((SceneNode *)pSlot->pSubObj, 2);
+                    }
+                    break;
+                }
+                break;
+            }
+            case 2: {
+                int j;
+                for (j = 0; j < 10; j++) {
+                    if (pRec->abListTaken[j] != 0) continue;
+                    if (pRec->anListIds[j] != i + 1) continue;
+                    if (pRec->anHeldSlot[0] == i + 1) continue;
+                    if (pRec->nLastThrownItemId == i + 1) continue;
+                    if (pSlot->pEventObj != NULL) {
+                        sceneObjResetFlags((SceneNode *)pSlot->pSubObj, 2);
+                    }
+                    break;
+                }
+                break;
+            }
+            case 3:
+                if (g_nCurrentItemId == i + 1 && pSlot->pEventObj != NULL) {
+                    sceneObjResetFlags((SceneNode *)pSlot->pSubObj, 2);
+                }
+                break;
+            case 4: {
+                int k;
+                for (k = 0; k < 3; k++) {
+                    if (pRec->anListIds[k] == i + 0xc9 && pSlot->pEventObj != NULL) { /* 201 @0x40da99 */
+                        sceneObjResetFlags((SceneNode *)pSlot->pSubObj, 2);
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+            }
+            if (sceneNodeGetHiddenFlag((SceneNode *)pSlot->pSubObj) == 0 && pSlot->pEventObj != NULL) {
+                int anOut[3];
+                sceneObjSetPosOrient((SceneNode *)pSlot->pSceneObj, 100, 0x60e, 200, 5);
+                sceneNodeGetPos((SceneNode *)pSlot->pSceneObj, 0, anOut, 2);
+                {
+                    int nBob = (int)(sin((double)g_flGameObjSpeed3) * kDblSlotBob100);
+                    sceneObjSetPos((SceneNode *)pSlot->pSceneObj, anOut[0], nBob, anOut[2], 2);
+                }
+            }
+        }
+    }
 }
 
 /* gameFrameRender @0x40ae30 — cull the level, render its camera root, then
