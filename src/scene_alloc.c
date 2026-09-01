@@ -77,6 +77,7 @@ void *sceneNodeAllocChild(SceneNode *pParent, void *pChannelPtr, void *pChannelP
     n->pNextSib = oldChild;
     if (oldChild) oldChild->pPrevLink = n;
     parent->pChild = n;
+    n->pPrevLink = parent; /* @+0x10 = parent, per 0x431a2b */
     /* Original root is at 0x45e8c0 and its +0xc (child) aliases g_pSceneNodeList @0x45e8cc.
      * Our &g_rootNode is at 0x45e818 (buffer includes 0x45e8c0) but g_pSceneNodeList is separate.
      * Keep them in sync when parent is the scene root so the model becomes reachable via the global list. */

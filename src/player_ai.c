@@ -1368,7 +1368,7 @@ void playerUpdateAI(void) /* @0x40b510 */
                 pRec->nAiPhaseTimer--;                  /* +0x2f8 @0x40b58d */
             }
             if (pRec->nActionSubstate == 5) {           /* +0x2e8 @0x40b594 */
-                pRec->nAiPhaseNext = 0;                 /* +0x2f4 @0x40b5a1 */
+                pRec->flInputAccel = 0.0f;              /* +0x2e4 @0x40b5a1 */
                 pRec->flInputTurn = 0.0f;               /* +0x2e0 @0x40b5a7 */
             }
             continue;

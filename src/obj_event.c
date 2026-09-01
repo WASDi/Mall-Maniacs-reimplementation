@@ -396,6 +396,7 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
     for (pNode = configNextNode(&env, NULL); pNode != NULL;
          pNode = configNextNode(&env, pNode)) {
         EventObject *pEvent;
+        ConfigNode *pFields;
         int nId;
         int i;
 
@@ -411,12 +412,13 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
             continue;
         }
 
+        pFields = configNodeGetId(pNode);               /* @0x406e59 */
         pEvent = (EventObject *)malloc(0x50);        /* operator_new @0x43dd42 */
         if (pEvent != NULL) {
-            float flH2 = (float)configEnvGetDouble2(&env, pNode, "h2");
-            float flH  = (float)configEnvGetDouble2(&env, pNode, "h");
-            float flY  = (float)configEnvGetDouble2(&env, pNode, "y");
-            float flX  = (float)configEnvGetDouble2(&env, pNode, "x");
+            float flH2 = (float)configEnvGetDouble2(&env, pFields, "h2");
+            float flH  = (float)configEnvGetDouble2(&env, pFields, "h");
+            float flY  = (float)configEnvGetDouble2(&env, pFields, "y");
+            float flX  = (float)configEnvGetDouble2(&env, pFields, "x");
             sceneObjCtor4(pEvent, nId, flX, flY, flH, flH2);   /* @0x414700 */
         }
 
@@ -427,7 +429,7 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
             float flOrgY = (pEvent != NULL) ? pEvent->flOriginZ : 0.0f;
 
             fmtSprintf(szKey, "line[%d]", i);        /* s_line__d @0x44e81c */
-            pLineNode = configEnvGetValue(&env, pNode, szKey);   /* @0x436560 */
+            pLineNode = configEnvGetValue(&env, pFields, szKey); /* @0x436560 */
             if (pLineNode == NULL) {
                 break;
             }
@@ -439,7 +441,7 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
         }
 
         {
-            ConfigNode *pValue = configEnvGetValue(&env, pNode, "values");
+            ConfigNode *pValue = configEnvGetValue(&env, pFields, "values");
             int *pnOut = (pEvent != NULL) ? &pEvent->field_10 : NULL;
             for (i = 0; i < 5 && pValue != NULL; i++) {
                 if (pnOut != NULL) {

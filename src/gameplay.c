@@ -174,8 +174,8 @@ void roundStartInit(void) /* @0x40a4d0 */
      * find the mall EventObject with that id (mode 4 uses ids 200+id for
      * the CHECKFLAG items), store it in slot[id-1].pEventObj and move the
      * slot's scenery node to the event origin. x = originZ, y = heightA,
-     * z = originX per the disassembly; the non-mode-4 branch drops y by
-     * 1000 (event origins sit 1000 above the floor). */
+     * z = originX per the disassembly; the non-mode-4 branch raises the
+     * vertical position by 1000. */
     {
         int i;
         for (i = 1; i <= LEVEL_ITEM_SLOT_COUNT; i++) {
@@ -196,8 +196,8 @@ void roundStartInit(void) /* @0x40a4d0 */
                 pSlot->pEventObj = pEvent;                 /* @0x40a84f */
                 if (pEvent != NULL) {
                     sceneObjSetPos((SceneNode *)pSlot->pSubObj,  /* @0x40a847 */
-                                   (int)pEvent->flOriginZ - 1000, /* @0x40a837 */
-                                   (int)pEvent->flHeightA,
+                                   (int)pEvent->flOriginZ,
+                                   (int)pEvent->flHeightA - 1000, /* @0x40a837 */
                                    (int)pEvent->flOriginX, 2);
                 }
             }
