@@ -1318,9 +1318,6 @@ int sndPlaySfx(int nMixerVoice, unsigned nBank, unsigned nSfxIndex,
     v->nHandle += 0x10000;
     v->nPos    = 0;
     v->nPosFrac= 0;
-    appLog("[sound] sndPlaySfx bank %d slot %d vol %d pitch %d flags 0x%x",
-           (int)(nBank & 0xff), (int)(nSfxIndex & 0xff),
-           v->nVolume, v->nPitch, nFlags);
     return v->nHandle;
 }
 

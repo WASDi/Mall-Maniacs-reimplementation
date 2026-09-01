@@ -438,11 +438,11 @@ void zoneWallCalcPlane(AiNavNode *pMesh) /* @0x42a1c0 */
         flCount += 1.0f;                              /* @0x44b260 */
     }
     pMesh->flAvgY = pMesh->flAvgY / flCount;          /* @0x42a24e */
+    pMesh->flSlopeZ = 0.0f;                           /* +0x04 @0x42a252 */
+    pMesh->flSlopeX = 0.0f;                           /* +0x08 @0x42a255 */
     if (flFound == g_flPlaneSentinel) {               /* all edges vertical @0x42a25c */
         return;
     }
-    pMesh->flSlopeZ = 0.0f;                           /* +0x04 @0x42a252 */
-    pMesh->flSlopeX = 0.0f;                           /* +0x08 */
     gxVec2Set(&vDir, pMesh->flNormalZ, pMesh->flNormalY); /* (Nz, Ny) @0x42a26d */
     mathVec2Polar(&vPolarA, &vDir);                   /* @0x435060 */
     vPolarA.y -= g_flHalfPi;

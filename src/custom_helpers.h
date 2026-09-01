@@ -23,5 +23,5 @@ void appLog(const char *fmt, ...);                   /* no original (diag logger
  * by the menu/options/record/charselect sign quads. */
 void setSignVerts(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3);  /* no original */
 
-
 #endif /* CUSTOM_HELPERS_H */
+
