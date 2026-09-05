@@ -187,9 +187,12 @@ extern int g_nCameraUpdateTick;  /* @0x458948 camera-follow scheduler tick — d
 extern int g_nCurrentItemId;     /* @0x458128 mode 3 target item id (HUD) — defined in player_setup.c */
 
 /* 4-byte object ids used by cameraFollowUpdate: "c_ac" camera-active zone
- * (snap target, @0x44e20c) and "c_di" camera-distance limiter (@0x44e204). */
+ * (snap target, @0x44e20c) and "c_di" camera-distance limiter (@0x44e204).
+ * zoneAvoidWalls @0x4023e0 tests a third id, "c_nc" (@0x44e214), as its
+ * wall-push blocker zone (hits inside c_nc are skipped). */
 #define OBJ_ID_C_AC 0x63615f63   /* 'c_ac' */
 #define OBJ_ID_C_DI 0x69645f63   /* 'c_di' */
+#define OBJ_ID_C_NC 0x636e5f63   /* 'c_nc' */
 
 /* ThrownItem is the 0x30-byte thrown/pickup shopping-item record built by
  * playerThrowItemCtor @0x40f720 and walked by gameUpdate @0x426ee0 (head

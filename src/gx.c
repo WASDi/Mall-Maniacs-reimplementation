@@ -445,7 +445,10 @@ int mathSegIntersect(float flAx, float flAy, float flBx, float flBy,
  * returns 1 only when the point lies within both segment bounds
  * ((cx <= x < dx || x <= cx && dx <= x) etc.); vertical-line special
  * cases first, parallel lines return 0. Both out floats are written even
- * when the bounds test fails. */
+ * when the bounds test fails. NOTE: the raw flag-chain at
+ * @0x40299b..0x402a0f can also be read as an upper-bound-only test
+ * (x <= dx && y <= dy); the two-sided form is kept because it reproduces
+ * the original camera's wall-avoid behavior in-game (verified 2026-09-05). */
 int mathSegIntersectBounded(float flAx, float flAy, float flBx, float flBy,
                             float flCx, float flCy, float flDx, float flDy,
                             float *pOut) /* @0x4028a0 */
@@ -477,7 +480,7 @@ int mathSegIntersectBounded(float flAx, float flAy, float flBx, float flBy,
         flY = pOut[0] * flSlopeC + flBaseC;              /* @0x402990 */
     }
     pOut[1] = flY;                                       /* @0x402998 */
-    if (((flCx <= pOut[0] && pOut[0] < flDx) ||          /* @0x40299b..0x4029b3 */
+    if (((flCx <= pOut[0] && pOut[0] < flDx) ||          /* @0x40299b..0x402a0f */
          (pOut[0] <= flCx && flDx <= pOut[0])) &&
         ((flCy <= flY && flY < flDy) ||
          (flY <= flCy && flDy <= flY))) {

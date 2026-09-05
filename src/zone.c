@@ -687,7 +687,8 @@ static const float g_flZoneBand = 4000.0f;    /* @0x44b2c0 (bytes 00 00 7A 45) *
  * with the edge, tested in both argument orders. Each hit is polarized
  * (mathVec2Polar of hit - pPoint); the shortest length wins
  * (vBest = {len, angle}, -1.0 sentinel), except hits inside the camera
- * blocker zone (objContainsPoint on OBJ_ID_C_AC) which are skipped. On a
+ * blocker zone (objContainsPoint on OBJ_ID_C_NC, 'c_nc' @0x44e214) which
+ * are skipped. On a
  * hit, pPoint += gxVec2FromPolar({len + 100.0, angle}) and 1 is returned;
  * 0 = no wall contact. Used by cameraFollowUpdate (both wall-avoid
  * passes). */
@@ -704,7 +705,7 @@ int zoneAvoidWalls(GxVec2 *pPoint, GxVec2 *pRef, float flRadius) /* @0x4023e0 */
     AiNavNode *pMesh;
     AiNavEdge *pEdge;
 
-    pCamObj = objFindById(OBJ_ID_C_AC, 0);                       /* @0x402415 */
+    pCamObj = objFindById(OBJ_ID_C_NC, 0);                       /* @0x402415 c_nc @0x44e214 */
     for (pMesh = g_pNavNodeList; pMesh != NULL; pMesh = pMesh->pNext) {
         for (pEdge = pMesh->pEdgeList; pEdge != NULL; pEdge = pEdge->pNext) { /* @0x402449 */
             float flAvg = ((pEdge->flV0X - pMesh->nRefX) * pMesh->flSlopeX +
@@ -712,7 +713,7 @@ int zoneAvoidWalls(GxVec2 *pPoint, GxVec2 *pRef, float flRadius) /* @0x4023e0 */
                            (pEdge->flV1X - pMesh->nRefX) * pMesh->flSlopeX +
                            (pEdge->flV0Z - pMesh->nRefZ) * pMesh->flSlopeZ +
                            pMesh->nRefY + pMesh->nRefY) * g_flZoneHalf; /* @0x402454 */
-            if (flAvg < flRadius || flRadius + g_flZoneBand <= flAvg) { /* @0x40249f..0x4024c9 */
+            if (flAvg < flRadius || flRadius + g_flZoneBand < flAvg) { /* @0x40249f..0x4024c9: FCOMPP skips only on strict greater (equal passes) */
                 continue;
             }
             if ((pPoint->y - pRef->y) * pEdge->flUnitNegZ +

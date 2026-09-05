@@ -293,7 +293,8 @@ objSegAppend:
 /* objShotCollide @0x4035e0 — rebuild pNode's shot list (+0x10) for the
  * objUpdatePhysics response. Per enabled +0x08 sub-object: world
  * positions A (vWorldA + vPos) and B (vWorldB + vPosB) must differ;
- * raycast the surfaces (sceneRayFindNearest 500.0, pSurface cache),
+ * raycast the surfaces (sceneRayFindNearest 500.0, pSurface cache,
+ * start height = flHeight +0x40 per @0x4036bb/@0x4036e1/@0x40372f/@0x404a80),
  * extend the list via objSegCollideCollect, then four hit phases over
  * the surfaces' pEdgeList (+0x3c) and pConnList (+0x38) edges, each
  * objShotAdd'ing a record with:
@@ -360,11 +361,11 @@ void objShotCollide(WorldNode *pNode) /* @0x4035e0 */
         }
         if (pSrc->pSurface == NULL) {                          /* @0x4036e0 */
             pSrc->pSurface = sceneRayFindNearest(vA.x, vA.y,   /* @0x42a750 @0x40370b */
-                                                 pSrc->flExtentB, 500.0f,
+                                                 pSrc->flHeight, 500.0f,
                                                  pSrc->flExtentA);
             if (pSrc->pSurface == NULL) {                      /* @0x403730 */
                 pSrc->pSurface = sceneRayFindNearest(vB.x, vB.y, /* @0x40374e */
-                                                     pSrc->flExtentB, 500.0f,
+                                                     pSrc->flHeight, 500.0f,
                                                      pSrc->flExtentA);
                 if (pSrc->pSurface == NULL) {                  /* @0x40377a */
                     continue;      /* next sub-object: no phases, no sorted pass */
@@ -374,7 +375,7 @@ void objShotCollide(WorldNode *pNode) /* @0x4035e0 */
             } else {
                 apSurfaces[0] = pSrc->pSurface;                /* @0x40379d */
                 apSurfaces[1] = sceneRayFindNearest(vB.x, vB.y, /* @0x4037a8 */
-                                                    pSrc->flExtentB, 500.0f,
+                                                    pSrc->flHeight, 500.0f,
                                                     pSrc->flExtentA);
                 apSurfaces[2] = NULL;
             }
@@ -643,7 +644,7 @@ void objShotCollide(WorldNode *pNode) /* @0x4035e0 */
             }
         }
         pSrc->pSurface = sceneRayFindSorted(vA.x, vA.y,        /* @0x42a7c0 @0x404a80 */
-                                            pSrc->flExtentB, 500.0f,
+                                            pSrc->flHeight, 500.0f,
                                             pSrc->flExtentA, apSurfaces);
     }
 }
@@ -653,7 +654,9 @@ void objShotCollide(WorldNode *pNode) /* @0x4035e0 */
  * nodes (skipping pNode itself and disabled ones) and their +0x08
  * sub-objects, and objShotAdd a record whenever the other sub-object's
  * world circle overlaps pSrc's (radius = flExtentA + flExtentA, height
- * band ±500 @0x44b2e4):
+ * band ±500 @0x44b2e4 — both sides compare flHeight (+0x40), verified
+ * against @0x404b80/@0x404b97: using flExtentB here makes airborne
+ * entries (thrown items) collide with everything below them):
  *   mid = B + unit(A - other) * (r - dist) / 2,
  *   ratio = (flExtentB * 0.5) / other->flExtentB,
  *   v1 = polarSum(polarSum({(r - dist) / ratio * 0.125, angle(A - other)},
@@ -707,8 +710,8 @@ void objCollideCheck(WorldNode *pNode) /* @0x404ac0 */
             }
             for (pOther = (ObjChildMesh *)pW->pChildMeshHead; pOther != NULL;
                  pOther = pOther->pNext) {                     /* @0x404b75 */
-                if (pSrc->flExtentB > pOther->flHeight + g_fl_500 || /* @0x404b80 */
-                    pOther->flHeight - g_fl_500 > pSrc->flExtentB) {
+                if (pSrc->flHeight > pOther->flHeight + g_fl_500 || /* @0x404b80 */
+                    pOther->flHeight - g_fl_500 > pSrc->flHeight) {  /* @0x404b97 */
                     continue;
                 }
                 gxVec2Add(&vC, &pOther->vWorldA, &pW->vPos);   /* local_94 @0x404bbe */

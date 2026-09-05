@@ -15,6 +15,7 @@
 #include "util.h"
 #include "quest.h"
 #include "scene_alloc.h"
+#include "custom_helpers.h"
 #include "gx.h"
 #include "nav.h"
 #include "gameplay.h"
@@ -1166,6 +1167,7 @@ EventObject *playerFindNearestTarget(PlayerRecord *pRec) /* @0x40ed10 */
     int nWalkX;
     int nWalkZ;
     int nSlot;
+    int nList;
     float flAvgFront;
     float flBest = 1000000.0f;                  /* 0x49742400 @0x40ed2c */
     float flD2;
@@ -1214,20 +1216,20 @@ EventObject *playerFindNearestTarget(PlayerRecord *pRec) /* @0x40ed10 */
             continue;
         }
         if (g_nGameMode == 1) {                     /* @0x40ee83 */
-            for (nSlot = 0; nSlot < 10; nSlot++) {  /* @0x40eef3 */
-                if (pRec->abListTaken[nSlot] == 0 &&     /* +0x1ac @0x40eefe */
-                    pRec->anListIds[nSlot] == nItemId &&
-                    pRec->nQuestTargetId != pRec->anListIds[nSlot] &&
-                    pRec->nLastThrownItemId != pRec->anListIds[nSlot]) {
+            for (nList = 0; nList < 10; nList++) {  /* @0x40eef3 */
+                if (pRec->abListTaken[nList] == 0 &&     /* +0x1ac @0x40eefe */
+                    pRec->anListIds[nList] == nItemId &&
+                    pRec->nQuestTargetId != pRec->anListIds[nList] &&
+                    pRec->nLastThrownItemId != pRec->anListIds[nList]) {
                     flBest = flD2;
                     pBest = pObj;
                 }
             }
         } else if (g_nGameMode == 2) {              /* @0x40eebf */
-            for (nSlot = 0; nSlot < 10; nSlot++) {  /* @0x40eeca */
-                if (pRec->abListTaken[nSlot] == 0 &&     /* +0x1ac */
-                    pRec->anListIds[nSlot] == nItemId &&
-                    pRec->nLastThrownItemId != pRec->anListIds[nSlot]) {
+            for (nList = 0; nList < 10; nList++) {  /* @0x40eeca */
+                if (pRec->abListTaken[nList] == 0 &&     /* +0x1ac */
+                    pRec->anListIds[nList] == nItemId &&
+                    pRec->nLastThrownItemId != pRec->anListIds[nList]) {
                     flBest = flD2;
                     pBest = pObj;
                 }
@@ -1324,7 +1326,12 @@ int playerAiGrabItem(PlayerRecord *pRec) /* @0x40ea20 */
  *  - substate switch (+0x2e8): 2 = jump-landing clamp (support floor vs the
  *    child-mesh average, "sjmp" destination zone deepens the drop), 3 =
  *    cart approach/steer, 4 = release-cart sync, 5 = item action (the big
- *    nAiPhase switch), 6 = drop item; other substates only clear +0x2e8.
+ *    nAiPhase switch), 6 = drop item (0 = face/throw1, 2/5 preserve the
+ *    in-flight throw1/throw2 anim phases, 3 = release + throw2
+ *    follow-through at phase 4); other substates only clear +0x2e8.
+ *    The substate jump table @0x40bd88 serves substates 1..6 only
+ *    (0x40b639/0x40bc95/0x40b5c5/0x40b630/0x40b6b0/0x40ba3a); the inner
+ *    phase-switch defaults clear the phase AND the substate.
  *  - every player with +0x16c > 0 decays its checkout ticks every 5th AI
  *    tick and damps the input impulses by 1.3.
  * Phase-4 substates: 0 turn-to-target/pick decision (with the mode-1 quest
@@ -1374,7 +1381,7 @@ void playerUpdateAI(void) /* @0x40b510 */
             continue;
         }
         switch (pRec->nActionSubstate) {                /* +0x2e8 @0x40b5be */
-        case 1:                                         /* jump landing @0x40bc95 */
+        case 2:                                         /* jump landing @0x40bc95 */
             flAvgFront = nodeChannelAvgFloat(pRec->pSubObjA, (int)pRec->pCharSceneNode); /* @0x40bc9f */
             pWalkMesh = objFindTurret(pRec->pSubObjA, (int)pRec->pCharSceneNode); /* @0x40bcb2 */
             flFloor = g_flZero;
@@ -1563,7 +1570,11 @@ void playerUpdateAI(void) /* @0x40b510 */
                 pRec->flInputTurn = 0.0f;
                 break;
             default:                                    /* 1,4,7,8,9 @0x40ba2f */
-                pRec->nAiPhase = 0;
+                pRec->nAiPhase = 0;                     /* +0x2f0 @0x40ba2f */
+                pRec->nActionSubstate = 0;              /* +0x2e8: shared default
+                                                         * target also clears the
+                                                         * substate (decompile
+                                                         * switchD_0040ba57_caseD_1) */
                 break;
             }
             break;
@@ -1585,47 +1596,80 @@ void playerUpdateAI(void) /* @0x40b510 */
             case 3:                                     /* @0x40baa9 */
                 pRec->flInputAccel = 0.0f;              /* @0x40baab */
                 pRec->flInputTurn = 0.0f;
-                if (aiCollectItem(pRec, 0) != 0) {      /* @0x40f420 @0x40bab7 */
-                    break;                              /* @0x40bc7a */
+                if (aiCollectItem(pRec, 0) == 0 &&      /* @0x40f420 @0x40bab7 */
+                    pRec->anHeldSlot[0] != 0) {         /* @0x40bacd */
+                    if (pRec == &g_playerRecords[g_nLocalPlayerIdx]) {   /* @0x40baeb */
+                        sndPlaySfx(0, 1, 0x15, 0xffff, 0, 0x400);    /* @0x437cf0 @0x40baff */
+                    }
+                    sceneObjSetClassMesh((int)pRec->pGrabSceneObj, NULL, 0, 3); /* @0x430db0 @0x40bb1d */
+                    sceneNodeGetPos(pRec->pCharSceneNode, 0, anCharPos, 2);     /* @0x431270 @0x40bb31 */
+                    pWalkNode = (WorldNode *)pRec->pSubObjA;         /* +0x224 @0x40bb25 */
+                    nThrowX = (int)pWalkNode->vPos.y;       /* ftol @0x40bb2e */
+                    nThrowZ = (int)pWalkNode->vPos.x;       /* ftol @0x40bb44 */
+                    flThrowDist = objDistToPoint(pRec->pSubObjC,        /* @0x405050 @0x40bb5b */
+                                                 (float)nThrowZ,
+                                                 (float)nThrowX);
+                    flThrowDist *= g_fl0_0333333;           /* @0x40bb60 */
+                    if (flThrowDist > g_fl200) {
+                        flThrowDist = g_fl200;              /* @0x40bb77 */
+                    }
+                    flVertVel = flThrowDist * g_flNegOne - g_fl50;  /* (dist * -1) - 50
+                                                                 * @0x40bb83 FMUL
+                                                                 * [0x44b25c] / @0x40bb8b
+                                                                 * FSUB [0x44b46c]: always
+                                                                 * negative (upward toss),
+                                                                 * -50..-250 */
+                    pThrownItem = (ThrownItem *)malloc(0x30);  /* operator_new @0x43dd42 @0x40bb95 */
+                    if (pThrownItem != NULL) {
+                        AI_WRAP_SCALEA(pWalkNode);          /* @0x40bbb2..0x40bc0a */
+                        gxVec2Set(&vThrowPolar, flThrowDist + g_fl25,
+                                  pWalkNode->flScaleA);     /* @0x434fa0 @0x40bc2e */
+                        playerThrowItemCtor(pThrownItem, pRec->anHeldSlot[0],  /* @0x40f720 @0x40bc61 */
+                                            (float)anCharPos[2],
+                                            (float)anCharPos[0],
+                                            (float)anCharPos[1] - 1000.0f,
+                                            vThrowPolar.x, vThrowPolar.y,
+                                            flVertVel, pRec->pGrabSceneObj, nPlayer);
+                    }
+                    pRec->anHeldSlot[0] = 0;                /* @0x40bc71 */
+                    pRec->pGrabSceneObj = NULL;             /* @0x40bc77 */
                 }
-                if (pRec->anHeldSlot[0] == 0) {         /* @0x40bacd */
-                    break;
-                }
-                if (pRec == &g_playerRecords[g_nLocalPlayerIdx]) {   /* @0x40baeb */
-                    sndPlaySfx(0, 1, 0x15, 0xffff, 0, 0x400);    /* @0x437cf0 @0x40baff */
-                }
-                sceneObjSetClassMesh((int)pRec->pGrabSceneObj, NULL, 0, 3); /* @0x430db0 @0x40bb1d */
-                sceneNodeGetPos(pRec->pCharSceneNode, 0, anCharPos, 2);     /* @0x431270 @0x40bb31 */
-                pWalkNode = (WorldNode *)pRec->pSubObjA;         /* +0x224 @0x40bb25 */
-                nThrowX = (int)pWalkNode->vPos.y;       /* ftol @0x40bb2e */
-                nThrowZ = (int)pWalkNode->vPos.x;       /* ftol @0x40bb44 */
-                flThrowDist = objDistToPoint(pRec->pSubObjC,        /* @0x405050 @0x40bb5b */
-                                             (float)nThrowZ,
-                                             (float)nThrowX);
-                flThrowDist *= g_fl0_0333333;           /* @0x40bb60 */
-                if (flThrowDist > g_fl200) {
-                    flThrowDist = g_fl200;              /* @0x40bb77 */
-                }
-                flVertVel = -(flThrowDist * g_flNegOne) - g_fl50;  /* @0x40bb83..0x40bb91 */
-                pThrownItem = (ThrownItem *)malloc(0x30);  /* operator_new @0x43dd42 @0x40bb95 */
-                if (pThrownItem != NULL) {
-                    AI_WRAP_SCALEA(pWalkNode);          /* @0x40bbb2..0x40bc0a */
-                    gxVec2Set(&vThrowPolar, flThrowDist + g_fl25,
-                              pWalkNode->flScaleA);     /* @0x434fa0 @0x40bc2e */
-                    playerThrowItemCtor(pThrownItem, pRec->anHeldSlot[0],  /* @0x40f720 @0x40bc61 */
-                                        (float)anCharPos[2],
-                                        (float)anCharPos[0],
-                                        (float)anCharPos[1] - 1000.0f,
-                                        vThrowPolar.x, vThrowPolar.y,
-                                        flVertVel, pRec->pGrabSceneObj, nPlayer);
-                }
-                pRec->anHeldSlot[0] = 0;                /* @0x40bc71 */
-                pRec->pGrabSceneObj = NULL;             /* @0x40bc77 */
+                /* Release follow-through (unconditional in the original):
+                 * throw2 plays through phases 4 (reset) -> 5 (step) -> 6
+                 * (anim-update), which is why the switch preserves phases
+                 * 2/5 below instead of resetting them. */
+                pRec->nAiPhase = 4;                         /* +0x2f0 @0x40bc... */
+                pRec->pAnimSet = pRec->apAnmSets[5];        /* throw2 (+0x2bc) */
                 break;
-            default:                                    /* 1,4 @0x40ba2f */
+            case 2:                                     /* throw1 stepping / throw2
+                                                         * follow-through: zero the
+                                                         * inputs but preserve the
+                                                         * phase (decompile
+                                                         * switchD_0040ba57_caseD_2) */
+            case 5:
+                pRec->flInputAccel = 0.0f;
+                pRec->flInputTurn = 0.0f;
+                break;
+            default:                                    /* 1,4,6+: phase table
+                                                         * @0x40bdd0 serves 0..5
+                                                         * (CMP EAX,5 + JA
+                                                         * @0x40ba55); abort the
+                                                         * throw */
                 pRec->nAiPhase = 0;
+                pRec->nActionSubstate = 0;              /* shared default target
+                                                         * clears both (decompile
+                                                         * switchD_0040ba57_caseD_1) */
                 break;
             }
+            break;
+        default:                                        /* substate 0/1/7: the
+                                                         * substate jump table
+                                                         * @0x40bd88 has entries
+                                                         * only for 1..6, so anything
+                                                         * else clears +0x2e8
+                                                         * (decompile
+                                                         * switchD_0040b5be_caseD_1) */
+            pRec->nActionSubstate = 0;
             break;
         }
         /* Checkout tick decay + input damping (+0x16c, x1.3 @0x44b478). */

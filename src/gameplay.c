@@ -462,6 +462,9 @@ void roundLogicUpdate(void) /* @0x40beb0 */
         }
     } else if (g_nGamePhase > 0) {                         /* @0x40c0a8 */
         g_nGamePhase = -20;                                /* -0x14 @0x40c0b0 */
+        /* Gates open = countdown expired: the per-frame input zeroing
+         * above stops and controls go live (automation marker). */
+        appLog("[gameplay] gates open (phase -20, controls live)");
     }
 
     if (g_nResultsScreen == 0) {                           /* @0x40c0ba */

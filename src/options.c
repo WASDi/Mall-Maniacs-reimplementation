@@ -28,7 +28,7 @@
 
 int   g_nOptionsRow = 0;      /* @0x45d45c */
 float g_optionsVol = 0.0f;    /* @0x45d458 */
-int   g_nModeSel = 1;         /* @0x4580fc difficulty 0 Lätt,1 Medium,2 Svårt (default Medium) */
+int   g_nModeSel = 0;         /* @0x4580fc difficulty 0 Lätt,1 Medium,2 Svårt (default Lätt = 0 in .data) */
 int   g_nGfxMode = 2;         /* @0x4580c4 1 Glide,2 Software */
 int   g_nRendererMode = 2;    /* @0x45a390 */
 void *g_hMenuTexGfx;          /* @0x45a6bc menu\gfx00.tpg */

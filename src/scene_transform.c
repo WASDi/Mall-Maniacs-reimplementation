@@ -640,17 +640,52 @@ int sceneObjSetSubOrient(SceneNode *pObj, int nMeshIdx, short nYaw, short nPitch
 }
 
 /* ===================================================================
- * sceneNodeFree @0x430460
+ * sceneNodeFree @0x430460 — mode-gated node free. nFreeChildren is a mode,
+ * not a boolean (verified vs disasm: @0x430464 frees children only for
+ * mode 1 @0x43046a, @0x4304ae takes the reparent path for mode 3,
+ * anything else returns 0 @0x4305aa):
+ *   mode 1: free children recursively, then unlink + free (thrownItemFree
+ *     @0x40f8d0, charselect preview @0x41f558).
+ *   mode 3: splice children into n's slot (first child takes n's position,
+ *     siblings reparented to n->parent) and free only n (playerCollectItem
+ *     overflow path @0x40f3dd). The original skips first->pParent when the
+ *     first child has no next sibling; the rebuild sets it uniformly.
+ * The render-list head @0x45e8cc aliases root+0xc, so freeing the head
+ * advances it (to the promoted child in mode 3). The @0x430522 clear of
+ * g_pSceneNodeHead is the head lifecycle: teardown (sceneFreeAllNodes)
+ * clears it when the head node is freed (init does not re-zero it).
+ * Mem accounting @0x43053a subtracts the full 0xa8+nSub*0x70. Parent
+ * bounds refresh @0x43055f (sceneNodeUpdateBounds @0x4303c0) when parent
+ * != root. The nId>=0x100 dtor callback via table @0x45e668 (@0x430572)
+ * has no rebuild counterpart; it is unreachable (allocs set nId 1/2/3,
+ * root 0).
  * =================================================================== */
 void sceneNodeFree(SceneNode *pNode, int nFreeChildren) /* @0x430460 */
 {
     SceneNode *n = pNode;
+    SceneNode *promoted = NULL;
+    int nSub;
     if (!n) return;
-    if (nFreeChildren) {
+    if (nFreeChildren != 1 && nFreeChildren != 3) return;
+    if (nFreeChildren == 1) {
         SceneNode *c = n->pChild;
         while (c) { SceneNode *nx = c->pNextSib; sceneNodeFree(c, 1); c = nx; }
+    } else if (n->pChild != NULL && n->pParent != NULL) {
+        SceneNode *first = n->pChild;
+        SceneNode *prev = n->pPrevLink;
+        SceneNode *parent = n->pParent;
+        SceneNode *last;
+        if (prev == parent) parent->pChild = first;
+        else prev->pNextSib = first;
+        first->pPrevLink = prev;
+        first->pParent = parent;
+        last = first;
+        while (last->pNextSib != NULL) { last = last->pNextSib; last->pParent = parent; }
+        last->pNextSib = n->pNextSib;
+        if (n->pNextSib != NULL) n->pNextSib->pPrevLink = last;
+        promoted = first;
     }
-    if (n->pParent) {
+    if (n->pParent != NULL && promoted == NULL) {
         SceneNode *p = n->pParent;
         if (p->pChild == n) p->pChild = n->pNextSib;
         else {
@@ -658,9 +693,21 @@ void sceneNodeFree(SceneNode *pNode, int nFreeChildren) /* @0x430460 */
             while (c && c->pNextSib != n) c = c->pNextSib;
             if (c) c->pNextSib = n->pNextSib;
         }
+        if (n->pNextSib != NULL) {
+            n->pNextSib->pPrevLink = n->pPrevLink;
+        }
     }
+    if (g_pSceneNodeList == n) {
+        g_pSceneNodeList = (promoted != NULL) ? (void *)promoted : (void *)n->pNextSib;
+    }
+    if (g_pSceneNodeHead == n) g_pSceneNodeHead = NULL;
     g_nSceneNodeCount--;
-    g_nSceneNodeMemUsed -= 0xa8;
+    nSub = (int)(signed char)n->nChannelCount - 1;
+    if (nSub < 0) nSub = 0;
+    g_nSceneNodeMemUsed -= 0xa8 + nSub * 0x70;
+    if (n->pParent != &g_rootNode) {
+        sceneNodeUpdateBounds(n->pParent);
+    }
     free(n);
 }
 
@@ -889,6 +936,14 @@ int sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMod
         if (pObjNode->pNextSib != NULL) {                 /* @0x430e04 */
             pObjNode->pNextSib->pPrevLink = pObjNode->pPrevLink; /* @0x430e0a */
         }
+        /* Render-list head @0x45e8cc aliases root+0xc: unlinking the head
+         * advances it. The rebuild keeps g_pSceneNodeList separate — sync
+         * it or a node moved off the root (or freed head logic elsewhere)
+         * corrupts sceneRender traversal (same orphan family as the
+         * sceneryObjAlloc invisible-cart fix). */
+        if (pOldParent == &g_rootNode && g_pSceneNodeList == pObjNode) {
+            g_pSceneNodeList = pObjNode->pNextSib;
+        }
         if (pObjNode->pParent != &g_rootNode) {           /* @0x430e10 */
             sceneNodeUpdateBounds(pObjNode->pParent);     /* @0x4303c0 @0x430e16 */
         }
@@ -899,6 +954,14 @@ int sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMod
         }
         pClassNode->pChild = pObjNode;                    /* @0x430e34 */
         pObjNode->pPrevLink = pClassNode;                 /* +0x10 @0x430e37 */
+        /* Relink to root must also advance the separate render-list head
+         * (@0x430e37/@0x430e47 write the same aliased slot). Without this,
+         * a reparent-to-root orphans the node from sceneRender — e.g. the
+         * level-1 burger @0x417b39 (sceneObjSetClassMesh(burger, NULL, 0, 3))
+         * would go invisible while its pickup logic keeps running. */
+        if (pClassNode == &g_rootNode) {
+            g_pSceneNodeList = pObjNode;
+        }
     } else if ((nMode & 0xf) == 2) {
         return 0;
     }
