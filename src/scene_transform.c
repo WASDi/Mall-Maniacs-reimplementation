@@ -697,9 +697,9 @@ void sceneNodeFree(SceneNode *pNode, int nFreeChildren) /* @0x430460 */
             n->pNextSib->pPrevLink = n->pPrevLink;
         }
     }
-    if (g_pSceneNodeList == n) {
-        g_pSceneNodeList = (promoted != NULL) ? (void *)promoted : (void *)n->pNextSib;
-    }
+    /* The render-list head aliases root+0xc, so the unlink above already
+     * advanced it when n was the head (mode-3 promote: parent->pChild = first
+     * @0x430490; otherwise p->pChild = n->pNextSib @0x4304b0). */
     if (g_pSceneNodeHead == n) g_pSceneNodeHead = NULL;
     g_nSceneNodeCount--;
     nSub = (int)(signed char)n->nChannelCount - 1;
@@ -936,14 +936,6 @@ int sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMod
         if (pObjNode->pNextSib != NULL) {                 /* @0x430e04 */
             pObjNode->pNextSib->pPrevLink = pObjNode->pPrevLink; /* @0x430e0a */
         }
-        /* Render-list head @0x45e8cc aliases root+0xc: unlinking the head
-         * advances it. The rebuild keeps g_pSceneNodeList separate — sync
-         * it or a node moved off the root (or freed head logic elsewhere)
-         * corrupts sceneRender traversal (same orphan family as the
-         * sceneryObjAlloc invisible-cart fix). */
-        if (pOldParent == &g_rootNode && g_pSceneNodeList == pObjNode) {
-            g_pSceneNodeList = pObjNode->pNextSib;
-        }
         if (pObjNode->pParent != &g_rootNode) {           /* @0x430e10 */
             sceneNodeUpdateBounds(pObjNode->pParent);     /* @0x4303c0 @0x430e16 */
         }
@@ -954,14 +946,10 @@ int sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMod
         }
         pClassNode->pChild = pObjNode;                    /* @0x430e34 */
         pObjNode->pPrevLink = pClassNode;                 /* +0x10 @0x430e37 */
-        /* Relink to root must also advance the separate render-list head
-         * (@0x430e37/@0x430e47 write the same aliased slot). Without this,
-         * a reparent-to-root orphans the node from sceneRender — e.g. the
-         * level-1 burger @0x417b39 (sceneObjSetClassMesh(burger, NULL, 0, 3))
-         * would go invisible while its pickup logic keeps running. */
-        if (pClassNode == &g_rootNode) {
-            g_pSceneNodeList = pObjNode;
-        }
+        /* Relinking to root also advances the render-list head: it aliases
+         * root+0xc (g_pSceneNodeList), so the pClassNode->pChild store above
+         * is the head update (e.g. the level-1 burger @0x417b39,
+         * sceneObjSetClassMesh(burger, NULL, 0, 3)). */
     } else if ((nMode & 0xf) == 2) {
         return 0;
     }

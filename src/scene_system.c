@@ -21,7 +21,6 @@
  * ===================================================================== */
 
 /* --- globals --- */
-void *g_pSceneNodeList = NULL;       /* @0x45e8cc (root node + 0x0c) */
 void *g_pSortBuffer = NULL;          /* @0x45e914 */
 void *g_pSortBufCur = NULL;          /* @0x45e90c cursor */
 void *g_pNodePool = NULL;            /* @0x45e604 */
@@ -166,7 +165,6 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
      * +0x14 IS g_pRootMatrix (same address 0x45e8d4 in the original).
      * sceneBuildRootMatrix writes the camera inverse transform into the root
      * channel's wmat, which children of root use as their parent world matrix. */
-    g_pSceneNodeList = NULL;
     memset(&g_rootNode, 0, sizeof(g_rootNode));
     memset(&g_rootChannel, 0, sizeof(g_rootChannel));
     SceneNode *root = &g_rootNode;
@@ -200,10 +198,9 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
 }
 
 /* sceneFreeAllNodes @0x42f150 — free every node reachable from the
- * g_pSceneNodeList head via sceneNodeFree(n,1). The original relies on
- * g_pSceneNodeList aliasing the root node's pChild so the head advances
- * as each node unlinks; the rebuild keeps them separate, so the next
- * sibling is captured before the free. */
+ * g_pSceneNodeList head via sceneNodeFree(n,1). The head aliases the root
+ * node's pChild so it advances as each node unlinks; capturing the next
+ * sibling before the free keeps the loop identical to the original. */
 int sceneFreeAllNodes(void) /* @0x42f150 */
 {
     while (g_pSceneNodeList != NULL) {

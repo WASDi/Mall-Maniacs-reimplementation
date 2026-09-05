@@ -407,7 +407,13 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
             fmtSprintf(szId, "%4.4s", mStringCStr(&pNode->key));
             nId = *(int *)szId;                      /* id = first dword of the name */
         }
-        if (*(int *)szId == 0x1f) {
+        /* [VERIFIED vs 0x406e93] The skip tests the COMPUTED id: '_' entries
+         * go through fmtAtoi first (e.g. "_31" -> 0x1f). Testing the raw name
+         * dword instead let the .eo burger zone register as a pickable id-0x1f
+         * EventObject whose field_14 holds a config value — the nearest-target
+         * scan then preferred it over the director's real burger and the grab
+         * crashed dereferencing that value as a SceneNode. */
+        if (nId == 0x1f) {
             nopDebugStub();                          /* "Burger EventObject found and ignored." @0x44e838 */
             continue;
         }
@@ -422,7 +428,7 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
             sceneObjCtor4(pEvent, nId, flX, flY, flH, flH2);   /* @0x414700 */
         }
 
-        for (i = 0; ; i++) {
+        for (i = 1; ; i++) {
             ConfigNode *pLineNode;
             float flY2, flX2, flY1, flX1;
             float flOrgX = (pEvent != NULL) ? pEvent->flOriginX : 0.0f;

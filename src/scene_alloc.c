@@ -11,11 +11,13 @@
 
 /* ===================================================================
  * sceneNodeAlloc @0x4318e0 — camera/block alloc (0xa8, mode 2)
- * Verified vs disasm 0x4318e0: PUSH 0xa8; CALL _malloc; links into
- * g_pSceneNodeList @0x45e8cc (head, sibling @+0x10) and root child @+0xc.
+ * Verified vs disasm 0x4318e0: PUSH 0xa8; CALL _malloc; head-insert into
+ * the root child list @+0xc (which IS g_pSceneNodeList @0x45e8cc):
+ * pNextSib(+8)=old head, oldHead->pPrevLink(+0x10)=n, root.pChild=n,
+ * pPrevLink(+0x10)=&g_rootNode (0x431906/0x43191a: p+0x10 = p+4).
  * Sets mode=2 @+0, nWidth/nHeight/renderT as ints at +0x28/0x2c/0x30,
  * vx/vy/vw/vh shorts at +0x20..0x26, pChannels @+0x14 -> +0x38, ch@+0x38
- * fUnk6=1.0. TODO: original writes sibling prev at +0x10 via *(list+0x10)=p.
+ * fUnk6=1.0.
  * =================================================================== */
 void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3,
                      short nMeshIdx, short nUnk5, short nUnk6, short nUnk7) /* @0x4318e0 */
@@ -24,12 +26,10 @@ void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3,
     if (!n) return NULL;
     memset(n, 0, 0xa8);
     n->pParent = &g_rootNode;
-    /* Head insert into g_pSceneNodeList: *(p+4)=oldList; if(oldList) *(oldList+0x10)=p */
-    n->pNextSib = (SceneNode *)g_pSceneNodeList;
-    if (g_pSceneNodeList) ((SceneNode *)g_pSceneNodeList)->pPrevLink = n;
-    g_pSceneNodeList = n;
-    /* Also chain as first child of root at +0xc */
-    g_rootNode.pChild = n;
+    n->pNextSib = g_rootNode.pChild;            /* +8 = old head @0x4318fd */
+    if (n->pNextSib) n->pNextSib->pPrevLink = n; /* oldHead+0x10 = n @0x431906 */
+    g_rootNode.pChild = n;                      /* @0x43190f (= g_pSceneNodeList) */
+    n->pPrevLink = n->pParent;                  /* +0x10 = parent @0x43191a */
     n->nId = 2; /* mode==2 gate in sceneRender */
     n->nChannelCount = 1; /* @0x43196c: MOV byte [EAX+0x3],0x1 (camera has 1 channel) */
     n->pChannels = &n->ch;
@@ -78,13 +78,6 @@ void *sceneNodeAllocChild(SceneNode *pParent, void *pChannelPtr, void *pChannelP
     if (oldChild) oldChild->pPrevLink = n;
     parent->pChild = n;
     n->pPrevLink = parent; /* @+0x10 = parent, per 0x431a2b */
-    /* Original root is at 0x45e8c0 and its +0xc (child) aliases g_pSceneNodeList @0x45e8cc:
-     * a single chain, not two lists. The rebuild keeps them as separate
-     * variables, so root-child links must advance both (see sceneryObjAlloc).
-     * parent->pChild == n here, so this assignment is that sync. */
-    if (n->pParent == &g_rootNode) {
-        g_pSceneNodeList = parent->pChild;
-    }
     n->nId = 3; /* @+0 */
     n->bType = 0; /* @+2 */
     n->nChannelCount = 1; /* @+3 */
@@ -131,18 +124,6 @@ void *sceneryObjAlloc(SceneNode *pParent, int nChanPtr, int nChanPtr2, int nChan
     if (oldChild) oldChild->pPrevLink = n;
     parent->pChild = n;
     n->pPrevLink = parent; /* @+0x10 = parent, per 0x430268 */
-    /* Original root lives at 0x45e8c0 and the render-list head @0x45e8cc IS
-     * root+0xc (0x430244 parents NULL to 0x45e8c0; 0x430253/0x430268 link
-     * through [parent+0xc], i.e. the same slot sceneRender @0x42f1c0
-     * iterates). The rebuild keeps g_pSceneNodeList separate from
-     * g_rootNode.pChild, so every root-child link must advance both or the
-     * node is orphaned from rendering. The player carts
-     * (playerSetupSceneObjects @0x41197f, parent NULL) hit exactly this:
-     * without the sync the last-created cart never joins the render list
-     * while its WorldNode physics still collides — one invisible NPC cart. */
-    if (parent == &g_rootNode) {
-        g_pSceneNodeList = n;
-    }
     n->nId = 1;
     n->bType = 0;
     n->nChannelCount = (unsigned char)(nSub + 1);

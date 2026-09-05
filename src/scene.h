@@ -238,7 +238,6 @@ typedef struct __attribute__((packed)) SceneCameraBlock {
 } SceneCameraBlock;
 
 /* --- globals --- */
-extern void *g_pSceneNodeList;     /* flat render list (advanced by +8) */
 extern void *g_pSortBuffer;        /* @0x45e914 sort buffer */
 extern void *g_pSortBufCur;
 extern void *g_pNodePool;          /* @0x45e604 */
@@ -248,6 +247,10 @@ extern void *g_pNodePoolCur;       /* @0x45e908 cursor into g_pNodePool */
 extern void *g_pNodePool2Cur;      /* @0x45e5fc cursor into g_pNodePool2 */
 extern void *g_pRootMatrix;        /* @0x45e8d4 camera/world matrix (points at g_rootChannel, orig 0x45e818) */
 extern SceneNode g_rootNode;       /* @0x45e8c0 root node storage */
+/* @0x45e8cc — the render-list head ALIASES g_rootNode+0xc (pChild) in the
+ * original: one doubly-linked list, not two. Kept as a macro so both names
+ * always refer to the same slot; per-caller sync hacks are unnecessary. */
+#define g_pSceneNodeList (*(SceneNode **)&g_rootNode.pChild)
 extern float *g_pSinTable;           /* @0x45e5f8 sin table 0x400 */
 extern float *g_pSinTree;            /* @0x45e888 sin tree 0x3ff8 */
 extern int   g_nSceneNodeCount;
