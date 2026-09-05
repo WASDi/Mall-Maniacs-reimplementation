@@ -10,6 +10,7 @@
 #include "input.h"
 #include "level.h"
 #include "level0.h"
+#include "level1.h"
 #include "levelselect.h"
 #include "menu.h"
 #include "nav.h"

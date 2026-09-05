@@ -239,15 +239,13 @@ void *musicModuleInit(void *pModuleEntry) /* @0x437b10 */
     return NULL;
 }
 
-/* levelEventDirector_L1_Cleanup..L4_Cleanup @0x417860/0x417fa0/0x4189d0/
+/* levelEventDirector_L2_Cleanup..L4_Cleanup @0x417fa0/0x4189d0/
  * 0x419240 — per-level director anim teardown, dispatched by roundTeardown
- * @0x40aa10 (jump table @0x40ad60) on g_nLevelIdx 1..4 (L0_Cleanup lives in
- * level0.c). Each frees its level's seven event anims (anmFree) and resets
- * the director step state; the director bodies are deferred, so these stay
- * documented no-op stubs preserving the dispatch call sites. */
-void levelEventDirector_L1_Cleanup(void) /* @0x417860 */
-{
-}
+ * @0x40aa10 (jump table @0x40ad60) on g_nLevelIdx 2..4 (L0_Cleanup lives in
+ * level0.c, L1_Cleanup in level1.c). Each frees its level's seven event
+ * anims (anmFree) and resets the director step state; the director bodies
+ * are deferred, so these stay documented no-op stubs preserving the
+ * dispatch call sites. */
 
 void levelEventDirector_L2_Cleanup(void) /* @0x417fa0 */
 {
@@ -261,11 +259,9 @@ void levelEventDirector_L4_Cleanup(void) /* @0x419240 */
 {
 }
 
-/* levelEventDirector_L1..L4 — see stubs.h. The L0 director is implemented
- * in level0.c; the remaining per-level directors stay no-op stubs. */
-void levelEventDirector_L1(void) /* @0x4178c0 */
-{
-}
+/* levelEventDirector_L2..L4 — see stubs.h. The L0/L1 directors are
+ * implemented in level0.c/level1.c; the remaining per-level directors
+ * stay no-op stubs. */
 
 void levelEventDirector_L2(void) /* @0x418000 */
 {
@@ -279,11 +275,9 @@ void levelEventDirector_L4(void) /* @0x4192a0 */
 {
 }
 
-/* levelEventDirector_L1_Init..L4_Init — see stubs.h. L0_Init is implemented
- * in level0.c; the remaining per-level director inits stay no-op stubs. */
-void levelEventDirector_L1_Init(void) /* @0x4175e0 */
-{
-}
+/* levelEventDirector_L2_Init..L4_Init — see stubs.h. L0_Init/L1_Init are
+ * implemented in level0.c/level1.c; the remaining per-level director
+ * inits stay no-op stubs. */
 
 void levelEventDirector_L2_Init(void) /* @0x417dc0 */
 {

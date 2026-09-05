@@ -24,8 +24,8 @@
  *     eventAnim step/apply alternation.
  *
  * Cleanup frees only the anims: the sign/cashier/mascot/BURGER scene
- * objects belong to the round scene teardown (roundTeardown @0x40aa10,
- * which is not implemented yet). The original UB on operator_new failure
+ * objects belong to the round scene teardown (roundTeardown @0x40aa10).
+ * The original UB on operator_new failure
  * (NULL deref at [EAX+0x10]) is guarded with the same `if (pNew != NULL)`
  * pattern used by the player_ai.c landed-item path.
  */
