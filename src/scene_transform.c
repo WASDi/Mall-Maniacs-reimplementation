@@ -260,10 +260,10 @@ SceneObjTypeDef *sceneNodeGetMesh(SceneNode *pNode) /* @0x431ae0 */
 
 /* sceneSetCurrentObj @0x430d98 — record the scene-object context used by
  * sceneNodeGetPos mode 6. Returns 1. */
-int sceneSetCurrentObj(SceneNode *pNodeHead, int nCurrentObj) /* @0x430d98 */
+int sceneSetCurrentObj(SceneNode *pCharSceneObj, int nMode) /* @0x430d98 */
 {
-    g_pSceneNodeHead = pNodeHead;
-    g_nSceneCurrentObj = nCurrentObj;
+    g_pSceneNodeHead = pCharSceneObj;
+    g_nSceneCurrentObj = nMode;
     return 1;
 }
 
@@ -272,31 +272,31 @@ int sceneSetCurrentObj(SceneNode *pNodeHead, int nCurrentObj) /* @0x430d98 */
  * nMode 4: walk the channel-parent chain to g_rootNode accumulating
  *   Ry(r1)*Rx(r0)*Rz(r2) rotations per ancestor (binary-degree sin/cos
  *   @0x42d030/@0x42d050) and the per-channel translation; results stored
- *   as ints via __ftol truncation. For nChannel==0 the walk starts at the
+ *   as ints via __ftol truncation. For nMeshIdx==0 the walk starts at the
  *   node's parent (channel 0's parent lives one node up).
  * nMode 6: same for this node and for the scene-object context
  *   (g_pSceneNodeHead, g_nSceneCurrentObj), clears bFlagB along the
  *   context's channel chain, recomputes its world transform
  *   (chanCalcWorldTransform @0x42f6e0) and returns
  *   Wmat * (posThis - posHead) as ints. */
-int sceneNodeGetPos(SceneNode *pNode, int nChannel, int *pOutXYZ, int nMode) /* @0x431270 */
+int sceneNodeGetPos(SceneNode *pNode, int nMeshIdx, int *anOutPos, int nMode) /* @0x431270 */
 {
-    if (nChannel < 0 || nChannel >= (int)pNode->nChannelCount) {
+    if (nMeshIdx < 0 || nMeshIdx >= (int)pNode->nChannelCount) {
         return 0;
     }
     if (nMode == 2) {
-        SceneChannel *ch = &pNode->pChannels[nChannel];
-        ((int *)pOutXYZ)[0] = ch->x;
-        ((int *)pOutXYZ)[1] = ch->y;
-        ((int *)pOutXYZ)[2] = ch->z;
+        SceneChannel *ch = &pNode->pChannels[nMeshIdx];
+        ((int *)anOutPos)[0] = ch->x;
+        ((int *)anOutPos)[1] = ch->y;
+        ((int *)anOutPos)[2] = ch->z;
         return 1;
     }
     if (nMode == 4) {
-        SceneChannel *ch = &pNode->pChannels[nChannel];
+        SceneChannel *ch = &pNode->pChannels[nMeshIdx];
         float px = (float)ch->x;
         float py = (float)ch->y;
         float pz = (float)ch->z;
-        SceneNode *n = (nChannel == 0) ? pNode->pParent : pNode;
+        SceneNode *n = (nMeshIdx == 0) ? pNode->pParent : pNode;
         int idx = ch->nIdx;
         while (n != &g_rootNode) {
             SceneChannel *c = &n->pChannels[idx];
@@ -318,9 +318,9 @@ int sceneNodeGetPos(SceneNode *pNode, int nChannel, int *pOutXYZ, int nMode) /* 
             }
             idx = c->nIdx;                           /* 0x431405 */
         }
-        pOutXYZ[0] = (int)px;                        /* __ftol 0x431414 */
-        pOutXYZ[1] = (int)py;                        /* 0x431421 */
-        pOutXYZ[2] = (int)pz;                        /* 0x43142c */
+        anOutPos[0] = (int)px;                        /* __ftol 0x431414 */
+        anOutPos[1] = (int)py;                        /* 0x431421 */
+        anOutPos[2] = (int)pz;                        /* 0x43142c */
         return 1;
     }
     if (nMode == 6) {
@@ -330,7 +330,7 @@ int sceneNodeGetPos(SceneNode *pNode, int nChannel, int *pOutXYZ, int nMode) /* 
         int idx;
         SceneChannel *hc;
         float dx, dy, dz;
-        sceneNodeGetPos(pNode, nChannel, anPos, 4);                  /* 0x431450..0x431459 */
+        sceneNodeGetPos(pNode, nMeshIdx, anPos, 4);                  /* 0x431450..0x431459 */
         sceneNodeGetPos(g_pSceneNodeHead, g_nSceneCurrentObj, anHead, 4); /* 0x43145e..0x431472 */
         n = g_pSceneNodeHead;
         idx = g_nSceneCurrentObj;
@@ -349,9 +349,9 @@ int sceneNodeGetPos(SceneNode *pNode, int nChannel, int *pOutXYZ, int nMode) /* 
         dy = (float)(anPos[1] - anHead[1]);
         dz = (float)(anPos[2] - anHead[2]);
         /* out = wmat * diff (column-major 3x3 at hc+0x40), stored as ints */
-        pOutXYZ[0] = (int)(dx * hc->wmat[0] + dy * hc->wmat[3] + dz * hc->wmat[6]); /* 0x431522..0x431539 */
-        pOutXYZ[1] = (int)(dx * hc->wmat[1] + dy * hc->wmat[4] + dz * hc->wmat[7]); /* 0x431546..0x431557 */
-        pOutXYZ[2] = (int)(dx * hc->wmat[2] + dy * hc->wmat[5] + dz * hc->wmat[8]); /* 0x43155f..0x431570 */
+        anOutPos[0] = (int)(dx * hc->wmat[0] + dy * hc->wmat[3] + dz * hc->wmat[6]); /* 0x431522..0x431539 */
+        anOutPos[1] = (int)(dx * hc->wmat[1] + dy * hc->wmat[4] + dz * hc->wmat[7]); /* 0x431546..0x431557 */
+        anOutPos[2] = (int)(dx * hc->wmat[2] + dy * hc->wmat[5] + dz * hc->wmat[8]); /* 0x43155f..0x431570 */
         return 1;
     }
     return 0;

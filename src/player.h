@@ -65,10 +65,10 @@ typedef struct PlayerRecord {
     void *pSndEmitterEngine;     /* +0x2c engine/roll sfx emitter (bank 1 idx 11;
                                   * lives while |speed| > 45 or |turn| > 0.012) */
     SceneNode *pCharSceneObj;    /* +0x30 char scene object */
-    SceneNode *apMeshSlots[3];   /* +0x34 char mesh + up to 2 "_%d<name>" sub-meshes */
-    SceneNode *pGrabSceneObj;    /* +0x40 held item / burger scene object */
-    SceneNode *pCartChildA;      /* +0x44 cart child node (sceneNodeAllocChild) */
-    SceneNode *pCartChildB;      /* +0x48 cart child node */
+    SceneNode *pCharMeshSlots[3]; /* +0x34 char mesh + up to 2 "_%d<name>" sub-meshes */
+    SceneNode *pGrabSceneObj;  /* +0x40 held item / burger scene object */
+    SceneNode *pCartHandleL;   /* +0x44 L cart handle anchor (handle_pos triple 2, levelObjectsCartsCameraInit @0x411b70) */
+    SceneNode *pCartHandleR;   /* +0x48 R cart handle anchor (handle_pos triple 1) */
     char szCharName[0x100];      /* +0x4c unbounded strcpy of g_apCharNames[idx]
                                   * (netIsActive()==0 path); spans 0x4c..0x14b */
     int nStartPosIdx;            /* +0x14c start_positions[%d] index (player slot) */
@@ -81,11 +81,10 @@ typedef struct PlayerRecord {
     int nStatStrength;           /* +0x164 g_kCharStatStrength */
     int nStatAgility;            /* +0x168 g_kCharStatAgility */
     int nCheckoutProgress;       /* +0x16c checkout bar fill 0..100 (HUD) */
-    int field_170_pad[1];        /* +0x170 */
-    int field_174;               /* +0x174 round gate: nonzero arms the win
-                                  * checks in roundLogicUpdate; mode 4 also
-                                  * uses it as the checkpoint-stage flag */
-    int field_178_pad[1];        /* +0x178 */
+    int pad170[1];               /* +0x170 */
+    int nCartMode;               /* +0x174 0=on-foot, nonzero=cart grabbed/riding;
+                                   * hand-attach gate in playerAnimSfxUpdate @0x40cb48 + cart-physics gate in gameUpdate @0x426f17 */
+    int pad178[1];               /* +0x178 */
     int anHeldSlot[2];           /* +0x17c held item ids (AI works on slot 0);
                                   * anHeldSlot[1] == +0x180 doubles as the
                                   * shopping-list progress counter in mode 3 */

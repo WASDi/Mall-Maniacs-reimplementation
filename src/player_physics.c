@@ -504,17 +504,16 @@ void syncWalkNodeChannelsToMesh(PlayerRecord *pRec) /* @0x428990 */
     int nY;
     int nX;
 
-    if (flBound < pWalk->field_3c) {                       /* @0x4289ab */
-        if (flBound > flSpeed) {
+    if (pWalk->field_3c <= flBound) {                      /* @0x4289a7 C0=0 */
+        flBound = -flBound;                                /* @0x4289ca */
+        if (flBound <= pWalk->field_3c) {                  /* @0x4289cc JNZ: -bound <= +0x3c */
+            flBound = pWalk->field_3c;                     /* @0x4289ed */
+        } else if (flSpeed < flBound) {                    /* @0x4289d6 JZ: speed < -bound */
             flBound = flSpeed;
         }
-    } else {
-        flBound = -flBound;
-        if (flBound <= pWalk->field_3c) {                  /* @0x4289b8 */
-            flBound = pWalk->field_3c;
-        } else if (flBound < flSpeed) {                    /* @0x4289c1 */
-            flBound = flSpeed;
-        }
+    } else if (flBound < flSpeed) {                        /* @0x4289b5: bound < +0x3c and
+                                                            * bound < speed @0x4289b9 */
+        flBound = flSpeed;
     }
     pRec->flCurSpeed = flBound;                            /* +0x1f4 @0x4289d1 */
     if (pWalk->field_18 == 0) {                            /* @0x4289d7 */
@@ -557,21 +556,23 @@ void syncPosNodeChannelsToMesh(PlayerRecord *pRec) /* @0x428840 */
         }
     }
     pRec->flPosTurnAccum = flRest;                         /* +0x244 @0x42889b */
-    /* clamp 2: +0x234 against the +0x230 bound and node +0x3c */
+    /* clamp 2: +0x234 against the +0x230 bound and node +0x3c — transfer
+     * the collision-imparted node speed (objUpdateFire writes +0x3c) into
+     * the channel, capped at ±bound; beyond the bound keep
+     * max(bound, speed) so a bump still launches the node. */
     {
         float fA = pRec->flCurAccFric;                     /* +0x230 @0x4288a1 */
         float fS = pRec->flPosSpeed;                       /* +0x234 @0x4288aa */
-        if (fA < pPos->field_3c) {                         /* @0x4288b6 */
-            if (fA > fS) {
+        if (pPos->field_3c <= fA) {                        /* @0x4288a7 C0=0 */
+            fA = -fA;                                      /* @0x4288d0 */
+            if (fA <= pPos->field_3c) {                    /* @0x4288d2 JNZ */
+                fA = pPos->field_3c;                       /* @0x4288f3 */
+            } else if (fS < fA) {                          /* @0x4288dc JZ: speed < -bound */
                 fA = fS;
             }
-        } else {
-            fA = -fA;
-            if (fA <= pPos->field_3c) {                    /* @0x4288d7 */
-                fA = pPos->field_3c;
-            } else if (fA < fS) {                          /* @0x4288e7 */
-                fA = fS;
-            }
+        } else if (fA < fS) {                              /* @0x4288bb: bound < +0x3c and
+                                                            * bound < speed @0x4288bf */
+            fA = fS;
         }
         pRec->flPosSpeed = fA;                             /* +0x234 @0x4288f6 */
     }
@@ -605,7 +606,7 @@ void syncCartNodeChannelsToWalkPos(PlayerRecord *pRec) /* @0x40e040 */
     int nX;
     short nScale;
 
-    pRec->field_174 = 0;                                   /* @0x40e04d */
+    pRec->nCartMode = 0;                                   /* @0x40e04d */
     pCart->field_1c = 0;                                   /* @0x40e057 */
     nZ = objPolarPosLookup2(pCart, nCharKey);              /* @0x40e0b9 */
     nY = (int)nodeChannelAvgFloat(pCart, nCharKey);        /* ftol @0x40e0b0 */
@@ -644,7 +645,7 @@ void objWalkAnimSync(struct PlayerRecord *pSelf, struct PlayerRecord *pRec) /* @
     static const float g_fl0_2 = 0.2f; /* @0x44b2d4 */
     float flThreshold;
 
-    if (pSelf->field_174 != 0) {                           /* +0x174 @0x409b14 */
+    if (pSelf->nCartMode != 0) {                           /* +0x174 @0x409b14 */
         flThreshold = ((float)pRec->nStatStrength * g_fl5 + g_fl60 -
                        (float)pSelf->nStatStrength * g_fl10) * g_fl0_2; /* @0x409b1e */
         if ((float)(rand() % 100) < flThreshold) {         /* rand @0x43ea7c @0x409b4c */
@@ -685,17 +686,16 @@ void syncCartNodeChannelsToMeshes(PlayerRecord *pRec) /* @0x428a70 */
     {
         float fA = pRec->flCartFriction;                   /* +0x270 @0x428ad1 */
         float fS = pRec->flCartCurSpeed;                   /* +0x274 @0x428ada */
-        if (fA < pCart->field_3c) {                        /* @0x428ae6 */
-            if (fA > fS) {
+        if (pCart->field_3c <= fA) {                       /* @0x428ad7 C0=0 */
+            fA = -fA;                                      /* @0x428b00 */
+            if (fA <= pCart->field_3c) {                   /* @0x428b02 JNZ */
+                fA = pCart->field_3c;                      /* @0x428b23 */
+            } else if (fS < fA) {                          /* @0x428b0c JZ: speed < -bound */
                 fA = fS;
             }
-        } else {
-            fA = -fA;
-            if (fA <= pCart->field_3c) {                   /* @0x428b02 */
-                fA = pCart->field_3c;
-            } else if (fA < fS) {                          /* @0x428b14 */
-                fA = fS;
-            }
+        } else if (fA < fS) {                              /* @0x428aeb: bound < +0x3c and
+                                                            * bound < speed @0x428aef */
+            fA = fS;
         }
         pRec->flCartCurSpeed = fA;                         /* +0x274 @0x428b26 */
     }
@@ -948,7 +948,7 @@ void gameUpdate(void) /* @0x426ee0 */
     }
     for (i = 0; i < g_nPlayerCount; i++) {                                /* @0x426f17 */
         PlayerRecord *pRec = &g_playerRecords[i];
-        if (pRec->field_174 == 0) {                                       /* +0x174 @0x426f17 */
+        if (pRec->nCartMode == 0) {                                       /* +0x174 @0x426f17 */
             playerUpdateWalkPhysics(pRec);                                 /* @0x426fd0 @0x426f22 */
             playerUpdateOnFoot(pRec);                                     /* @0x427730 @0x426f28 */
         } else {
@@ -963,7 +963,7 @@ void gameUpdate(void) /* @0x426ee0 */
     }
     for (i = 0; i < g_nPlayerCount; i++) {                                /* @0x426f80 */
         PlayerRecord *pRec = &g_playerRecords[i];
-        if (pRec->field_174 == 0) {                                       /* @0x426f80 */
+        if (pRec->nCartMode == 0) {                                       /* @0x426f80 */
             if (pRec->nChannelsDirty != 0) {                              /* +0x2d8 @0x426f88 */
                 syncWalkNodeChannelsToMesh(pRec);                         /* @0x428990 @0x426f95 */
             }

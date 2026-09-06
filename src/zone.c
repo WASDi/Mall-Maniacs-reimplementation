@@ -644,6 +644,7 @@ void zoneWallListFree(void) /* @0x42a150 */
     AiNavNode *pNode = g_pNavNodeList;                   /* @0x42a151 */
     AiNavNode *pNext;
     AiNavEdge *pEdge;
+    AiNavEdge *pNextEdge;
 
     if (pNode == NULL) {                                 /* @0x42a159 */
         g_pNavNodeList = NULL;                           /* @0x42a1a9 */
@@ -652,11 +653,13 @@ void zoneWallListFree(void) /* @0x42a150 */
     for (; pNode != NULL; pNode = pNext) {               /* @0x42a15d */
         pNext = pNode->pNext;                            /* +0x40 @0x42a160 */
         pEdge = pNode->pEdgeList;                        /* +0x3c @0x42a15d */
-        for (; pEdge != NULL; pEdge = pEdge->pNext) {    /* @0x42a167 */
+        for (; pEdge != NULL; pEdge = pNextEdge) {       /* @0x42a167 next saved before free */
+            pNextEdge = pEdge->pNext;                    /* +0x00 @0x42a167 MOV ESI,[EAX] */
             memFreeDirect(pEdge);                        /* @0x43dd37 @0x42a16a */
         }
         pEdge = pNode->pConnList;                        /* +0x38 @0x42a178 */
-        for (; pEdge != NULL; pEdge = pEdge->pNext) {    /* @0x42a17f */
+        for (; pEdge != NULL; pEdge = pNextEdge) {       /* @0x42a17f next saved before free */
+            pNextEdge = pEdge->pNext;                    /* +0x00 @0x42a17f MOV ESI,[EAX] */
             memFreeDirect(pEdge);                        /* @0x43dd37 @0x42a182 */
         }
         memFreeDirect(pNode);                            /* @0x43dd37 @0x42a191 */

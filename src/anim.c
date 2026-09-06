@@ -870,16 +870,22 @@ void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop) /* @0x4347c0
  * @0x4336b0. */
 short g_awWalkAnimTable[128][2];                               /* @0x458138 */
 
-/* walkAnimTableEntryCalc @0x433980 — [VERIFIED 2026-08-20 + 2026-08-29]
- * disassembly: for candidate angles cand = nAngle + nStep (nStep from
- * 0x4000 halving to 1) compute the foot point on the walk circle
- * (x = cos(a)*R + C, y = sin(a)*R, a = cand*g_dblBdgToRad) and accept the
- * candidate (nAngle = cand) when the target distance
- * flNormSpeed*(C+R) exceeds sqrt(x^2 + y^2). Afterwards pOut[0] =
+/* walkAnimTableEntryCalc @0x433980 — [VERIFIED 2026-08-20 + 2026-08-29; comparison
+ * direction corrected 2026-09-06 against live differential capture (CartGrabAnimBug)]
+ * disassembly: for candidate angles cand = nAngle + nStep (nStep from 0x4000 halving to
+ * 1) compute the foot point on the walk circle (x = cos(a)*R + C, y = sin(a)*R, a =
+ * cand*g_dblBdgToRad) and accept the candidate (nAngle = cand) when the foot distance
+ * sqrt(x^2 + y^2) >= flNormSpeed*(C+R) (x87 FCOMPP dTarget,dist + TEST AH,0x41 + JZ-skip:
+ * C0/C3 set == ST1 dTarget <= ST0 dist == accept). Afterwards pOut[0] =
  * (short)ftol(-(atan2(sin(A)*R, cos(A)*R + C) * g_dblRadToBdg)) with
  * A = nAngle*g_dblBdgToRad (FMUL @0x44b780 + FCHS), pOut[1] = (short)nAngle.
  * For flNormSpeed == 0 the divide produces NaN/inf exactly like the x87
- * path; the resulting ftol truncation is the same 0 as the original. */
+ * path; the resulting ftol truncation is the same 0 as the original.
+ *
+ * NOTE: the previously "verified" condition (dTarget > dist) was inverted — it made
+ * every entry with i < ~91 degenerate to nAngle = 0, which zeroed pOutWalk and fed
+ * sinS=1/cosS=0 into playerAnimOrientFromDir, breaking the cart-grab arm aim
+ * (CartGrabAnimBug.md). Live original check: entry 81 = (angle,-,18603). */
 void walkAnimTableEntryCalc(short *pOut, float flNormSpeed,
                             int nCircleCenter, int nCircleRadius) /* @0x433980 */
 {
@@ -892,7 +898,7 @@ void walkAnimTableEntryCalc(short *pOut, float flNormSpeed,
         double dA = (double)nCand * g_dblBdgToRad;
         double dX = cos(dA) * (double)nCircleRadius + (double)nCircleCenter;
         double dY = sin(dA) * (double)nCircleRadius;
-        if (dTarget > sqrt(dX * dX + dY * dY)) {
+        if (dTarget <= sqrt(dX * dX + dY * dY)) {
             nAngle = nCand;
         }
         nStep /= 2;
@@ -925,9 +931,7 @@ void walkAnimTableEntryCalc(short *pOut, float flNormSpeed,
  * matrix loops, the walk-table entry/clamp, and the yaw/pitch/roll tail
  * below match the FPU code (mathAtan2Deg @0x42d010, mathSinDeg @0x42d030,
  * mathCosDeg @0x42d050, __ftol @0x43dd10, and the FMUL/FDIVR constants
- * 127.0 @0x44b7b0 / 1.0 @0x44b288). 
- *
- * SUSPECTED BUG HERE: See CartGrabAnimBug.md */
+ * 127.0 @0x44b7b0 / 1.0 @0x44b288). */
 int playerAnimOrientFromDir(int nDirX, int nDirY, int nDirZ,
                             short *pOutAngles, short *pOutWalk, void *pUnused,
                             const short *pWalkTable, int nWalkGeom,

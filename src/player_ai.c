@@ -149,7 +149,7 @@ int actionCmd(int nContext, LPCSTR pszArgs) /* @0x4067c0 */
         if (*pszArgs == '\0') return 0;
     }
     if (strcmp(pszArgs, "smart") == 0) {            /* s_smart @0x44e760 */
-        if (g_playerRecords[g_nLocalPlayerIdx].field_174 == 0) { /* @0x406842 */
+        if (g_playerRecords[g_nLocalPlayerIdx].nCartMode == 0) { /* @0x406842 */
             nFound = playerFindCart(&g_playerRecords[g_nLocalPlayerIdx]); /* @0x40e180 @0x40684b */
             pRec->nActionSubstate = (nFound != 0) ? 3 : 6;    /* @0x406857 */
         } else {
@@ -281,11 +281,11 @@ static const float g_fl1000 = 1000.0f;              /* @0x44b464 */
 #define SZ_ACTION_RELEASE_CART "action release cart"   /* @0x44e11c */
 
 /* sceneObjGetPosXZ @0x4099d0 — write the player's ground position to pOut:
- * node = cart node (+0x2a4) when field_174 is set, else walk node (+0x224);
+ * node = cart node (+0x2a4) when nCartMode is set, else walk node (+0x224);
  * pOut[0] = node->vPos.x (+0x20), pOut[1] = node->vPos.y (+0x24). */
 void sceneObjGetPosXZ(PlayerRecord *pRec, float *pOut) /* @0x4099d0 */
 {
-    WorldNode *pNode = (pRec->field_174 != 0)          /* @0x4099d0 */
+    WorldNode *pNode = (pRec->nCartMode != 0)          /* @0x4099d0 */
         ? (WorldNode *)pRec->pSubObjC                  /* +0x2a4 @0x4099da */
         : (WorldNode *)pRec->pSubObjA;                 /* +0x224 @0x4099e3 */
     pOut[0] = pNode->vPos.x;                           /* +0x20 */
@@ -293,13 +293,13 @@ void sceneObjGetPosXZ(PlayerRecord *pRec, float *pOut) /* @0x4099d0 */
 }
 
 /* playerGetPos @0x409a10 — write the player's walk position to pOut:
- * with a cart (field_174), sceneNodeGetPos(pCartSceneObj, 0, buf, 2) gives
+ * with a cart (nCartMode), sceneNodeGetPos(pCartSceneObj, 0, buf, 2) gives
  * the channel translation {x, y, z} and pOut[0] = (float)buf[2] (z axis =
  * vPos.x), pOut[1] = (float)buf[0] (x axis = vPos.y); without, pOut comes
  * straight from the pos node (+0x264) fields. */
 void playerGetPos(PlayerRecord *pRec, float *pOut) /* @0x409a10 */
 {
-    if (pRec->field_174 != 0) {                        /* @0x409a16 */
+    if (pRec->nCartMode != 0) {                        /* @0x409a16 */
         int anPos[3];
         sceneNodeGetPos(pRec->pCartSceneObj, 0, anPos, 2); /* @0x431270 @0x409a36 */
         pOut[0] = (float)anPos[2];                     /* channel z @0x409a3b */
@@ -319,7 +319,7 @@ void playerGetPos(PlayerRecord *pRec, float *pOut) /* @0x409a10 */
  * playerAiUpdate (floor selection). */
 int sceneObjGetHeightChar(PlayerRecord *pRec) /* @0x409a90 */
 {
-    WorldNode *pNode = (pRec->field_174 != 0)
+    WorldNode *pNode = (pRec->nCartMode != 0)
         ? (WorldNode *)pRec->pSubObjC                  /* @0x409a9d */
         : (WorldNode *)pRec->pSubObjA;                 /* @0x409ab1 */
     return (int)nodeChannelAvgFloat(pNode, (int)(size_t)pRec->pCharSceneNode); /* @0x4050c0 */
@@ -330,7 +330,7 @@ int sceneObjGetHeightChar(PlayerRecord *pRec) /* @0x409a90 */
  * record's cart channel (+0x14). Cached at AiController+0x28. */
 int sceneObjGetHeightCart(PlayerRecord *pRec) /* @0x409ad0 */
 {
-    WorldNode *pNode = (pRec->field_174 != 0)
+    WorldNode *pNode = (pRec->nCartMode != 0)
         ? (WorldNode *)pRec->pSubObjC                  /* @0x409add */
         : (WorldNode *)pRec->pSubObjB;                 /* @0x409af1 */
     return (int)nodeChannelAvgFloat(pNode, (int)(size_t)pRec->pCartSceneObj); /* @0x4050c0 */
@@ -356,7 +356,7 @@ void aiSteerToTarget(AiController *pCtrl, float *pFromPos, float *pToPos) /* @0x
     gxVec2Sub(&vDelta, (const GxVec2 *)pToPos, (const GxVec2 *)pFromPos); /* @0x435020 @0x401b07 */
     mathVec2Polar(&vPolar, &vDelta);                   /* {len, ang} @0x435060 @0x401b14 */
 
-    if (pRec->field_174 != 0) {                        /* @0x401b2b */
+    if (pRec->nCartMode != 0) {                        /* @0x401b2b */
         pNode = (WorldNode *)pRec->pSubObjC;           /* +0x2a4 @0x401b35 */
         flTurnStep = pRec->flCartFriction;             /* +0x270 @0x401b3b */
     } else {
@@ -792,7 +792,7 @@ int playerAiUpdate(AiController *pCtrl) /* @0x401160 */
             }
             break;
         case 1:                                        /* @0x40124b */
-            if (pRec->field_174 != 1) {                /* @0x40124d */
+            if (pRec->nCartMode != 1) {                /* @0x40124d */
                 aiStateCartAction(pCtrl);              /* @0x401e40 @0x4012dd */
                 if (pCtrl->bFlag51 != 0) {             /* @0x4012e2 */
                     pCtrl->bFlag52 = 1;                /* @0x4012ed */
@@ -827,7 +827,7 @@ int playerAiUpdate(AiController *pCtrl) /* @0x401160 */
             }
             break;
         case 7:                                        /* @0x401226 */
-            if (pRec->field_174 == 1) {                /* @0x401230 */
+            if (pRec->nCartMode == 1) {                /* @0x401230 */
                 if (aiStateReturnHome(pCtrl) == 1) {   /* @0x402060 @0x401239 */
                     pCtrl->nAiState = 9;               /* @0x40152f */
                     nopDebugStub();                    /* "AIMODE_GOAL->AIMODE_END"
@@ -875,7 +875,7 @@ int playerAiUpdate(AiController *pCtrl) /* @0x401160 */
                 pCtrl->nAiState = 0;                   /* @0x4013a4 */
                 break;
             }
-            if (pRec->field_174 != 1) {                /* @0x4013b2 */
+            if (pRec->nCartMode != 1) {                /* @0x4013b2 */
                 aiStateCartAction(pCtrl);              /* @0x401500 */
                 break;
             }
@@ -897,7 +897,7 @@ int playerAiUpdate(AiController *pCtrl) /* @0x401160 */
                 pCtrl->nAiState = 0;                   /* @0x40140b */
                 break;
             }
-            if (pRec->field_174 == 1) {                /* @0x401419 */
+            if (pRec->nCartMode == 1) {                /* @0x401419 */
                 aiPathfindToTarget(pCtrl, &pCtrl->vWalkXZ.x,
                                    &pCtrl->vTargetXZ.x); /* @0x40142d */
                 break;
@@ -931,7 +931,7 @@ int playerAiUpdate(AiController *pCtrl) /* @0x401160 */
             }
             break;
         case 5:                                        /* @0x401437 */
-            if (pRec->field_174 != 0) {                /* @0x401439 */
+            if (pRec->nCartMode != 0) {                /* @0x401439 */
                 commandDispatch((int)(size_t)pRec, SZ_ACTION_RELEASE_CART); /* @0x401449 */
                 break;
             }
@@ -941,7 +941,7 @@ int playerAiUpdate(AiController *pCtrl) /* @0x401160 */
                                                           @0x44e0f4 */
             break;
         case 6:                                        /* @0x4014f4 */
-            if (pRec->field_174 != 0) {                /* @0x4014f6 */
+            if (pRec->nCartMode != 0) {                /* @0x4014f6 */
                 pCtrl->nAiState = 0;                   /* @0x401509 */
                 nopDebugStub();                        /* "AIMODE_GRABCART->
                                                           AIMODE_SETTARGETITEM"
@@ -951,7 +951,7 @@ int playerAiUpdate(AiController *pCtrl) /* @0x401160 */
             }
             break;
         case 7:                                        /* @0x401517 */
-            if (pRec->field_174 != 1) {                /* @0x40151f */
+            if (pRec->nCartMode != 1) {                /* @0x40151f */
                 aiStateCartAction(pCtrl);              /* @0x401502 */
                 break;
             }
@@ -1012,7 +1012,7 @@ int playerFindCart(PlayerRecord *pRec) /* @0x40e180 */
 }
 
 /* aiStateCartApproach @0x40e1d0 — drive/turn toward the cart: returns 1 when
- * already riding (field_174) or when close enough to steer (cart node within
+ * already riding (nCartMode) or when close enough to steer (cart node within
  * 1000 and facing within the ±0.1 band); *pAnimState gets 0x50 (turn),
  * 0x5a (drive), 0x6e (grab) or 100 (steer step). */
 int aiStateCartApproach(PlayerRecord *pRec, int *pAnimState) /* @0x40e1d0 */
@@ -1020,7 +1020,7 @@ int aiStateCartApproach(PlayerRecord *pRec, int *pAnimState) /* @0x40e1d0 */
     float flAngle;
     float flDiff;
     float flDiffCart;
-    if (pRec->field_174 != 0) return 1;                 /* @0x40e1d5 */
+    if (pRec->nCartMode != 0) return 1;                 /* @0x40e1d5 */
     if (playerFindCart(pRec) == 0) return 0;            /* @0x40e1e6 */
 
     pRec->flInputTurn = 0.0f;                           /* +0x2e0 @0x40e204 */
@@ -1066,7 +1066,7 @@ void playerUpdateOrientToTurret(PlayerRecord *pRec) /* @0x40e5b0 */
     float flAvgFront;
     int nSpeedBits;
 
-    pRec->field_174 = 1;                                        /* @0x40e5b4 */
+    pRec->nCartMode = 1;                                        /* @0x40e5b4 */
     ((WorldNode *)pRec->pSubObjC)->field_1c = 1;                       /* +0x1c @0x40e5ba */
     pRec->flCartTurnAccum = pRec->flTurnAccum;          /* +0x284 = +0x204 @0x40e5c0 */
     pRec->vCartVelPolar.y = pRec->vVelPolar.y;          /* +0x2a0 = +0x220 @0x40e5cd */
@@ -1094,7 +1094,7 @@ int playerCheckTurn(PlayerRecord *pRec) /* @0x40e670 */
     float flDx;
     float flDz;
 
-    if (pRec->field_174 != 0) return 1;
+    if (pRec->nCartMode != 0) return 1;
     flDiff = aiTurnDiff(pRec->pSubObjA, objAngleTo(pRec->pSubObjA, pRec->pSubObjB)); /* @0x40e6c6 */
     nWalkX = objPolarPosLookup(pRec->pSubObjA, (int)pRec->pCharSceneNode);   /* @0x40e6f2 */
     nWalkZ = objPolarPosLookup2(pRec->pSubObjA, (int)pRec->pCharSceneNode);  /* @0x40e709 */
@@ -1133,7 +1133,7 @@ EventObject *playerCheckBlocked(PlayerRecord *pRec) /* @0x40ec40 */
     GxVec2 vScratch;
 
     gxVec2SetAngleZero(&vScratch);                      /* @0x434f90 @0x40ec48 */                      /* @0x434f90 @0x40ec48 */
-    if (pRec->anHeldSlot[0] != 0 || pRec->field_174 != 0) {
+    if (pRec->anHeldSlot[0] != 0 || pRec->nCartMode != 0) {
         return NULL;                                    /* @0x40ec51..0x40ec67 */
     }
     pTarget = playerFindNearestTarget(pRec);            /* @0x40ec6e */
@@ -1177,7 +1177,7 @@ EventObject *playerFindNearestTarget(PlayerRecord *pRec) /* @0x40ed10 */
     GxVec2 vScratch;
 
     gxVec2SetAngleZero(&vScratch);                  /* @0x434f90 @0x40ed1b */
-    if (pRec->anHeldSlot[0] != 0 || pRec->field_174 != 0) {
+    if (pRec->anHeldSlot[0] != 0 || pRec->nCartMode != 0) {
         return NULL;                                /* @0x40ed34..0x40ed4a */
     }
     flAvgFront = nodeChannelAvgFloat(pRec->pSubObjA, (int)pRec->pCharSceneNode); /* @0x40ed5a */
@@ -1429,7 +1429,7 @@ void playerUpdateAI(void) /* @0x40b510 */
             pRec->nActionSubstate = 0;                  /* @0x40b639 */
             break;
         case 5:                                         /* get item @0x40b6b0 */
-            if (pRec->field_174 != 0) {                 /* @0x40b6b0 */
+            if (pRec->nCartMode != 0) {                 /* @0x40b6b0 */
                 pRec->nActionSubstate = 0;              /* @0x40b6b8 */
                 pRec->nAiPhase = 0;
                 break;
@@ -1579,7 +1579,7 @@ void playerUpdateAI(void) /* @0x40b510 */
             }
             break;
         case 6:                                         /* drop item @0x40ba3a */
-            if (pRec->field_174 != 0 || pRec->anHeldSlot[0] == 0) {
+            if (pRec->nCartMode != 0 || pRec->anHeldSlot[0] == 0) {
                 pRec->nActionSubstate = 0;              /* @0x40b6f7 */
                 pRec->nAiPhase = 0;
                 break;
@@ -1985,7 +1985,7 @@ void thrownItemFree(ThrownItem *pItem) /* @0x40f8d0 */
  *    index 0x14, volume 65000, id 0x6e) plays from a 0x1c-byte emitter;
  *    horizontal speed decays by 0.999.
  * The non-rest paths then objMovePolar the node by {speed, heading} and
- * run the pickup scan over g_playerRecords: players on foot (field_174 ==
+ * run the pickup scan over g_playerRecords: players on foot (nCartMode ==
  * 0) within the z band (item-1200, item+500] and within 1000.0f ground
  * distance pick the item up through playerCollectItem; the local player
  * additionally notifies the server (sub-cmd 0x3d) and plays sfx 0x16.
@@ -2097,7 +2097,7 @@ void itemThrowUpdate(ThrownItem *pItem) /* @0x40f950 */
     /* pickup scan @0x40fc58 */
     for (i = 0; i < g_nPlayerCount; i++) {
         pRec = &g_playerRecords[i];
-        if (pRec->field_174 != 0) {                            /* +0x174 @0x40fc7a */
+        if (pRec->nCartMode != 0) {                            /* +0x174 @0x40fc7a */
             continue;
         }
         flPlayerZ = nodeChannelAvgFloat(pRec->pSubObjC,        /* +0x264 @0x40fc8b */

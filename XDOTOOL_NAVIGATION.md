@@ -119,6 +119,8 @@ Please also close the window as soon as you don't need it anymore.
    main menu → quit confirm, where `J`/`Y` via `send_key j` quits). For a
    hard exit in automation use `send_key alt+F4` or `killall -9
   maniac_rebuild.exe`.
+* **In game movement**: Wait for "gates open" to appear in logs before movement is enabled.
+  Arrow keys to move the character (backwards/forwards and rotate). Space to grab items and cart, if within range.
 * **Screenshot** (verify what is actually on screen):
   ```bash
   import -window $WIN /tmp/opencode/FILENAME.png

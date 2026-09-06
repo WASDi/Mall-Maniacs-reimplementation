@@ -525,8 +525,9 @@ void objUpdatePhysics(void) /* @0x405680 */
                 objSetPos(pNode, pBest->v2.x, pBest->v2.y);          /* @0x405c5a */
                 pNode->flScaleC = pBest->v1.y;                       /* +0x38 @0x405c6f */
                 pNode->flScaleB += (pNode->flScaleA - pNode->flScaleB) *
-                                   pBest->v3.x /
-                                   (pBest->v1.x + pBest->v3.x);       /* +0x34 @0x405c78 */
+                                   ((ShotObj *)pNode->pShotList)->v3.x /
+                                   (((ShotObj *)pNode->pShotList)->v1.x +
+                                    ((ShotObj *)pNode->pShotList)->v3.x); /* +0x34 @0x405c78 */
                 pNode->flImpulse =                                   /* +0x40 @0x405c9f */
                     ((pBest->v4.y - pBest->v0.y) * pBest->v5.y +
                      (pBest->v4.x - pBest->v0.x) * pBest->v5.x) *
@@ -539,6 +540,9 @@ void objUpdatePhysics(void) /* @0x405680 */
                                  (unsigned int)pBest->pSrc[1], 65000, 1, 0, 0,
                                  nX, 0, nZ, 0x24);
                 }
+            } else {
+                break; /* @0x405a1d/@0x405a20 JLE 0x405de6: no shot -> next node,
+                        * field_18 is only bumped when a response was applied */
             }
             pNode->field_18++;                               /* +0x18 @0x405dcd */
         }

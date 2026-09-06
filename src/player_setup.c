@@ -234,7 +234,7 @@ void playerSetupRound(void) /* @0x410e90 */
                 ? worldNodeCtor(pNew, 0, 0, 0, 0, &pRec->mstrCharacterName) /* @0x4111e5 */
                 : NULL;                                                    /* @0x4111ec */
         }
-        pRec->field_174 = 1;                                               /* @0x4111f1 */
+        pRec->nCartMode = 1;                                               /* @0x4111f1 */
         wsprintfA(szBuf, "characters[%d]", pRec->nCharIdx);           /* @0x44f9fc @0x411201 */
         pNode = configEnvGetValue(&g_configEnvMaster, pObjects, szBuf);    /* @0x436560 @0x411227 */
         if (pNode == NULL) {
@@ -338,7 +338,7 @@ void playerSetupSceneObjects(void) /* @0x411550 */
                        mStringCStr(&pRec->mstrCharacterName), i);
         }
         pRec->pCharSceneObj = (SceneNode *)sceneryObjAlloc(pRec->pCharSceneNode, 0, 0, 0, 0, 0, 0, 0, (void *)(size_t)nMesh); /* @0x4116a9 */
-        pRec->apMeshSlots[0] = pRec->pCharSceneObj;                        /* @0x4116b1 */
+        pRec->pCharMeshSlots[0] = pRec->pCharSceneObj;                        /* @0x4116b1 */
         nCount = 1;                                                        /* @0x4116b6 */
         for (slot = 1; slot < 3; slot++) {                                 /* @0x4116be */
             wsprintfA(szBuf, "_%d%s", slot, mStringCStr(&pRec->mstrCharacterName)); /* @0x44fb54 @0x4116d1 */
@@ -348,16 +348,16 @@ void playerSetupSceneObjects(void) /* @0x411550 */
                     int k;
 
                     for (k = slot; k < 3; k++) {                           /* @0x411718 */
-                        pRec->apMeshSlots[k] = NULL;                       /* @0x411733 */
+                        pRec->pCharMeshSlots[k] = NULL;                       /* @0x411733 */
                     }
                 }
                 break;
             }
-            pRec->apMeshSlots[slot] = (SceneNode *)sceneryObjAlloc(pRec->pCharSceneNode, 0, 0, 0, 0, 0, 0, 0, (void *)(size_t)nMesh); /* @0x4116fb */
+            pRec->pCharMeshSlots[slot] = (SceneNode *)sceneryObjAlloc(pRec->pCharSceneNode, 0, 0, 0, 0, 0, 0, 0, (void *)(size_t)nMesh); /* @0x4116fb */
             nCount = slot + 1;                                             /* @0x411709 */
         }
         sceneDetailGridAddRow((SceneDetailGrid *)g_pSceneDetailGrid, /* @0x42b000 @0x41173d */
-                              (int *)pRec->apMeshSlots, nCount);
+                              (int *)pRec->pCharMeshSlots, nCount);
         pRec->apAnmSets[0] = anmSetAlloc(anmLoadFile("anim\\s_pick1.anm", NULL, pRec->pCharSceneObj));   /* @0x44fb40 @0x411757 */
         pRec->apAnmSets[1] = anmSetAlloc(anmLoadFile("anim\\s_pick2.anm", NULL, pRec->pCharSceneObj));   /* @0x44fb2c @0x411772 */
         pRec->apAnmSets[2] = anmSetAlloc(anmLoadFile("anim\\s_flpick1.anm", NULL, pRec->pCharSceneObj)); /* @0x44fb18 @0x41178d */
@@ -373,7 +373,7 @@ void playerSetupSceneObjects(void) /* @0x411550 */
             int k;
 
             for (k = 0; k < 11; k++) {                                     /* @0x411878 */
-                anmSetMeshSlot(pRec->apAnmSets[k], pRec->apMeshSlots[slot], slot); /* @0x434530 @0x411883 */
+                anmSetMeshSlot(pRec->apAnmSets[k], pRec->pCharMeshSlots[slot], slot); /* @0x434530 @0x411883 */
             }
         }
         nMesh = scenNameToId(mStringCStr(&pRec->mstrCartName));            /* +0x08 @0x4351d0 @0x411946 */
@@ -390,8 +390,8 @@ void playerSetupSceneObjects(void) /* @0x411550 */
         pRec->pCartShadowNode = pShadow;                                   /* +0x24 @0x4119d5 */
         sceneryObjAlloc(pShadow, 0, 0, 0, 0, 0, 16000, 0, (void *)(size_t)nMesh); /* result unused @0x4119d8 */
         sceneNodeSetHiddenFlag(pRec->pCartShadowNode, 2);             /* @0x4119e6 */
-        pRec->pCartChildA = (SceneNode *)sceneNodeAllocChild(pRec->pCartSceneObj, NULL, NULL, NULL, NULL); /* +0x44 @0x4319e0 @0x4119f7 */
-        pRec->pCartChildB = (SceneNode *)sceneNodeAllocChild(pRec->pCartSceneObj, NULL, NULL, NULL, NULL); /* +0x48 @0x411a0b */
+        pRec->pCartHandleL = (SceneNode *)sceneNodeAllocChild(pRec->pCartSceneObj, NULL, NULL, NULL, NULL); /* +0x44 @0x4319e0 @0x4119f7 */
+        pRec->pCartHandleR = (SceneNode *)sceneNodeAllocChild(pRec->pCartSceneObj, NULL, NULL, NULL, NULL); /* +0x48 @0x411a0b */
     }
 
     g_pSceneRoot = (SceneNode *)sceneNodeAlloc((void *)0x3f800000, (void *)0x41200000, /* @0x4318e0 @0x411a60 */
@@ -528,14 +528,14 @@ void levelObjectsCartsCameraInit(void) /* @0x411b70 */
         pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x411fec */
         anObjPos[2] = (int)configEnvGetDouble(pCfg);                      /* @0x411ff9 */
         pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x41200d */
-        sceneNodeSetPos(pRec->pCartChildB, anObjPos, 2);                  /* @0x431590 @0x41201f */
+        sceneNodeSetPos(pRec->pCartHandleR, anObjPos, 2);                  /* @0x431590 @0x41201f */
         anObjPos[0] = (int)configEnvGetDouble(pCfg);                      /* @0x41202d */
         pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x412041 */
         anObjPos[1] = (int)configEnvGetDouble(pCfg);                      /* @0x41204e */
         pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x412062 */
         anObjPos[2] = (int)configEnvGetDouble(pCfg);                      /* @0x41206f */
         pCfg = configNextNode(&g_configEnvMaster, pCfg);                  /* @0x412083 */
-        sceneNodeSetPos(pRec->pCartChildA, anObjPos, 2);                  /* @0x412093 */
+        sceneNodeSetPos(pRec->pCartHandleL, anObjPos, 2);                  /* @0x412093 */
 
         /* objects/characters[nCharIdx]/object_pos @0x412098 */
         wsprintfA(szKey, "objects/characters[%d]", pRec->nCharIdx);       /* @0x44fcec @0x412098 */
@@ -569,7 +569,7 @@ void levelObjectsCartsCameraInit(void) /* @0x411b70 */
                          anObjPos[2], 230.0f, flExtentA,
                          (int)pRec->pCharSceneNode, 300.0f, 1);
 
-        if (pRec->field_174 == 0) {                                           /* @0x412230 */
+        if (pRec->nCartMode == 0) {                                           /* @0x412230 */
             ((WorldNode *)pRec->pSubObjA)->field_1c = 1;                      /* @0x412245 */
             ((WorldNode *)pRec->pSubObjB)->field_1c = 1;                      /* @0x41224e */
         } else {

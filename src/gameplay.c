@@ -340,7 +340,7 @@ static const int kGoalObjNameId = 0x6C6F6767; /* *(int *)"goal" @0x44f4e4 */
             break;        /* @0x40c137 @0x40c140 */                      \
         }                                                                \
         pRec->bStateFlags |= 0x20;     /* @0x40c146 */                   \
-        if (pRec->field_174 == 0) {    /* +0x174 @0x40c14d */            \
+        if (pRec->nCartMode == 0) {    /* +0x174 @0x40c14d */            \
             break;                                                       \
         }                                                                \
         pGoal = objFindById(kGoalObjNameId, 0); /* @0x414a90 @0x40c15c */\
@@ -530,7 +530,7 @@ void roundLogicUpdate(void) /* @0x40beb0 */
             if (g_nResultsScreen != 0) {
                 break;                                     /* @0x40c543 */
             }
-            if (pRec->field_174 == 0) {                    /* first stage @0x40c54b */
+            if (pRec->nCartMode == 0) {                    /* first stage @0x40c54b */
                 if ((pRec->bStateFlags & 4) == 0) {        /* +0x158 &4 @0x40c556 */
                     continue;
                 }
@@ -1190,7 +1190,7 @@ void gameObjectUpdate(void)
     }
 
     /* Stage 3 — cart arrow (VAGNPIL, @0x40d3d4..0x40d780) */
-    if (pRec->field_174 != 0 || g_nResultsScreen != 0) {
+    if (pRec->nCartMode != 0 || g_nResultsScreen != 0) {
         sceneNodeSetHiddenFlag(g_pCartArrowObj, 2);
     } else {
         int nSlotX; /* base+0x50: X-ish = +0x3c / objPolarPosLookup(+0x24) */
@@ -1281,7 +1281,7 @@ void gameObjectUpdate(void)
             sceneObjGetPos(g_pSceneRoot, anRotAfter, 2);
             sceneObjSetPosOrient(g_pCartArrowMesh, (short)(anRotAfter[0] - anRotBefore[0]), 0, (short)(anRotAfter[2] - anRotBefore[2]), 2);
 
-            if (pRec->field_174 != 0) {
+            if (pRec->nCartMode != 0) {
                 nBob1 = (int)(sin(g_flGameObjSpeed + kDblCartPh1) * (pRec->flCartTurnAccum + pRec->flCartCurSpeed) * kFlCartMul1);
                 nBob2 = (int)(sin(g_flGameObjSpeed + kDblCartPh2) * (pRec->flCartTurnAccum + pRec->flCartCurSpeed) * kFlCartMul2);
             } else {
@@ -1317,7 +1317,7 @@ void gameObjectUpdate(void)
         sceneObjGetPos(g_pSceneRoot, anRotAfter, 2);
         sceneObjSetPosOrient(g_pGoodsArrowMesh, (short)(anRotAfter[0] - anRotBefore[0]), 0, (short)(anRotAfter[2] - anRotBefore[2]), 2);
         flSpeed = g_flGameObjSpeed2;
-        if (pRec->field_174 != 0) {
+        if (pRec->nCartMode != 0) {
             nBob1 = (int)(sin(flSpeed + kDblGoodsCartPh1) * (pRec->flCartTurnAccum + pRec->flCartCurSpeed) * kFlGoodsCartMul1);
             nBob2 = (int)(sin(flSpeed + kDblGoodsCartPh2) * (pRec->flCartTurnAccum + pRec->flCartCurSpeed) * kFlGoodsCartMul2);
         } else {
@@ -1477,13 +1477,13 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
     static const float g_flZero = 0.0f;   /* @0x44b244 */
     PlayerRecord *pRec;
     AnmSet *pSet;
-    int i;
+    int iPlayerIdx; /* Ghidra local_58 */
 
     g_nAnimSfxTick = (g_nAnimSfxTick == 0);                     /* @0x40c82d */
     if (g_nResultsScreen != 0) {                                /* @0x40c838 */
-        for (i = 0; i < g_nPlayerCount; i++) {                  /* @0x40c84d */
-            pRec = &g_playerRecords[i];
-            if (i == g_nWinnerIdx) {                            /* @0x40c85f */
+        for (iPlayerIdx = 0; iPlayerIdx < g_nPlayerCount; iPlayerIdx++) { /* @0x40c84d */
+            pRec = &g_playerRecords[iPlayerIdx];
+            if (iPlayerIdx == g_nWinnerIdx) {                   /* @0x40c85f */
                 pSet = (AnmSet *)pRec->apAnmSets[10];           /* +0x2d0 winner set */
                 if (g_nAnimSfxTick == 0) {                      /* @0x40c863 */
                     sceneObjectAnimStepInterp((SceneObjAnimList *)pSet, 1); /* @0x4347c0 @0x40c892 */
@@ -1518,8 +1518,8 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
         return;                                                 /* @0x40cf39 */
     }
 
-    for (i = 0; i < g_nPlayerCount; i++) {                      /* @0x40c9ce */
-        pRec = &g_playerRecords[i];
+    for (iPlayerIdx = 0; iPlayerIdx < g_nPlayerCount; iPlayerIdx++) { /* @0x40c9ce */
+        pRec = &g_playerRecords[iPlayerIdx];
         pRec->nChannelsDirty = 1;                               /* +0x2d8 @0x40c9e9 */
         if ((pRec->bStateFlags & 4) != 0) {                     /* +0x158 @0x40c9ec */
             sceneObjectAnimStep((SceneObjAnimList *)pRec->apAnmSets[9], 1); /* oops @0x40c9fb */
@@ -1553,7 +1553,7 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
                 short anAngles[3];
                 int nLimbPitch;
 
-                if (pRec->field_174 != 0) {                     /* @0x40cab5 */
+                if (pRec->nCartMode != 0) {                     /* @0x40cab5 */
                     nLimbPitch = (int)(pRec->flCartTurnAccum * g_flLimbTurnScale /
                                        pRec->flCartRotAccFric); /* @0x40cabd */
                 } else {
@@ -1567,13 +1567,14 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
                 sceneObjSetSubPos(pRec->pCharSceneObj, 2,       /* @0x40cb40 */
                                   anAngles[0], (short)nLimbPitch, anAngles[2], 2);
             }
-            if (pRec->field_174 != 0) {                         /* cart limb aim @0x40cb48 */
+            if (pRec->nCartMode != 0) {                         /* cart limb aim @0x40cb48 */
                 short anAngles[3];
                 short anWalk[3];
                 int anCart[6];
 
                 sceneSetCurrentObj(pRec->pCharSceneObj, 1);     /* @0x430d98 @0x40cb5c */
-                sceneNodeGetPos(pRec->pCartChildB, 0, anCart, 6);   /* @0x431270 @0x40cb70 */
+
+                sceneNodeGetPos(pRec->pCartHandleR, 0, anCart, 6);   /* @0x431270 @0x40cb70 */
                 sceneNodeGetPos(pRec->pCharSceneObj, 6, anCart + 3, 2); /* @0x40cb85 */
                 playerAnimOrientFromDir(anCart[0] - anCart[3],  /* @0x4336b0 @0x40cbdb */
                                         anCart[1] - anCart[4],
@@ -1584,7 +1585,8 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
                                   anAngles[0], anAngles[1], anAngles[2], 2);
                 sceneObjSetSubPos(pRec->pCharSceneObj, 7,       /* @0x40cc1c */
                                   anWalk[0], anWalk[1], anWalk[2], 2);
-                sceneNodeGetPos(pRec->pCartChildA, 0, anCart, 6);   /* @0x40cc30 */
+
+                sceneNodeGetPos(pRec->pCartHandleL, 0, anCart, 6);   /* @0x40cc30 */
                 sceneNodeGetPos(pRec->pCharSceneObj, 3, anCart + 3, 2); /* @0x40cc48 */
                 playerAnimOrientFromDir(anCart[0] - anCart[3],  /* @0x40cc98 */
                                         anCart[1] - anCart[4],
@@ -1613,9 +1615,9 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
             }
             /* engine emitter: live while |speed| > 45 or |turn| > 0.012 */
             {
-                float flSpeed = (pRec->field_174 != 0) ? pRec->flCartCurSpeed /* @0x40cdc6 */
+                float flSpeed = (pRec->nCartMode != 0) ? pRec->flCartCurSpeed /* @0x40cdc6 */
                                                        : pRec->flPosSpeed;   /* @0x40cd7c */
-                float flTurn = (pRec->field_174 != 0) ? pRec->flCartTurnAccum /* @0x40cdc6 */
+                float flTurn = (pRec->nCartMode != 0) ? pRec->flCartTurnAccum /* @0x40cdc6 */
                                                       : pRec->flPosTurnAccum; /* @0x40cda2 */
                 if (flSpeed > g_flEngineSpeedHi || flSpeed < g_flEngineSpeedLo ||
                     flTurn > g_dblEngineTurnHi || flTurn < g_dblEngineTurnLo) {
