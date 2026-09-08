@@ -21,6 +21,9 @@
 #include "gameplay.h"
 #include "obj_event.h"
 
+// For debugging
+#define DISABLE_AI 1
+
 /* g_nPlayerAiTick @0x45894c — global AI tick, incremented once per
  * playerUpdateAI pass; drives the %5 checkout-tick decay. */
 int g_nPlayerAiTick;                                /* @0x45894c */
@@ -749,6 +752,9 @@ int aiStateReturnHome(AiController *pCtrl) /* @0x402060 */
  * controller's anim-sync slots (+0x48/+0x4c). Returns 1. */
 int playerAiUpdate(AiController *pCtrl) /* @0x401160 */
 {
+    if (DISABLE_AI) {
+        return 1;
+    }
     PlayerRecord *pRec;
     GxVec2 vSelfXZ;
     GxVec2 vWalkXZ;
