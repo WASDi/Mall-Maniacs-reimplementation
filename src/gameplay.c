@@ -398,9 +398,10 @@ static const int kGoalObjNameId = 0x6C6F6767; /* *(int *)"goal" @0x44f4e4 */
  *      resets the timer. mode 4 Vagnrace: per player, when the +0x174
  *      stage gate is 0 the bStateFlags bit 2 gates the first rail, else
  *      the current rail id anListIds[0] (+0x184) resolves; touching a
- *      rail origin (+0x38/+0x3c) within 1.5 of the char node position
- *      (pSubObjA +0x224 on the first rail, pSubObjC +0x2a4 afterwards;
- *      double 1.5 @0x44b480) increments anListIds[0..2] and clears
+  *      rail origin (+0x38/+0x3c) within 1500 of the char node position
+  *      (pSubObjA +0x224 on the first rail, pSubObjC +0x2a4 afterwards;
+  *      double 1500.0 @0x44b480, verified from the image bytes 2026-09-13)
+  *      increments anListIds[0..2] and clears
  *      abListTaken[0..2] with sfx 0x16 for the local player; when the
  *      rail id no longer resolves, the checkout zone ends the round.
  *   5. Level directors: dispatch levelEventDirector_L0..L4 on
@@ -471,8 +472,8 @@ void roundLogicUpdate(void) /* @0x40beb0 */
     }
 
     if (g_nResultsScreen == 0) {                           /* @0x40c0ba */
-        if (g_nRoundElapsedTicks / g_nObjUpdateTime >=
-            g_nRoundTimeLimit / g_nObjUpdateTime &&        /* @0x40c0cd */
+        if (g_nRoundElapsedTicks >=
+            g_nRoundTimeLimit / g_nObjUpdateTime &&        /* @0x40c0cd: CMP ECX,EAX @0x40c0cd — ECX is the raw tick count (IDIV only rewrites EAX/EDX), so the original compares unticked elapsed against limit/objUpdate, not elapsed/objUpdate */
             g_nPlayerCount > 0) {
             for (i = 0; i < g_nPlayerCount; i++) {         /* @0x40c0d5 */
                 g_playerRecords[i].nScoreTicks++;          /* +0x15c @0x40c0dc */
@@ -568,13 +569,13 @@ void roundLogicUpdate(void) /* @0x40beb0 */
                     continue;
                 }
             }
-            /* rail proximity: |origin - char node pos| <= 1.5 on both
-             * axes (double 1.5 @0x44b480; origin +0x38/+0x3c vs node
-             * +0x20/+0x24). */
-            if (!((float)pRail->flOriginX - (int)pfPos[8] <= 1.5 &&
-                  (float)pRail->flOriginX - (int)pfPos[8] >= -1.5 &&
-                  (float)pRail->flOriginZ - (int)pfPos[9] <= 1.5 &&
-                  (float)pRail->flOriginZ - (int)pfPos[9] >= -1.5)) {
+            /* rail proximity: |origin - char node pos| <= 1500 on both
+             * axes (double 1500.0 @0x44b480, verified from the image bytes
+             * 2026-09-13; origin +0x38/+0x3c vs node +0x20/+0x24). */
+            if (!((float)pRail->flOriginX - (int)pfPos[8] <= 1500.0 &&
+                  (float)pRail->flOriginX - (int)pfPos[8] >= -1500.0 &&
+                  (float)pRail->flOriginZ - (int)pfPos[9] <= 1500.0 &&
+                  (float)pRail->flOriginZ - (int)pfPos[9] >= -1500.0)) {
                 continue;                                  /* @0x40c59d @0x40c5c3 */
             }
             for (k = 0; k < 3; k++) {                      /* @0x40c5d0 */
