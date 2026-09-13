@@ -292,9 +292,9 @@ void levelDirectorInits(void) /* @0x40bdf0 */
 }
 
 /* kGoalObjNameId — the checkout-zone object id: the original loads the
- * first dword of the "goal" string @0x44f4e4 (0x6C6F6767) and passes it
+  * first dword of the "goal" string @0x44f4e4 (0x6C616F67) and passes it
  * to objFindById @0x414a90 from all four win checks. */
-static const int kGoalObjNameId = 0x6C6F6767; /* *(int *)"goal" @0x44f4e4 */
+static const int kGoalObjNameId = 0x6C616F67; /* *(int *)"goal" @0x44f4e4 */
 
 /* ROUND_WIN_TAIL — the shared win tail inlined by the original at all
  * four mode win sites (0x40c450 for modes 1/2/3, 0x40c75b for mode 4):
@@ -351,7 +351,10 @@ static const int kGoalObjNameId = 0x6C6F6767; /* *(int *)"goal" @0x44f4e4 */
             break;                                                       \
         }                                                                \
         {   float *pfPos = (float *)pRec->pSubObjC; /* +0x2a4 @0x40c16a */\
-            if (objContainsPoint(pGoal, pfPos[8], pfPos[9])) {           \
+            /* original truncates the node coords (roundFloat @0x43dd10 +  \
+             * FILD @0x40c170..0x40c197) before the zone test. */          \
+            if (objContainsPoint(pGoal, (float)(int)pfPos[8],              \
+                                 (float)(int)pfPos[9])) {                 \
                 if (((nAnnounce) & 1) && g_nNetIsServer != 0) {          \
                     netServerSendSubCmd(10, (nIdx), 0, 0, 0, 0, 0);      \
                 }  /* @0x40c2b0 @0x40c3e2 */                             \
@@ -555,7 +558,10 @@ void roundLogicUpdate(void) /* @0x40beb0 */
                         continue;
                     }
                     pfPos = (float *)pRec->pSubObjC;
-                    if (objContainsPoint(pGoal, pfPos[8], pfPos[9])) {
+                    /* original truncates the node coords (roundFloat      */
+                    /* @0x43dd10 + FILD @0x40c6cd..0x40c6f4). */
+                    if (objContainsPoint(pGoal, (float)(int)pfPos[8],
+                                         (float)(int)pfPos[9])) {
                         if (g_nNetIsServer != 0) {         /* @0x40c727 */
                             netServerSendSubCmd(10, i, 0, 0, 0, 0, 0);
                         }
@@ -1008,7 +1014,7 @@ void gameWorldUpdate(void)
 void gameObjectUpdate(void)
 {
     /* 4-byte zone / goal ids (.rdata verified 2026-08-31) */
-    static const int kIdGoal = 0x6C6F6767; /* "goal" @0x44f4e4 */
+    static const int kIdGoal = 0x6C616F67; /* "goal" @0x44f4e4 */
     static const int kIdAre1 = 0x31455241; /* "ARE1" @0x44f550 */
     static const int kIdAre2 = 0x32455241; /* "ARE2" @0x44f548 */
     static const int kIdAre4 = 0x34455241; /* "ARE4" @0x44f540 */
@@ -1510,12 +1516,19 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
         }
         {
             int anPos[3];
+            int nOrbitX;
+            int nOrbitY;
+            int nOrbitZ;
             pRec = &g_playerRecords[g_nWinnerIdx];
             sceneNodeGetPosWorld(pRec->pCharSceneNode, (float *)anPos, 2); /* @0x430e80 @0x40c926 */
             g_playerAnimT += g_flOrbitStep;                     /* @0x40c92b */
-            anPos[2] -= (int)(cos((double)g_playerAnimT) * g_dblOrbitRadius); /* @0x40c945 */
-            anPos[0] -= (int)(sin((double)g_playerAnimT) * g_dblOrbitRadius); /* @0x40c952 */
-            sceneObjSetPos(g_pSceneRoot, anPos[0], anPos[1] - 2000, anPos[2], 2); /* @0x430660 @0x40c984 */
+            /* The orbit offsets go only to the scene-root position; the
+             * aim below uses the pristine winner position (@0x40c989..0x40c9b1
+             * reads the unmodified locals). */
+            nOrbitX = anPos[0] - (int)(sin((double)g_playerAnimT) * g_dblOrbitRadius); /* @0x40c952 */
+            nOrbitY = anPos[1] - 2000;                          /* @0x40c964 */
+            nOrbitZ = anPos[2] - (int)(cos((double)g_playerAnimT) * g_dblOrbitRadius); /* @0x40c945 */
+            sceneObjSetPos(g_pSceneRoot, nOrbitX, nOrbitY, nOrbitZ, 2); /* @0x430660 @0x40c984 */
             sceneNodeFacePos(g_pSceneRoot, 0, (float)anPos[0],  /* @0x431030 @0x40c9b3 */
                              (float)anPos[1] - g_flOrbitAimY, (float)anPos[2], 2);
         }

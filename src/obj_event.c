@@ -110,7 +110,7 @@ EventObject *objGetPos(int nId, int nOccurrence, float *pOutXZ, int *pOutHeight)
  * checkout object is missing. Used by aiStateReturnHome. */
 void objGetCheckoutPos(float *pOutPos) /* @0x40f6e0 */
 {
-    EventObject *pObj = objFindById(0x6C6F6767, 0);    /* *(int*)"goal" @0x44f4e4 @0x40f6e5 */
+    EventObject *pObj = objFindById(0x6C616F67, 0);    /* *(int*)"goal" @0x44f4e4 @0x40f6e5 */
 
     if (pObj != NULL) {
         pOutPos[0] = pObj->flOriginX;                  /* +0x38 @0x40f6ea */
