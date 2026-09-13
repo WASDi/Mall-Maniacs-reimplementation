@@ -348,8 +348,7 @@ void gxDrawQuadColor(void *tex,int x0,int y0,int x1,int y1,int u0,int v0,int u1,
  * 2D vector helpers
  * =================================================================== */
 
-/* gxVec2SetAngleZero @0x434f90 — set to unit X {1.0f, 0.0f}. Moved here
- * from game.c so the zone/geometry cluster can share it. */
+/* gxVec2SetAngleZero @0x434f90 — set to unit X {1.0f, 0.0f}. */
 void gxVec2SetAngleZero(GxVec2 *pVec) /* @0x434f90 */
 {
     pVec->x = 1.0f;

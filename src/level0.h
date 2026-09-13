@@ -15,9 +15,8 @@
  * The director bobs the SIGN_FELIXPO sign sub-meshes, and every ~10 s
  * (g_nObjUpdateTime idle ticks) runs the mascot flpick/throw presenter that
  * spawns a class-0x1f bonus pickup EventObject; the KASSOERSKA cashier plays
- * cash_sit.anm during play and s_winner.anm on the results screen. L1
- * is implemented in level1.c; the L2..L4 directors and their
- * Cleanup/Init counterparts stay in stubs.c.
+ * cash_sit.anm during play and s_winner.anm on the results screen. L1..L4
+ * are implemented in level1.c..level4.c.
  */
 
 void levelEventDirector_L0_Init(void);    /* @0x416db0 */
