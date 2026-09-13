@@ -296,7 +296,9 @@ static int zoneConnBoxesOverlap(AiNavEdge *pA, AiNavEdge *pB, int nTol, int nYTo
 /* zoneConnMergeDupesInMesh @0x429d60 — merge duplicate AABB-overlapping
  * edges (tolerance +-2 on all three axes) within one mesh's pEdgeList
  * (+0x3c): both records are unlinked (doubly-linked, head fixup) and
- * freed; the outer scan continues from the pre-captured successor. */
+ * freed; the outer scan continues from the pre-captured successor, or
+ * past pB when pB was that successor (@0x429e41: the original re-reads
+ * the freed record's pNext; the rebuild captures it before freeing). */
 void zoneConnMergeDupesInMesh(AiNavNode *pMesh) /* @0x429d60 */
 {
     AiNavEdge *pA = pMesh->pEdgeList;
@@ -307,6 +309,11 @@ void zoneConnMergeDupesInMesh(AiNavNode *pMesh) /* @0x429d60 */
 
         for (pB = pNextA; pB != NULL; pB = pB->pNext) {
             if (zoneConnBoxesOverlap(pA, pB, 2, 2)) {
+                AiNavEdge *pNextB = pB->pNext;
+
+                if (pNextA == pB) {                           /* @0x429e41 */
+                    pNextA = pNextB;
+                }
                 if (pA->pPrev != NULL) {              /* unlink pA */
                     pA->pPrev->pNext = pA->pNext;
                 }

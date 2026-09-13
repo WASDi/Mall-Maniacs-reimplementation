@@ -153,7 +153,14 @@ void aiNavNodeUpdate(AiNavNode *pNode, SceneNode *pSceneObj) /* @0x428d50 */
             float v2y = (float)(int)pVerts[pCur[2] * 4 + 1] + (float)pNode->nPosY;
             float v2z = (float)(int)pVerts[pCur[2] * 4 + 2] + (float)pNode->nPosZ;
             float v3x = 0.0f, v3y = 0.0f, v3z = 0.0f;
-            float flNy, flNx, flNz;
+            /* Nx/Ny are rounded to float; Nz is kept unrounded (x87 ST0).
+             * volatile forces the rounded values to memory so the
+             * exact-match and the candidate guard below compare the very
+             * same float bits (without it GCC keeps the x87 register
+             * value for one site and the rounded spill for the other,
+             * which makes the guard pass where the exact-match failed). */
+            volatile float flNy, flNx;
+            volatile double flNz;                     /* normalized Nz, unrounded (x87 ST0) */
             float A = v2z - v0z;
             float B = v0x - v1x;
             float C = v0z - v1z;
@@ -171,28 +178,39 @@ void aiNavNodeUpdate(AiNavNode *pNode, SceneNode *pSceneObj) /* @0x428d50 */
             /* Fan normal = cross((v1-v0),(v2-v0)) normalized and
              * epsilon-zeroed (x87 order verified: Ny = B*A - D*C,
              * Nx = E*C - F*A, Nz = F*D - E*B, len = sqrt(Nz^2+Nx^2+Ny^2),
-             * |c| <= 1e-5 zeroes @0x44b718/0x44b71c). */
-            flNy = B * A - D * C;
-            flNx = E * C - F * A;
-            flNz = F * D - E * B;
-            flLen = (float)sqrt((double)(flNz * flNz + flNx * flNx + flNy * flNy));
-            flNx /= flLen;
-            flNy /= flLen;
-            flNz /= flLen;
+             * |c| <= 1e-5 zeroes @0x44b718/0x44b71c).
+             * The original stores Nx/Ny rounded to float but keeps the
+             * normalized Nz in the x87 stack (ST0) and compares it against
+             * the float-rounded stored node normal (@0x429065/@0x4291bd).
+             * That asymmetry makes the exact-match fail for any fan whose
+             * normal has a nonzero Z component, so sloped fans never merge
+             * or absorb (each fan becomes its own node); only flat
+             * (Nz == 0) coplanar fans merge. */
+            {
+                float flNyRaw = B * A - D * C;
+                float flNxRaw = E * C - F * A;
+                float flNzRaw = F * D - E * B;
+                flLen = (float)sqrt((double)(flNzRaw * flNzRaw +
+                                             flNxRaw * flNxRaw +
+                                             flNyRaw * flNyRaw));
+                flNx = flNxRaw / flLen;
+                flNy = flNyRaw / flLen;
+                flNz = (double)flNzRaw / (double)flLen; /* unrounded */
+            }
             if (flNx <= 1.0e-05f && flNx >= -1.0e-05f) {
                 flNx = 0.0f;
             }
             if (flNy <= 1.0e-05f && flNy >= -1.0e-05f) {
                 flNy = 0.0f;
             }
-            if (flNz <= 1.0e-05f && flNz >= -1.0e-05f) {
-                flNz = 0.0f;
+            if (flNz <= 1.0e-05 && flNz >= -1.0e-05) {
+                flNz = 0.0;
             }
             if ((double)flNy >= 0.6) {                /* walkable @0x429029/@0x4296ad */
                 if (pNode->pEdgeList == NULL) {       /* first fan: define normal */
                     pNode->flNormalX = flNx;          /* +0x18 @0x4299be/@0x42936e */
                     pNode->flNormalY = flNy;          /* +0x1c */
-                    pNode->flNormalZ = flNz;          /* +0x20 */
+                    pNode->flNormalZ = (float)flNz;   /* +0x20, rounded */
                     aiNavNodeAddEdge(pNode, (int)v0x, (int)v0y, (int)v0z,
                                      (int)v1x, (int)v1y, (int)v1z);
                     aiNavNodeAddEdge(pNode, (int)v1x, (int)v1y, (int)v1z,
@@ -208,7 +226,7 @@ void aiNavNodeUpdate(AiNavNode *pNode, SceneNode *pSceneObj) /* @0x428d50 */
                     }
                 } else if (pNode->flNormalX == flNx &&          /* exact match @0x4296cd */
                            pNode->flNormalY == flNy &&
-                           flNz == pNode->flNormalZ) {
+                           (double)pNode->flNormalZ == flNz) {
                     aiNavNodeAddEdge(pNode, (int)v0x, (int)v0y, (int)v0z,
                                      (int)v1x, (int)v1y, (int)v1z);
                     aiNavNodeAddEdge(pNode, (int)v1x, (int)v1y, (int)v1z,
@@ -258,7 +276,7 @@ void aiNavNodeUpdate(AiNavNode *pNode, SceneNode *pSceneObj) /* @0x428d50 */
                             }
                             if (pNode->flNormalX == flNx &&
                                 pNode->flNormalY == flNy &&
-                                flNz == pNode->flNormalZ &&
+                                (double)pNode->flNormalZ == flNz &&
                                 (double)flNx + 0.2 >= (double)flNx2 &&   /* @0x44b708 */
                                 (double)flNx - 0.2 <= (double)flNx2 &&
                                 (double)flNy + 0.2 >= (double)flNy2 &&
