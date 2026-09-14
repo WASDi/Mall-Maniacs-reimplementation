@@ -199,18 +199,6 @@ void objTurretListFree2(int nMode) /* @0x402b70 */
     (void)nMode;
 }
 
-/* objSegListIntersectTest @0x414ce0 — documented TODO stub, see stubs.h.
- * Original tests the (flX1,flY1)->(flX2,flY2) segment against pObj's zone
- * line segments (+0x04 line list) and returns nonzero on a crossing.
- * Deferred until c_di objects carry line lists; cameraFollowUpdate treats
- * a 0 return as "no height clamp". */
-int objSegListIntersectTest(EventObject *pObj, float flX1, float flY1,
-                            float flX2, float flY2) /* @0x414ce0 */
-{
-    (void)pObj; (void)flX1; (void)flY1; (void)flX2; (void)flY2;
-    return 0;
-}
-
 /* netServerSendSubCmd @0x415d20 — see stubs.h. Dead offline (no session). */
 void netServerSendSubCmd(int nSubCmd, int nArg1, int nArg2, int nArg3,
                          int nArg4, int nArg5, int nArg6) /* @0x415d20 */

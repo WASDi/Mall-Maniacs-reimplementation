@@ -1,4 +1,4 @@
-/* level1.c — level-1 (Woodland Mall) "MCDMAN bonus task" event director.
+/* level1.c — level-1 (wood, "Eken") "MCDMAN bonus task" event director.
  *
  * Original functions (verified 2026-09-05 against full disassembly):
  *   levelEventDirector_L1_Init    @0x4175e0
@@ -14,7 +14,7 @@
  *     and drop the BURGER in four mode-5 z-steps (s7-8), then spawn a
  *     class-0x1f pickup EventObject (sceneObjCtor3 + objHashRegister) at
  *     the BURGER world position — the pickup consumed by playerAiGrabItem
- *     @0x40ea20 via EventObject.field_14 (s9);
+ *     @0x40ea20 via EventObject.nValue1 (s9);
  *  2. blinks the KASSOERSKA cashier anim (cash_sit during play,
  *     s_winner on the results screen) every other frame via the
  *     eventAnim step/apply alternation.
@@ -252,8 +252,8 @@ void levelEventDirector_L1(void) /* @0x4178c0 */
                  * ints of the BURGER pos (FILD integer loads @0x417c88..0x417ca5) */
                 sceneObjCtor3(pNew, 0x1f, (float)g_anL1SpawnPos[2],        /* @0x4146a0 @0x417caa */
                               (float)g_anL1SpawnPos[0], (float)g_anL1SpawnPos[1]);
-                pNew->field_10 = g_anL1SpawnPos[1];                        /* +0x10 @0x417cba */
-                pNew->field_14 = (int)(uintptr_t)g_pL1BurgerObj;           /* +0x14 @0x417ccb */
+                pNew->nValue0 = g_anL1SpawnPos[1];                        /* +0x10 @0x417cba */
+                pNew->nValue1 = (int)(uintptr_t)g_pL1BurgerObj;           /* +0x14 @0x417ccb */
                 objHashRegister(pNew);                                     /* @0x4148f0 @0x417cce */
             }
             break;                                                         /* @0x417cd6 (tick++ -> 1) */

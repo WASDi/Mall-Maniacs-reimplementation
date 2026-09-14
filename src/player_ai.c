@@ -579,7 +579,7 @@ int aiStateSetTargetItem(AiController *pCtrl) /* @0x4015c0 */
             float flDx;
             float flDz;
             float flDist;
-            if (pObj->field_14 == 1) {                 /* +0x14 @0x401679 */
+            if (pObj->nValue1 == 1) {                 /* +0x14 @0x401679 */
                 continue;                              /* @0x401746 */
             }
             flDx = vGoal.y - pCtrl->vSelfXZ.y;         /* @0x401683 gxVec2Sub */
@@ -1149,8 +1149,8 @@ EventObject *playerCheckBlocked(PlayerRecord *pRec) /* @0x40ec40 */
     nWalkX = objPolarPosLookup(pRec->pSubObjA, (int)pRec->pCharSceneNode);   /* @0x40ec88 */
     nWalkZ = objPolarPosLookup2(pRec->pSubObjA, (int)pRec->pCharSceneNode);  /* @0x40ec95 */
     for (nIdx = 0; (pObj = objFindByIdInRange(1, 0x1e, nIdx)) != NULL; nIdx++) { /* @0x40ecae */
-        flDz = (float)nWalkZ - pObj->flOriginX;         /* +0x38 @0x40ecca */
-        flDy = (float)nWalkX - pObj->flOriginZ;         /* +0x3c @0x40ecd1 */
+        flDz = (float)nWalkZ - pObj->flPosX;         /* +0x38 @0x40ecca */
+        flDy = (float)nWalkX - pObj->flPosZ;         /* +0x3c @0x40ecd1 */
         if (flDz * flDz + flDy * flDy <= g_fl1000000) {
             return NULL;                                /* zone blocks @0x40ecf1 */
         }
@@ -1196,10 +1196,10 @@ EventObject *playerFindNearestTarget(PlayerRecord *pRec) /* @0x40ed10 */
         }
         nItemId = pObj->nId;                        /* +0x08 @0x40edae */
         if (pRec->nControlType != 2 && nItemId == 0x1f) {    /* burger @0x40edae */
-            if (flAvgFront > pObj->flHeightA - g_fl1500 &&   /* @0x40edb4: NOT(flAvgFront <= h-1500) */
-                flAvgFront < pObj->flHeightA + g_fl1500) {   /* @0x40edcb */
-                flDz = (float)nWalkZ - pObj->flOriginX;   /* +0x38 @0x40ede0 */
-                flDy = (float)nWalkX - pObj->flOriginZ;   /* +0x3c @0x40ede7 */
+            if (flAvgFront > pObj->flHeight - g_fl1500 &&   /* @0x40edb4: NOT(flAvgFront <= h-1500) */
+                flAvgFront < pObj->flHeight + g_fl1500) {   /* @0x40edcb */
+                flDz = (float)nWalkZ - pObj->flPosX;   /* +0x38 @0x40ede0 */
+                flDy = (float)nWalkX - pObj->flPosZ;   /* +0x3c @0x40ede7 */
                 flD2 = flDz * flDz + flDy * flDy;
                 if (flD2 <= flBest) {
                     flBest = flD2;                  /* @0x40edf8 */
@@ -1211,12 +1211,12 @@ EventObject *playerFindNearestTarget(PlayerRecord *pRec) /* @0x40ed10 */
         if (pObj->nId == 0x1f) {                    /* @0x40ee14..0x40ee1a */
             continue;
         }
-        if (pObj->flHeightA - g_fl500 >= flAvgFront ||   /* @0x40ee20 */
-            flAvgFront >= pObj->flHeightA + g_fl500) {   /* @0x40ee3b */
+        if (pObj->flHeight - g_fl500 >= flAvgFront ||   /* @0x40ee20 */
+            flAvgFront >= pObj->flHeight + g_fl500) {   /* @0x40ee3b */
             continue;                               /* @0x40ef2d */
         }
-        flDz = (float)nWalkZ - pObj->flOriginX;     /* +0x38 @0x40ee50 */
-        flDy = (float)nWalkX - pObj->flOriginZ;     /* +0x3c @0x40ee57 */
+        flDz = (float)nWalkZ - pObj->flPosX;     /* +0x38 @0x40ee50 */
+        flDy = (float)nWalkX - pObj->flPosZ;     /* +0x3c @0x40ee57 */
         flD2 = flDz * flDz + flDy * flDy;
         if (flD2 > flBest) {                        /* @0x40ee74 */
             continue;
@@ -1242,7 +1242,7 @@ EventObject *playerFindNearestTarget(PlayerRecord *pRec) /* @0x40ed10 */
             }
         } else if (g_nGameMode == 3) {              /* @0x40ee8e */
             if (pRec->anHeldSlot[1] < 5 &&          /* +0x180 @0x40ee95 */
-                (g_nCurrentItemId == nItemId || pObj->field_14 != 0)) {  /* @0x40eea2 */
+                (g_nCurrentItemId == nItemId || pObj->nValue1 != 0)) {  /* @0x40eea2 */
                 pBest = pObj;
                 flBest = flD2;
             }
@@ -1282,7 +1282,7 @@ int playerAiGrabItem(PlayerRecord *pRec) /* @0x40ea20 */
             return 0;                                   /* @0x40eaa0 */
         }
         pRec->anHeldSlot[0] = 0x1f;                       /* +0x17c @0x40eaa5 */
-        nBurgerObj = pObj->field_14;                    /* +0x14 @0x40eaaf */
+        nBurgerObj = pObj->nValue1;                    /* +0x14 @0x40eaaf */
         pRec->pGrabSceneObj = (SceneNode *)nBurgerObj;  /* +0x40 @0x40eab8 */
         sceneObjSetClassMesh(nBurgerObj, pRec->pCharSceneObj, 8, 3);   /* @0x40eabb */
         sceneObjSetPos(pRec->pGrabSceneObj, 0, 300, 0, 2);   /* @0x430660 @0x40eacf */
@@ -1290,8 +1290,8 @@ int playerAiGrabItem(PlayerRecord *pRec) /* @0x40ea20 */
         objHashRemoveFree(pObj);                        /* @0x414990 @0x40eae6 */
         return pRec->anHeldSlot[0];                       /* +0x17c @0x40eaeb */
     }
-    if (pObj->field_14 != 0 && pObj->field_24 != 0) {   /* @0x40eaf8 */
-        ThrownItem *pThrown = (ThrownItem *)pObj->field_24; /* [EBX+0x24] @0x40eaff */
+    if (pObj->nValue1 != 0 && pObj->pThrownRef != NULL) {   /* @0x40eaf8 */
+        ThrownItem *pThrown = pObj->pThrownRef; /* +0x24 @0x40eaff */
         pRec->anHeldSlot[0] = nItemId;                  /* +0x17c @0x40eb09 */
         pRec->pGrabSceneObj = pThrown->pMesh;           /* [EDI+0x24] @0x40eb0f */
         sceneObjSetClassMesh((int)pThrown->pMesh, pRec->pCharSceneObj, 8, 3); /* @0x430db0 @0x40eb1e */
@@ -1486,7 +1486,7 @@ void playerUpdateAI(void) /* @0x40b510 */
                     }
                     /* mode != 1: pick the matching animation set and start
                      * the pickup approach (nAiPhase 1). */
-                    if (pObj->field_14 == 1) {          /* @0x40b7d2 */
+                    if (pObj->nValue1 == 1) {          /* @0x40b7d2 */
                         pRec->nAiPhase = 1;             /* @0x40b7dd */
                         pRec->pAnimSet = pRec->apAnmSets[2]; /* flpick1 +0x2b0 @0x40b7d7 */
                     } else {
@@ -1703,9 +1703,9 @@ int aiStateTurnToBlocked(PlayerRecord *pRec) /* @0x40ef60 */
         return 0;
     }
     flDiff = aiTurnDiff(pRec->pSubObjA,                         /* @0x40ef94 */
-                        objAngleToPoint(pRec->pSubObjA, pObj->flOriginX, pObj->flOriginZ));
+                        objAngleToPoint(pRec->pSubObjA, pObj->flPosX, pObj->flPosZ));
     if (flDiff <= (float)g_dbl0_1 && flDiff >= (float)g_dblNeg0_1) {
-        flDist = objDistToPoint(pRec->pSubObjA, pObj->flOriginX, pObj->flOriginZ); /* @0x40f11c */
+        flDist = objDistToPoint(pRec->pSubObjA, pObj->flPosX, pObj->flPosZ); /* @0x40f11c */
         if (flDist > (float)g_dbl1000) {
             pRec->flInputAccel = g_flOne;               /* +0x2e4 = 1.0 @0x40f12e */
             return 0;
@@ -2056,10 +2056,10 @@ void itemThrowUpdate(ThrownItem *pItem) /* @0x40f950 */
                 }
                 pItem->pLandedObj = pNew;                      /* +0x0c @0x40fba1 */
                 if (pNew != NULL) {
-                    pNew->field_10 = (int)nodeChannelAvgFloat(pObj,          /* +0x10 @0x40fbb5 */
+                    pNew->nValue0 = (int)nodeChannelAvgFloat(pObj,          /* +0x10 @0x40fbb5 */
                                                               (int)pItem->pMesh);
-                    pNew->field_14 = 1;                        /* +0x14 @0x40fbbb */
-                    pNew->field_24 = (int)pItem;               /* +0x24 @0x40fbbf */
+                    pNew->nValue1 = 1;                        /* +0x14 @0x40fbbb */
+                    pNew->pThrownRef = pItem;               /* +0x24 @0x40fbbf */
                     objHashRegister(pNew);                     /* @0x4148f0 @0x40fbcc */
                 }
                 if (pObj != NULL) {                            /* @0x40fbd7 */

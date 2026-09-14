@@ -104,10 +104,10 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
              pEo = objHashNextSame(pEo)) {                               /* @0x42719c */
             GxVec2 vPolar;
             GxVec2 vIn;
-            if (!(nodeChannelAvgFloat(pWalk, nCharKey) <= pEo->flHeightA)) {   /* +0x40 @0x427135 */
+            if (!(nodeChannelAvgFloat(pWalk, nCharKey) <= pEo->flHeight)) {   /* +0x40 @0x427135 */
                 continue;
             }
-            if (!(nodeChannelAvgFloat(pWalk, nCharKey) >= pEo->flHeightB)) {   /* +0x44 @0x427156 */
+            if (!(nodeChannelAvgFloat(pWalk, nCharKey) >= pEo->flHeight2)) {   /* +0x44 @0x427156 */
                 continue;
             }
             if (objContainsPoint(pEo, (float)(int)pWalk->vPos.x,
@@ -120,8 +120,8 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
                     sndPlaySfx3D(pEmitter, 1, 0x1a, 0xfde8, 0xff, (void *)(size_t)nCharKey, 0, 0, 0, 0, 0);
                 }
             }
-            gxVec2Set(&vIn, pEo->flOriginZ - (float)(int)pWalk->vPos.y,        /* +0x3c @0x42720f */
-                      pEo->flOriginX - (float)(int)pWalk->vPos.x);             /* +0x38 @0x42724c */
+            gxVec2Set(&vIn, pEo->flPosZ - (float)(int)pWalk->vPos.y,        /* +0x3c @0x42720f */
+                      pEo->flPosX - (float)(int)pWalk->vPos.x);             /* +0x38 @0x42724c */
             mathVec2Polar(&vPolar, &vIn);                                      /* @0x42725d */
             pRec->vVelPolar.y = vPolar.y;                                      /* +0x220 @0x427276 */
             pRec->vVelPolar.x = 300.0f;                                        /* 0x43960000 @0x427279 */
@@ -139,10 +139,10 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
         pRec->bStateFlags = bFlags & ~8u;                                      /* AND AL,0xf7 @0x4272dc */
         for (pEo = objFindById(g_nObjIdMvnc, 0); pEo != NULL;                  /* @0x4272e4 */
              pEo = objHashNextSame(pEo)) {
-            if (!(nodeChannelAvgFloat(pWalk, nCharKey) <= pEo->flHeightA)) {   /* @0x427319 */
+            if (!(nodeChannelAvgFloat(pWalk, nCharKey) <= pEo->flHeight)) {   /* @0x427319 */
                 continue;
             }
-            if (!(nodeChannelAvgFloat(pWalk, nCharKey) >= pEo->flHeightB)) {   /* @0x42733a */
+            if (!(nodeChannelAvgFloat(pWalk, nCharKey) >= pEo->flHeight2)) {   /* @0x42733a */
                 continue;
             }
             if (objContainsPoint(pEo, (float)(int)pWalk->vPos.x,
@@ -165,18 +165,18 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
              pEo = objHashNextSame(pEo)) {
             GxVec2 vPolar;
             GxVec2 vIn;
-            if (!(nodeChannelAvgFloat(pWalk, nCharKey) <= pEo->flHeightA)) {   /* @0x42743a */
+            if (!(nodeChannelAvgFloat(pWalk, nCharKey) <= pEo->flHeight)) {   /* @0x42743a */
                 continue;
             }
-            if (!(nodeChannelAvgFloat(pWalk, nCharKey) >= pEo->flHeightB)) {   /* @0x42745b */
+            if (!(nodeChannelAvgFloat(pWalk, nCharKey) >= pEo->flHeight2)) {   /* @0x42745b */
                 continue;
             }
             if (objContainsPoint(pEo, (float)(int)pWalk->vPos.x,
                                  (float)(int)pWalk->vPos.y) == 0) {            /* @0x427496 */
                 continue;
             }
-            gxVec2Set(&vIn, pEo->flOriginZ - (float)(int)pWalk->vPos.y,        /* @0x4274b2 */
-                      pEo->flOriginX - (float)(int)pWalk->vPos.x);
+            gxVec2Set(&vIn, pEo->flPosZ - (float)(int)pWalk->vPos.y,        /* @0x4274b2 */
+                      pEo->flPosX - (float)(int)pWalk->vPos.x);
             mathVec2Polar(&vPolar, &vIn);                                      /* @0x427500 */
             pRec->vVelPolar.y = vPolar.y;                                      /* +0x220 @0x427509 */
             pRec->vVelPolar.x = 400.0f;                                        /* 0x43c80000 @0x427513 */
@@ -186,10 +186,10 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
         for (pEo = objFindById(g_nObjIdTele, 0); pEo != NULL;                  /* @0x450de4 @0x427524 */
              pEo = objHashNextSame(pEo)) {
             short nScale;
-            if (!(nodeChannelAvgFloat(pWalk, nCharKey) <= pEo->flHeightA)) {   /* @0x427555 */
+            if (!(nodeChannelAvgFloat(pWalk, nCharKey) <= pEo->flHeight)) {   /* @0x427555 */
                 continue;
             }
-            if (!(nodeChannelAvgFloat(pWalk, nCharKey) >= pEo->flHeightB)) {   /* @0x427576 */
+            if (!(nodeChannelAvgFloat(pWalk, nCharKey) >= pEo->flHeight2)) {   /* @0x427576 */
                 continue;
             }
             if (objContainsPoint(pEo, (float)(int)pWalk->vPos.x,
@@ -198,19 +198,19 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
             }
             {
                 int nTmp = (int)pRec->vVelPolar.y;                             /* ftol of heading */
-                nScale = (short)(pEo->field_14 - (short)nTmp);                 /* @0x4275de */
+                nScale = (short)(pEo->nValue1 - (short)nTmp);                 /* @0x4275de */
             }
             {
                 int nSpeedBits;
                 memcpy(&nSpeedBits, &pRec->flCurSpeed, 4);         /* +0x1f4 raw bits @0x4275ed */
                 nodeSetTransformFromChannels(pWalk,                            /* @0x427607 */
-                                             (int)pEo->flOriginZ,              /* arg2 = ftol(+0x3c) */
-                                             pEo->field_10,                    /* arg3 = +0x10 raw */
-                                             (int)pEo->flOriginX,              /* arg4 = ftol(+0x38) */
+                                             (int)pEo->flPosZ,              /* arg2 = ftol(+0x3c) */
+                                             pEo->nValue0,                    /* arg3 = +0x10 raw */
+                                             (int)pEo->flPosX,              /* arg4 = ftol(+0x38) */
                                              nSpeedBits,                       /* arg5 = +0x1f4 raw bits */
                                              nScale);
             }
-            pRec->vAccPolar.y += (float)pEo->field_14 * g_fl9_588e_05;         /* +0x218 @0x427615 */
+            pRec->vAccPolar.y += (float)pEo->nValue1 * g_fl9_588e_05;         /* +0x218 @0x427615 */
             moveStateSetSnapFlag(&pRec->ai);                                   /* @0x4020c0 @0x427627 */
             break;
         }
@@ -374,10 +374,10 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
         for (pEo = objFindById(g_nObjIdMvnc, 0); pEo != NULL;        /* @0x427b5d */
              pEo = objHashNextSame(pEo)) {
             GxVec2 vPolar;
-            if (!(nodeChannelAvgFloat(pPos, nCartKey) <= pEo->flHeightA)) {  /* @0x427b90 */
+            if (!(nodeChannelAvgFloat(pPos, nCartKey) <= pEo->flHeight)) {  /* @0x427b90 */
                 continue;
             }
-            if (!(nodeChannelAvgFloat(pPos, nCartKey) >= pEo->flHeightB)) {  /* @0x427bb4 */
+            if (!(nodeChannelAvgFloat(pPos, nCartKey) >= pEo->flHeight2)) {  /* @0x427bb4 */
                 continue;
             }
             if (objContainsPoint(pEo, (float)(int)pPos->vPos.x,
@@ -386,8 +386,8 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
             }
             {
                 GxVec2 vIn2;
-                gxVec2Set(&vIn2, pEo->flOriginZ - (float)(int)pPos->vPos.y,      /* @0x427c0e */
-                          pEo->flOriginX - (float)(int)pPos->vPos.x);
+                gxVec2Set(&vIn2, pEo->flPosZ - (float)(int)pPos->vPos.y,      /* @0x427c0e */
+                          pEo->flPosX - (float)(int)pPos->vPos.x);
                 mathVec2Polar(&vPolar, &vIn2);                                   /* @0x427c68 */
                 pRec->flPosVelAng = vPolar.y;                                    /* +0x260 @0x427c7b */
                 pRec->flPosVelLen = 350.0f;                                      /* 0x43af0000 @0x427c81 */
@@ -405,10 +405,10 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
         pRec->bStateFlags = bFlags & ~0x10u;                             /* AND AL,0xef @0x427cde */
         for (pEo = objFindById(g_nObjIdMvnc, 0); pEo != NULL;            /* @0x427ce6 */
              pEo = objHashNextSame(pEo)) {
-            if (!(nodeChannelAvgFloat(pPos, nCartKey) <= pEo->flHeightA)) {  /* @0x427d1e */
+            if (!(nodeChannelAvgFloat(pPos, nCartKey) <= pEo->flHeight)) {  /* @0x427d1e */
                 continue;
             }
-            if (!(nodeChannelAvgFloat(pPos, nCartKey) >= pEo->flHeightB)) {  /* @0x427d42 */
+            if (!(nodeChannelAvgFloat(pPos, nCartKey) >= pEo->flHeight2)) {  /* @0x427d42 */
                 continue;
             }
             if (objContainsPoint(pEo, (float)(int)pPos->vPos.x,
@@ -435,18 +435,18 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
              pEo = objHashNextSame(pEo)) {
             GxVec2 vPolar;
             GxVec2 vIn2;
-            if (!(nodeChannelAvgFloat(pPos, nCartKey) <= pEo->flHeightA)) {  /* @0x427e72 */
+            if (!(nodeChannelAvgFloat(pPos, nCartKey) <= pEo->flHeight)) {  /* @0x427e72 */
                 continue;
             }
-            if (!(nodeChannelAvgFloat(pPos, nCartKey) >= pEo->flHeightB)) {  /* @0x427e96 */
+            if (!(nodeChannelAvgFloat(pPos, nCartKey) >= pEo->flHeight2)) {  /* @0x427e96 */
                 continue;
             }
             if (objContainsPoint(pEo, (float)(int)pPos->vPos.x,
                                  (float)(int)pPos->vPos.y) == 0) {               /* @0x427ed1 */
                 continue;
             }
-            gxVec2Set(&vIn2, pEo->flOriginZ - (float)(int)pPos->vPos.y,          /* @0x427ef0 */
-                      pEo->flOriginX - (float)(int)pPos->vPos.x);
+            gxVec2Set(&vIn2, pEo->flPosZ - (float)(int)pPos->vPos.y,          /* @0x427ef0 */
+                      pEo->flPosX - (float)(int)pPos->vPos.x);
             mathVec2Polar(&vPolar, &vIn2);                                       /* @0x427f4a */
             pRec->flPosVelAng = vPolar.y;                                        /* +0x260 @0x427f5d */
             pRec->flPosVelLen = 450.0f;                                          /* 0x43e10000 @0x427f63 */
@@ -456,10 +456,10 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
         for (pEo = objFindById(g_nObjIdTele, 0); pEo != NULL;            /* @0x450de4 @0x427f77 */
              pEo = objHashNextSame(pEo)) {
             short nScale;
-            if (!(nodeChannelAvgFloat(pPos, nCartKey) <= pEo->flHeightA)) {  /* @0x427fab */
+            if (!(nodeChannelAvgFloat(pPos, nCartKey) <= pEo->flHeight)) {  /* @0x427fab */
                 continue;
             }
-            if (!(nodeChannelAvgFloat(pPos, nCartKey) >= pEo->flHeightB)) {  /* @0x427fcf */
+            if (!(nodeChannelAvgFloat(pPos, nCartKey) >= pEo->flHeight2)) {  /* @0x427fcf */
                 continue;
             }
             if (objContainsPoint(pEo, (float)(int)pPos->vPos.x,
@@ -468,15 +468,15 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
             }
             {
                 int nTmp = (int)pRec->flPosVelAng;                           /* ftol of +0x260 @0x428032 */
-                nScale = (short)(pEo->field_14 - (short)nTmp);               /* @0x428043 */
+                nScale = (short)(pEo->nValue1 - (short)nTmp);               /* @0x428043 */
             }
             {
                 int nSpeedBits;
                 memcpy(&nSpeedBits, &pRec->flPosSpeed, 4);         /* +0x234 raw bits @0x428046 */
                 nodeSetTransformFromChannels(pPos,                             /* @0x428060 */
-                                             (int)pEo->flOriginZ,              /* arg2 = ftol(+0x3c) */
-                                             pEo->field_10,                    /* arg3 = +0x10 raw */
-                                             (int)pEo->flOriginX,              /* arg4 = ftol(+0x38) */
+                                             (int)pEo->flPosZ,              /* arg2 = ftol(+0x3c) */
+                                             pEo->nValue0,                    /* arg3 = +0x10 raw */
+                                             (int)pEo->flPosX,              /* arg4 = ftol(+0x38) */
                                              nSpeedBits,                       /* arg5 = +0x234 raw bits */
                                              nScale);
             }
@@ -760,9 +760,9 @@ void playerUpdateCartPhysics(PlayerRecord *pRec) /* @0x4280b0 */
              pEo = objHashNextSame(pEo)) {
             float flAvgC = nodeChannelAvgFloat(pCart, nCharKey);
             int bTest;
-            if (pEo->flHeightA < flAvgC || flAvgC < pEo->flHeightB) {   /* @0x4280e1 */
+            if (pEo->flHeight < flAvgC || flAvgC < pEo->flHeight2) {   /* @0x4280e1 */
                 float flAvgK = nodeChannelAvgFloat(pCart, nCartKey);
-                if (!(pEo->flHeightA >= flAvgK && pEo->flHeightB <= flAvgK)) {  /* @0x428121 */
+                if (!(pEo->flHeight >= flAvgK && pEo->flHeight2 <= flAvgK)) {  /* @0x428121 */
                     continue;
                 }
             }
@@ -800,10 +800,10 @@ void playerUpdateCartPhysics(PlayerRecord *pRec) /* @0x4280b0 */
         for (pEo = objFindById(g_nObjIdTele, 0); pEo != NULL;           /* @0x4282bc */
              pEo = objHashNextSame(pEo)) {
             short nScale;
-            if (!(nodeChannelAvgFloat(pCart, nCharKey) <= pEo->flHeightA)) {  /* @0x4282e9 */
+            if (!(nodeChannelAvgFloat(pCart, nCharKey) <= pEo->flHeight)) {  /* @0x4282e9 */
                 continue;
             }
-            if (!(nodeChannelAvgFloat(pCart, nCharKey) >= pEo->flHeightB)) {  /* @0x42830a */
+            if (!(nodeChannelAvgFloat(pCart, nCharKey) >= pEo->flHeight2)) {  /* @0x42830a */
                 continue;
             }
             if (objContainsPoint(pEo, (float)(int)pCart->vPos.x,
@@ -812,19 +812,19 @@ void playerUpdateCartPhysics(PlayerRecord *pRec) /* @0x4280b0 */
             }
             {
                 int nTmp = (int)pRec->vCartVelPolar.y;                      /* ftol +0x2a0 @0x428399 */
-                nScale = (short)(pEo->field_14 - (short)nTmp);              /* @0x4283a6 */
+                nScale = (short)(pEo->nValue1 - (short)nTmp);              /* @0x4283a6 */
             }
             {
                 int nSpeedBits;
                 memcpy(&nSpeedBits, &pRec->flCartCurSpeed, 4);     /* +0x274 raw bits @0x4283b5 */
                 nodeSetTransformFromChannels(pCart,                            /* @0x4283c6 */
-                                             (int)pEo->flOriginZ,              /* ftol(+0x3c) */
-                                             pEo->field_10,                    /* +0x10 raw */
-                                             (int)pEo->flOriginX,              /* ftol(+0x38) */
+                                             (int)pEo->flPosZ,              /* ftol(+0x3c) */
+                                             pEo->nValue0,                    /* +0x10 raw */
+                                             (int)pEo->flPosX,              /* ftol(+0x38) */
                                              nSpeedBits,                       /* +0x274 raw bits */
                                              nScale);
             }
-            pRec->vCartAccPolar.y += (float)pEo->field_14 * g_fl9_588e_05;    /* +0x298 @0x4283d6 */
+            pRec->vCartAccPolar.y += (float)pEo->nValue1 * g_fl9_588e_05;    /* +0x298 @0x4283d6 */
             moveStateSetSnapFlag(&pRec->ai);                                  /* @0x4283e2 */
             break;
         }

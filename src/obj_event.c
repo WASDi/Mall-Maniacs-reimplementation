@@ -97,9 +97,9 @@ EventObject *objGetPos(int nId, int nOccurrence, float *pOutXZ, int *pOutHeight)
     EventObject *pObj = objFindById(nId, nOccurrence); /* @0x414a90 @0x40f1bb */
 
     if (pObj != NULL) {
-        pOutXZ[0] = pObj->flOriginX;                   /* +0x38 @0x40f1c9 */
-        pOutXZ[1] = pObj->flOriginZ;                   /* +0x3c @0x40f1d2 */
-        *pOutHeight = (int)pObj->flHeightA;            /* ftol +0x40 @0x40f1db */
+        pOutXZ[0] = pObj->flPosX;                   /* +0x38 @0x40f1c9 */
+        pOutXZ[1] = pObj->flPosZ;                   /* +0x3c @0x40f1d2 */
+        *pOutHeight = (int)pObj->flHeight;            /* ftol +0x40 @0x40f1db */
         return pObj;                                   /* @0x40f1e6 */
     }
     return NULL;                                       /* @0x40f1ea */
@@ -113,8 +113,8 @@ void objGetCheckoutPos(float *pOutPos) /* @0x40f6e0 */
     EventObject *pObj = objFindById(0x6C616F67, 0);    /* *(int*)"goal" @0x44f4e4 @0x40f6e5 */
 
     if (pObj != NULL) {
-        pOutPos[0] = pObj->flOriginX;                  /* +0x38 @0x40f6ea */
-        pOutPos[1] = pObj->flOriginZ;                  /* +0x3c @0x40f6ef */
+        pOutPos[0] = pObj->flPosX;                  /* +0x38 @0x40f6ea */
+        pOutPos[1] = pObj->flPosZ;                  /* +0x3c @0x40f6ef */
         return;
     }
     pOutPos[0] = 0.0f;
@@ -145,8 +145,8 @@ int objContainsPoint(EventObject *pObj, float flX, float flY) /* @0x414bb0 */
     float flBestD2 = -1.0f;
     int nInside = 0;
     GxVec2 vScratch;
-    float fDx = flX - pObj->flOriginX;      /* +0x38 */
-    float fDy = flY - pObj->flOriginZ;      /* +0x3c */
+    float fDx = flX - pObj->flPosX;      /* +0x38 */
+    float fDy = flY - pObj->flPosZ;      /* +0x3c */
     ObjLine *l;
 
     gxVec2SetAngleZero(&vScratch);          /* @0x434f90 */
@@ -183,12 +183,77 @@ int objContainsPoint(EventObject *pObj, float flX, float flY) /* @0x414bb0 */
  * delegate the horizontal test to objContainsPoint. */
 int objContainsPoint3D(EventObject *pObj, float flX, float flY, float flZ) /* @0x414b60 */
 {
-    if (flZ - 10.0f <= pObj->flHeightA && pObj->flHeightB <= flZ + 10.0f) {
+    if (flZ - 10.0f <= pObj->flHeight && pObj->flHeight2 <= flZ + 10.0f) {
         if (objContainsPoint(pObj, flX, flY) != 0) {
             return 1;
         }
     }
     return 0;
+}
+
+/* objSegListIntersectTest @0x414ce0 — segment-hit test against the
+ * object's +0x04 line list (each record +0x00/+0x04/+0x08/+0x0c =
+ * x1,y1,x2,y2 relative to the object origin, next at +0x18). The query
+ * segment is made relative (origin +0x38/+0x3c), mathSegIntersect'ed
+ * against every line into a {1,0}-initialized hit vector, and the hit
+ * must lie within both the wall-segment box and the query-segment box
+ * expanded by the 0.1 epsilon (double @0x44b550, x87 double compares
+ * per @0x414d96..@0x414ed7). Returns 1 on the first hit, 0 when the
+ * list is exhausted. The four gxVec2Set temporaries mirror the
+ * original's stack-built mathSegIntersect args
+ * (seg.x1,seg.y1,seg.x2,seg.y2,qx1,qz1,qx2,qz2,&hit). Only calls
+ * gxVec2SetAngleZero/gxVec2Set/mathSegIntersect as in the original.
+ * Used by cameraFollowUpdate @0x40228c to keep the camera from
+ * crossing zone walls. Original __thiscall RET 0x10. */
+int objSegListIntersectTest(EventObject *pObj, float flX1, float flZ1,
+                            float flX2, float flZ2) /* @0x414ce0 */
+{
+    static const double kDblEps = 0.1;  /* @0x44b550 (bytes 9A 99 99 99 99 99 B9 3F) */
+    GxVec2 vHit;
+    GxVec2 vTmpQ2;
+    GxVec2 vTmpQ1;
+    GxVec2 vTmpS2;
+    GxVec2 vTmpS1;
+    float flQX1;
+    float flQZ1;
+    float flQX2;
+    float flQZ2;
+    double dblHiX;
+    double dblLoX;
+    double dblHiZ;
+    double dblLoZ;
+    ObjLine *pLine;
+
+    gxVec2SetAngleZero(&vHit);                           /* @0x414ce9 */
+    flQX1 = flX1 - pObj->flPosX;                         /* +0x38 @0x414cf2 */
+    flQZ1 = flZ1 - pObj->flPosZ;                         /* +0x3c @0x414cfd */
+    flQX2 = flX2 - pObj->flPosX;                         /* @0x414d08 */
+    flQZ2 = flZ2 - pObj->flPosZ;                         /* @0x414d13 */
+    for (pLine = pObj->pLineList; pLine != NULL;         /* +0x04 @0x414d1a */
+         pLine = pLine->pNext) {                         /* +0x18 @0x414edf */
+        gxVec2Set(&vTmpQ2, flQX2, flQZ2);                /* @0x414d40 */
+        gxVec2Set(&vTmpQ1, flQX1, flQZ1);                /* @0x414d56 */
+        gxVec2Set(&vTmpS2, pLine->x2, pLine->y2);        /* +0x08/+0x0c @0x414d6e */
+        gxVec2Set(&vTmpS1, pLine->x1, pLine->y1);        /* +0x00/+0x04 @0x414d85 */
+        mathSegIntersect(pLine->x1, pLine->y1,           /* @0x406130 @0x414d91 */
+                         pLine->x2, pLine->y2,
+                         flQX1, flQZ1, flQX2, flQZ2, &vHit.x);
+        dblHiX = (double)vHit.x + kDblEps;               /* @0x414d96 */
+        dblLoX = (double)vHit.x - kDblEps;               /* @0x414db4/@0x414dd0 */
+        dblHiZ = (double)vHit.y + kDblEps;               /* @0x414e05 */
+        dblLoZ = (double)vHit.y - kDblEps;               /* @0x414e1d/@0x414e37 */
+        if ((((double)pLine->x1 <= dblHiX && dblLoX <= (double)pLine->x2) ||
+             (dblLoX <= (double)pLine->x1 && (double)pLine->x2 <= dblHiX)) &&
+            (((double)pLine->y1 <= dblHiZ && dblLoZ <= (double)pLine->y2) ||
+             (dblLoZ <= (double)pLine->y1 && (double)pLine->y2 <= dblHiZ)) &&
+            (((double)flQX1 <= dblHiX && dblLoX <= (double)flQX2) ||
+             (dblLoX <= (double)flQX1 && (double)flQX2 <= dblHiX)) &&
+            (((double)flQZ1 <= dblHiZ && dblLoZ <= (double)flQZ2) ||
+             (dblLoZ <= (double)flQZ1 && (double)flQZ2 <= dblHiZ))) {
+            return 1;                                    /* @0x414efa */
+        }
+    }
+    return 0;                                            /* @0x414eea */
 }
 
 /* lineRecordNormal @0x414620 — unit normal of the segment: polar of the
@@ -316,24 +381,24 @@ void objHashFreeAll(void) /* @0x414950 */
 void sceneObjCtor4(EventObject *pObj, int nId, float flX, float flY,
                    float flHeight, float flHeight2) /* @0x414700 */
 {
-    pObj->field_00 = 0;
+    pObj->nReserved00 = 0;
     pObj->pLineList = NULL;
     pObj->nId = nId;
-    pObj->field_0c = 0;
-    pObj->field_10 = 0;
-    pObj->field_14 = 0;
-    pObj->field_18 = 0;
-    pObj->field_1c = 0;
-    pObj->field_20 = 0;
-    pObj->field_24 = 0;
-    pObj->field_28 = 0;
-    pObj->field_2c = 0;
-    pObj->field_30 = 0;
-    pObj->field_34 = 0;
-    pObj->flOriginX = flX;
-    pObj->flOriginZ = flY;
-    pObj->flHeightA = flHeight;
-    pObj->flHeightB = flHeight2;
+    pObj->bReserved0c = 0;
+    pObj->nValue0 = 0;
+    pObj->nValue1 = 0;
+    pObj->nValue2 = 0;
+    pObj->nValue3 = 0;
+    pObj->nReserved20 = 0;
+    pObj->pThrownRef = NULL;
+    pObj->nReserved28 = 0;
+    pObj->nReserved2c = 0;
+    pObj->nReserved30 = 0;
+    pObj->nReserved34 = 0;
+    pObj->flPosX = flX;
+    pObj->flPosZ = flY;
+    pObj->flHeight = flHeight;
+    pObj->flHeight2 = flHeight2;
     pObj->pHashNext = NULL;
     pObj->pHashPrev = NULL;
 }
@@ -350,8 +415,8 @@ void eventObjAddLine(EventObject *pObj, float flX1, float flY1,
         return;
     }
     lineRecordCtor(pLine,                            /* @0x4145d0 */
-                   flX1 - pObj->flOriginX, flY1 - pObj->flOriginZ,
-                   flX2 - pObj->flOriginX, flY2 - pObj->flOriginZ);
+                   flX1 - pObj->flPosX, flY1 - pObj->flPosZ,
+                   flX2 - pObj->flPosX, flY2 - pObj->flPosZ);
     pLine->pNext = pObj->pLineList;                  /* +0x18 */
     if (pObj->pLineList != NULL) {
         pObj->pLineList->pPrev = pLine;              /* +0x1c */
@@ -410,7 +475,7 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
         /* [VERIFIED vs 0x406e93] The skip tests the COMPUTED id: '_' entries
          * go through fmtAtoi first (e.g. "_31" -> 0x1f). Testing the raw name
          * dword instead let the .eo burger zone register as a pickable id-0x1f
-         * EventObject whose field_14 holds a config value — the nearest-target
+         * EventObject whose nValue1 holds a config value — the nearest-target
          * scan then preferred it over the director's real burger and the grab
          * crashed dereferencing that value as a SceneNode. */
         if (nId == 0x1f) {
@@ -431,8 +496,8 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
         for (i = 1; ; i++) {
             ConfigNode *pLineNode;
             float flY2, flX2, flY1, flX1;
-            float flOrgX = (pEvent != NULL) ? pEvent->flOriginX : 0.0f;
-            float flOrgY = (pEvent != NULL) ? pEvent->flOriginZ : 0.0f;
+            float flOrgX = (pEvent != NULL) ? pEvent->flPosX : 0.0f;
+            float flOrgY = (pEvent != NULL) ? pEvent->flPosZ : 0.0f;
 
             fmtSprintf(szKey, "line[%d]", i);        /* s_line__d @0x44e81c */
             pLineNode = configEnvGetValue(&env, pFields, szKey); /* @0x436560 */
@@ -448,7 +513,7 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
 
         {
             ConfigNode *pValue = configEnvGetValue(&env, pFields, "values");
-            int *pnOut = (pEvent != NULL) ? &pEvent->field_10 : NULL;
+            int *pnOut = (pEvent != NULL) ? &pEvent->nValue0 : NULL;
             for (i = 0; i < 5 && pValue != NULL; i++) {
                 if (pnOut != NULL) {
                     *pnOut = (int)configEnvGetDouble(pValue);    /* @0x4369f0 + __ftol @0x4070a4 */
@@ -476,24 +541,24 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
 void sceneObjCtor3(EventObject *pObj, int nId, float flX, float flY,
                    float flHeight) /* @0x4146a0 */
 {
-    pObj->field_00 = 0;
+    pObj->nReserved00 = 0;
     pObj->pLineList = NULL;
     pObj->nId = nId;
-    pObj->field_0c = 0;
-    pObj->field_10 = 0;
-    pObj->field_14 = 0;
-    pObj->field_18 = 0;
-    pObj->field_1c = 0;
-    pObj->field_20 = 0;
-    pObj->field_24 = 0;
-    pObj->field_28 = 0;
-    pObj->field_2c = 0;
-    pObj->field_30 = 0;
-    pObj->field_34 = 0;
-    pObj->flOriginX = flX;
-    pObj->flOriginZ = flY;
-    pObj->flHeightA = flHeight;
-    pObj->flHeightB = flHeight;
+    pObj->bReserved0c = 0;
+    pObj->nValue0 = 0;
+    pObj->nValue1 = 0;
+    pObj->nValue2 = 0;
+    pObj->nValue3 = 0;
+    pObj->nReserved20 = 0;
+    pObj->pThrownRef = NULL;
+    pObj->nReserved28 = 0;
+    pObj->nReserved2c = 0;
+    pObj->nReserved30 = 0;
+    pObj->nReserved34 = 0;
+    pObj->flPosX = flX;
+    pObj->flPosZ = flY;
+    pObj->flHeight = flHeight;
+    pObj->flHeight2 = flHeight;
     pObj->pHashNext = NULL;
     pObj->pHashPrev = NULL;
 }

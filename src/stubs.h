@@ -56,15 +56,6 @@ void objTurretListFree2(int nMode);                          /* @0x402b70 */
  * sen.c (sen.h declares them). */
 
 
-/* objSegListIntersectTest @0x414ce0 — documented TODO stub (see stubs.c).
- * The original tests the (x1,y1)->(x2,y2) segment against an EventObject's
- * zone line segments (c_di camera-distance limiter). Called from
- * cameraFollowUpdate @0x4020d0 to lower the camera height; must return
- * nonzero on a crossing. Returns 0 (no crossing) until zone line lists
- * are loaded for c_di objects. */
-int objSegListIntersectTest(EventObject *pObj, float flX1, float flY1,
-                            float flX2, float flY2);
-
 /* netServerSendSubCmd @0x415d20 — server broadcast of a sub-command packet
  * (nSubCmd plus six payload dwords). The offline rebuild keeps no network
  * session (netIsActive() == 0), so every call site is dead; the stub only

@@ -191,18 +191,18 @@ void roundStartInit(void) /* @0x40a4d0 */
                 pSlot->pEventObj = pEvent;                 /* @0x40a8a7 */
                 if (pEvent != NULL) {
                     sceneObjSetPos((SceneNode *)pSlot->pSubObj,  /* @0x430660 @0x40a89f */
-                                   (int)pEvent->flOriginZ,
-                                   (int)pEvent->flHeightA,
-                                   (int)pEvent->flOriginX, 2);
+                                   (int)pEvent->flPosZ,
+                                   (int)pEvent->flHeight,
+                                   (int)pEvent->flPosX, 2);
                 }
             } else {
                 pEvent = objFindById(i, 0);                /* @0x40a810 */
                 pSlot->pEventObj = pEvent;                 /* @0x40a84f */
                 if (pEvent != NULL) {
                     sceneObjSetPos((SceneNode *)pSlot->pSubObj,  /* @0x40a847 */
-                                   (int)pEvent->flOriginZ,
-                                   (int)pEvent->flHeightA - 1000, /* @0x40a837 */
-                                   (int)pEvent->flOriginX, 2);
+                                   (int)pEvent->flPosZ,
+                                   (int)pEvent->flHeight - 1000, /* @0x40a837 */
+                                   (int)pEvent->flPosX, 2);
                 }
             }
         }
@@ -578,10 +578,10 @@ void roundLogicUpdate(void) /* @0x40beb0 */
             /* rail proximity: |origin - char node pos| <= 1500 on both
              * axes (double 1500.0 @0x44b480, verified from the image bytes
              * 2026-09-13; origin +0x38/+0x3c vs node +0x20/+0x24). */
-            if (!((float)pRail->flOriginX - (int)pfPos[8] <= 1500.0 &&
-                  (float)pRail->flOriginX - (int)pfPos[8] >= -1500.0 &&
-                  (float)pRail->flOriginZ - (int)pfPos[9] <= 1500.0 &&
-                  (float)pRail->flOriginZ - (int)pfPos[9] >= -1500.0)) {
+            if (!((float)pRail->flPosX - (int)pfPos[8] <= 1500.0 &&
+                  (float)pRail->flPosX - (int)pfPos[8] >= -1500.0 &&
+                  (float)pRail->flPosZ - (int)pfPos[9] <= 1500.0 &&
+                  (float)pRail->flPosZ - (int)pfPos[9] >= -1500.0)) {
                 continue;                                  /* @0x40c59d @0x40c5c3 */
             }
             for (k = 0; k < 3; k++) {                      /* @0x40c5d0 */
@@ -1114,8 +1114,8 @@ void gameObjectUpdate(void)
                         while (pObj != NULL) {
                             GxVec2 vDelta;
                             GxVec2 vPolar;
-                            vDelta.x = pObj->flOriginX - flSelfZ;
-                            vDelta.y = pObj->flOriginZ - flSelfX;
+                            vDelta.x = pObj->flPosX - flSelfZ;
+                            vDelta.y = pObj->flPosZ - flSelfX;
                             mathVec2Polar(&vPolar, &vDelta);
                             if (vPolar.x < flBest) { /* length @0x40d24b..0x40d264 */
                                 flBest = vPolar.x;
@@ -1140,9 +1140,9 @@ void gameObjectUpdate(void)
     if (pTarget != NULL) {
         if (g_nLevelIdx == 4) {
             EventObject *pTargetZone = objFindById(kIdAre1, 0);
-            if (pTargetZone == NULL || objContainsPoint(pTargetZone, pTarget->flOriginX, pTarget->flOriginZ) == 0) { /* +0x38/+0x3c @0x40d0d3 */
+            if (pTargetZone == NULL || objContainsPoint(pTargetZone, pTarget->flPosX, pTarget->flPosZ) == 0) { /* +0x38/+0x3c @0x40d0d3 */
                 pTargetZone = objFindById(kIdAre2, 0);
-                if (pTargetZone == NULL || objContainsPoint(pTargetZone, pTarget->flOriginX, pTarget->flOriginZ) == 0) {
+                if (pTargetZone == NULL || objContainsPoint(pTargetZone, pTarget->flPosX, pTarget->flPosZ) == 0) {
                     pTargetZone = objFindById(kIdAre4, 0);
                 }
             }
@@ -1168,27 +1168,27 @@ void gameObjectUpdate(void)
         } else { /* levels 0-3: PUNK loop over target pos @0x40d313..@0x40d3d0 */
             EventObject *pTargetZone = objFindById(kIdPunk, 0);
             int occ = 1;
-            while (pTargetZone != NULL && objContainsPoint(pTargetZone, pTarget->flOriginX, pTarget->flOriginZ) == 0) {
+            while (pTargetZone != NULL && objContainsPoint(pTargetZone, pTarget->flPosX, pTarget->flPosZ) == 0) {
                 pTargetZone = objFindById(kIdPunk, occ);
                 occ++;
             }
             if (pPlayerZone != pTargetZone) {
                 if (pPlayerZone == NULL) {
                     if (pTargetZone != NULL) {
-                        float fdx = fabsf(pTargetZone->flOriginX - flSelfZ);
-                        float fdy = fabsf(pTargetZone->flOriginZ - flSelfX);
-                        int bOutside = ((float)pTargetZone->field_10 <= fdx || (float)pTargetZone->field_14 <= fdy); /* +0x10/+0x14 @0x40d3af/@0x40d3c4 */
+                        float fdx = fabsf(pTargetZone->flPosX - flSelfZ);
+                        float fdy = fabsf(pTargetZone->flPosZ - flSelfX);
+                        int bOutside = ((float)pTargetZone->nValue0 <= fdx || (float)pTargetZone->nValue1 <= fdy); /* +0x10/+0x14 @0x40d3af/@0x40d3c4 */
                         if (bOutside) pTarget = pTargetZone;
                     }
                 } else {
-                    float fdxP = fabsf(pPlayerZone->flOriginX - flSelfZ);
-                    float fdyP = fabsf(pPlayerZone->flOriginZ - flSelfX);
-                    int bInsideP = ((float)pPlayerZone->field_10 > fdxP && (float)pPlayerZone->field_14 > fdyP); /* < both @0x40d37b/@0x40d390 */
+                    float fdxP = fabsf(pPlayerZone->flPosX - flSelfZ);
+                    float fdyP = fabsf(pPlayerZone->flPosZ - flSelfX);
+                    int bInsideP = ((float)pPlayerZone->nValue0 > fdxP && (float)pPlayerZone->nValue1 > fdyP); /* < both @0x40d37b/@0x40d390 */
                     if (bInsideP) {
                         if (pTargetZone != NULL) {
-                            float fdxT = fabsf(pTargetZone->flOriginX - flSelfZ);
-                            float fdyT = fabsf(pTargetZone->flOriginZ - flSelfX);
-                            int bOutsideT = ((float)pTargetZone->field_10 <= fdxT || (float)pTargetZone->field_14 <= fdyT);
+                            float fdxT = fabsf(pTargetZone->flPosX - flSelfZ);
+                            float fdyT = fabsf(pTargetZone->flPosZ - flSelfX);
+                            int bOutsideT = ((float)pTargetZone->nValue0 <= fdxT || (float)pTargetZone->nValue1 <= fdyT);
                             if (bOutsideT) pTarget = pTargetZone;
                         }
                     } else {
@@ -1233,8 +1233,8 @@ void gameObjectUpdate(void)
                     else pExit = objFindById(kIdExi3, 0);
                 }
                 if (pExit != NULL) {
-                    nSlotZ = (int)pExit->flOriginX; /* +0x38 ftol @0x40d5ec */
-                    nSlotX = (int)pExit->flOriginZ; /* +0x3c ftol @0x40d5f4 */
+                    nSlotZ = (int)pExit->flPosX; /* +0x38 ftol @0x40d5ec */
+                    nSlotX = (int)pExit->flPosZ; /* +0x3c ftol @0x40d5f4 */
                 }
             }
         } else { /* PUNK loop @0x40d51a..@0x40d5fd */
@@ -1248,28 +1248,28 @@ void gameObjectUpdate(void)
             }
             if (pPlayerZone != pCartZone) {
                 if (pPlayerZone != NULL) {
-                    float fdxP = fabsf(pPlayerZone->flOriginX - flSelfZ);
-                    float fdyP = fabsf(pPlayerZone->flOriginZ - flSelfX);
-                    int bOutsideP = ((float)pPlayerZone->field_10 <= fdxP || (float)pPlayerZone->field_14 <= fdyP);
+                    float fdxP = fabsf(pPlayerZone->flPosX - flSelfZ);
+                    float fdyP = fabsf(pPlayerZone->flPosZ - flSelfX);
+                    int bOutsideP = ((float)pPlayerZone->nValue0 <= fdxP || (float)pPlayerZone->nValue1 <= fdyP);
                     if (bOutsideP) {
-                        nSlotZ = (int)pPlayerZone->flOriginX;
-                        nSlotX = (int)pPlayerZone->flOriginZ;
+                        nSlotZ = (int)pPlayerZone->flPosX;
+                        nSlotX = (int)pPlayerZone->flPosZ;
                     } else if (pCartZone != NULL) {
-                        float fdxT = fabsf(pCartZone->flOriginX - flSelfZ);
-                        float fdyT = fabsf(pCartZone->flOriginZ - flSelfX);
-                        int bOutsideT = ((float)pCartZone->field_10 <= fdxT || (float)pCartZone->field_14 <= fdyT);
+                        float fdxT = fabsf(pCartZone->flPosX - flSelfZ);
+                        float fdyT = fabsf(pCartZone->flPosZ - flSelfX);
+                        int bOutsideT = ((float)pCartZone->nValue0 <= fdxT || (float)pCartZone->nValue1 <= fdyT);
                         if (bOutsideT) {
-                            nSlotZ = (int)pCartZone->flOriginX;
-                            nSlotX = (int)pCartZone->flOriginZ;
+                            nSlotZ = (int)pCartZone->flPosX;
+                            nSlotX = (int)pCartZone->flPosZ;
                         }
                     }
                 } else if (pCartZone != NULL) {
-                    float fdxT = fabsf(pCartZone->flOriginX - flSelfZ);
-                    float fdyT = fabsf(pCartZone->flOriginZ - flSelfX);
-                    int bOutsideT = ((float)pCartZone->field_10 <= fdxT || (float)pCartZone->field_14 <= fdyT);
+                    float fdxT = fabsf(pCartZone->flPosX - flSelfZ);
+                    float fdyT = fabsf(pCartZone->flPosZ - flSelfX);
+                    int bOutsideT = ((float)pCartZone->nValue0 <= fdxT || (float)pCartZone->nValue1 <= fdyT);
                     if (bOutsideT) {
-                        nSlotZ = (int)pCartZone->flOriginX;
-                        nSlotX = (int)pCartZone->flOriginZ;
+                        nSlotZ = (int)pCartZone->flPosX;
+                        nSlotX = (int)pCartZone->flPosZ;
                     }
                 }
             }
@@ -1318,8 +1318,8 @@ void gameObjectUpdate(void)
         int nBob2;
 
         g_flGameObjSpeed2 += kFlSpeedInc;
-        nSlotX = (int)pTarget->flOriginZ; /* +0x3c ftol @0x40d7c1 */
-        nSlotZ = (int)pTarget->flOriginX; /* +0x38 ftol @0x40d7c6 */
+        nSlotX = (int)pTarget->flPosZ; /* +0x3c ftol @0x40d7c1 */
+        nSlotZ = (int)pTarget->flPosX; /* +0x38 ftol @0x40d7c6 */
 
         sceneNodeGetPosWorld(g_pSceneRoot, (float *)anWorld, 2);
         sceneObjGetPos(g_pSceneRoot, anRotBefore, 2);

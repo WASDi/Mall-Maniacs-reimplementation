@@ -17,7 +17,7 @@
  * flpick1/flpick2/throw1, attaches the hidden BURGER prop to its class
  * mesh slot 8, throws it, drops it onto the counter in four mode-5
  * z-steps and spawns a class-0x1f bonus pickup EventObject consumed by
- * playerAiGrabItem @0x40ea20 via EventObject.field_14. The KASSOERSKA
+ * playerAiGrabItem @0x40ea20 via EventObject.nValue1. The KASSOERSKA
  * cashier plays cash_sit.anm during play and s_winner.anm on the results
  * screen. Init additionally registers three positional sfx emitters
  * (bank 1 idx 0x20/0x1f/0x1f) via sndPlaySfx3D @0x42bcd0.

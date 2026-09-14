@@ -35,26 +35,36 @@ typedef struct ObjLine {
 
 /* EventObject: 0x50-byte zone/trigger object. Layout from objContainsPoint
  * @0x414bb0, objContainsPoint3D @0x414b60, objFindById @0x414a90,
- * objHashRehash @0x4148c0 and sceneObjCtor4 @0x414730. */
+ * objHashRehash @0x4148c0, sceneObjCtor4 @0x414700, esaveCmd @0x4072a0,
+ * evalueCmd @0x407520 and eheightCmd @0x407660.
+ * Field names/types match the Ghidra EventObject data type: nId is the
+ * 4-byte name tag (hash key); nValue0..nValue3 are the generic "values"
+ * block (evalueCmd index 0..3; esaveCmd serializes values[0..4]);
+ * nReserved20 is values[4], always 0 and never read. nValue1 doubles as
+ * the burger/scene mesh (SceneNode*) for id-0x1f and level-spawn pickups
+ * (stored as int, read back as pointer). pThrownRef is the landed-item
+ * backref (ThrownItem*, NULL otherwise). nReserved00/bReserved0c and
+ * nReserved28..nReserved34 are zeroed by the ctors and never read. */
+struct ThrownItem;
 typedef struct EventObject {
-    int      field_00;      /* +0x00 */
-    ObjLine *pLineList;     /* +0x04 zone polygon line list */
-    int      nId;           /* +0x08 id (4-byte name tag), hash key */
-    int      field_0c;      /* +0x0c */
-    int      field_10;      /* +0x10 */
-    int      field_14;      /* +0x14 */
-    int      field_18;      /* +0x18 */
-    int      field_1c;      /* +0x1c */
-    int      field_20;      /* +0x20 */
-    int      field_24;      /* +0x24 */
-    int      field_28;      /* +0x28 */
-    int      field_2c;      /* +0x2c */
-    int      field_30;      /* +0x30 */
-    int      field_34;      /* +0x34 */
-    float    flOriginX;     /* +0x38 zone origin x */
-    float    flOriginZ;     /* +0x3c zone origin z */
-    float    flHeightA;     /* +0x40 vertical bound a */
-    float    flHeightB;     /* +0x44 vertical bound b */
+    int      nReserved00;     /* +0x00 always 0, never read */    ObjLine *pLineList;      /* +0x04 zone polygon line list (Ghidra: pLineList void*) */
+    int      nId;             /* +0x08 id (4-byte name tag), hash key */
+    byte     bReserved0c;     /* +0x0c byte store @0x41472d/@0x4146c6, always 0 */
+    byte     _pad0d[3];       /* +0x0d padding (alignment 1) */
+    int      nValue0;         /* +0x10 values[0]: cam upper / half-extent X / dest Y / height */
+    int      nValue1;         /* +0x14 values[1]: cam snap / half-extent Y / flag / SceneNode* */
+    int      nValue2;         /* +0x18 values[2]: cam lower (0 = ignore) */
+    int      nValue3;         /* +0x1c values[3]: cam snap flag */
+    int      nReserved20;     /* +0x20 values[4], always 0, never read */
+    struct ThrownItem *pThrownRef; /* +0x24 landed-item backref (Ghidra: pThrownRef void*) */
+    int      nReserved28;     /* +0x28 always 0, never read */
+    int      nReserved2c;     /* +0x2c always 0, never read */
+    int      nReserved30;     /* +0x30 always 0, never read */
+    int      nReserved34;     /* +0x34 always 0, never read */
+    float    flPosX;          /* +0x38 "x" key: zone origin x */
+    float    flPosZ;          /* +0x3c "y" key: zone origin z */
+    float    flHeight;        /* +0x40 "h" key: vertical bound a */
+    float    flHeight2;       /* +0x44 "h2" key: vertical bound b */
     struct EventObject *pHashNext;  /* +0x48 id-hash chain next */
     struct EventObject *pHashPrev;  /* +0x4c id-hash chain prev */
 } EventObject;              /* 0x50 */
@@ -97,6 +107,14 @@ int objContainsPoint(EventObject *pObj, float flX, float flY);
 /* objContainsPoint3D @0x414b60 — vertical bound check (flZ against
  * +0x40/+0x44 with +/- 10) then objContainsPoint on (flX, flY). */
 int objContainsPoint3D(EventObject *pObj, float flX, float flY, float flZ);
+
+/* objSegListIntersectTest @0x414ce0 — segment-hit test against the
+ * object's +0x04 line list: the query segment is made relative to the
+ * object origin (+0x38/+0x3c), mathSegIntersect'ed against every line,
+ * and the hit must lie within both segment boxes expanded by the 0.1
+ * epsilon (@0x44b550). Returns 1 on any hit. Original __thiscall. */
+int objSegListIntersectTest(EventObject *pObj, float flX1, float flZ1,
+                            float flX2, float flZ2);
 
 /* lineRecordNormal @0x414620 — unit normal (nx,ny) of the line segment,
  * the polar direction rotated by -90 degrees (g_flHalfPi @0x44b270). */

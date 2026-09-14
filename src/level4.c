@@ -1,4 +1,4 @@
-/* level4.c — level-4 (Downtown Mall) "MCDMAN bonus task" event director.
+/* level4.c — level-4 (future, "Raketen") "MCDMAN bonus task" event director.
  *
  * Original functions (verified 2026-09-13 against full disassembly):
  *   levelEventDirector_L4_Init    @0x418f30
@@ -14,7 +14,7 @@
  *     x-steps (step*4-0xa0, s7-8), then spawn a class-0x1f pickup
  *     EventObject (sceneObjCtor3 + objHashRegister) at the BURGER world
  *     position — the pickup consumed by playerAiGrabItem @0x40ea20 via
- *     EventObject.field_14 (s9);
+ *     EventObject.nValue1 (s9);
  *  2. blinks the KASSOERSKA cashier anim (cash_sit during play,
  *     s_winner on the results screen) every other frame via the
  *     eventAnim step/apply alternation.
@@ -262,8 +262,8 @@ void levelEventDirector_L4(void) /* @0x4192a0 */
                  * ints of the BURGER pos (FILD integer loads @0x419667..0x419681) */
                 sceneObjCtor3(pNew, 0x1f, (float)g_anL4SpawnPos[2],        /* @0x4146a0 @0x419689 */
                               (float)g_anL4SpawnPos[0], (float)g_anL4SpawnPos[1]);
-                pNew->field_10 = g_anL4SpawnPos[1];                        /* +0x10 @0x419699 */
-                pNew->field_14 = (int)(uintptr_t)g_pL4BurgerObj;           /* +0x14 @0x4196aa */
+                pNew->nValue0 = g_anL4SpawnPos[1];                        /* +0x10 @0x419699 */
+                pNew->nValue1 = (int)(uintptr_t)g_pL4BurgerObj;           /* +0x14 @0x4196aa */
                 objHashRegister(pNew);                                     /* @0x4148f0 @0x4196ad */
             }
             break;                                                         /* @0x4196b5 (tick++ -> 1) */

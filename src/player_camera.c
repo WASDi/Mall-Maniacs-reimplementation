@@ -71,30 +71,31 @@ void cameraFollowUpdate(CameraFollowBlock *pBlk) /* @0x4020d0 */
 
     pObj = objFindById(OBJ_ID_C_AC, 0);                               /* 0x414a90 @0x402115 */
     while (pObj != NULL) {                                            /* 0x402123..0x40215f */
-        if (anTarget[1] <= pObj->field_10 &&
-            (pObj->field_18 == 0 || pObj->field_18 <= anTarget[1]) &&
+        if (anTarget[1] <= pObj->nValue0 &&
+            (pObj->nValue2 == 0 || pObj->nValue2 <= anTarget[1]) &&
             objContainsPoint(pObj, (float)anFollow[2], (float)anFollow[0])) { /* 0x414bb0 @0x40214b: arg1=anFollow[2] (first push) pairs with +0x38 */
-            anTarget[0] = (int)pObj->flOriginZ;                       /* +0x3c @0x402163 */
-            anTarget[1] = pObj->field_14;                             /* +0x14 @0x402171 */
-            anTarget[2] = (int)pObj->flOriginX;                       /* +0x38 @0x402178 */
+            anTarget[0] = (int)pObj->flPosZ;                       /* +0x3c @0x402163 */
+            anTarget[1] = pObj->nValue1;                             /* +0x14 @0x402171 */
+            anTarget[2] = (int)pObj->flPosX;                       /* +0x38 @0x402178 */
             anCur[0] = anTarget[0];                                   /* @0x402184 */
             anCur[1] = anTarget[1];
             anCur[2] = anTarget[2];
-            nSnapFlag = pObj->field_1c;                               /* +0x1c @0x402190 */
+            nSnapFlag = pObj->nValue3;                               /* +0x1c @0x402190 */
             break;
         }
         pObj = objHashNextSame(pObj);                                 /* 0x414a40 @0x402156 */
     }
 
-    /* First wall-avoid pass: push the target away from zone walls around the
-     * follow node within the camera height. (Original @0x402193..0x402203.)
+    /* First wall-avoid pass: construct vectors, then push the target away
+     * from zone walls around the follow node within the camera height.
+     * (Original @0x402193..0x402203.)
      * Slot order is load-bearing: the original pushes anTarget[2] first so
      * the GxVec2 lands as x=anTarget[2], y=anTarget[0] (cdecl stack slots:
      * first-pushed float ends up at [ESP+8] = vec.y), and writes the pushed
      * vec back to the same slots (anTarget[2]=(int)vPoint.x). */
+    gxVec2Set(&vRef, (float)anFollow[2], (float)anFollow[0]);         /* 0x434fa0 @0x4021a7 */
+    gxVec2Set(&vPoint, (float)anTarget[2], (float)anTarget[0]);       /* @0x4021c0 */
     if (nSnapFlag == 0) {
-        gxVec2Set(&vRef, (float)anFollow[2], (float)anFollow[0]);     /* 0x434fa0 @0x4021a7 */
-        gxVec2Set(&vPoint, (float)anTarget[2], (float)anTarget[0]);   /* @0x4021c0 */
         if (zoneAvoidWalls(&vPoint, &vRef, (float)anTarget[1]) != 0) { /* 0x4023e0 @0x4021db */
             anTarget[2] = (int)vPoint.x;                              /* ftol @0x4021e7 */
             anTarget[0] = (int)vPoint.y;
@@ -126,7 +127,7 @@ void cameraFollowUpdate(CameraFollowBlock *pBlk) /* @0x4020d0 */
     if (pObj != NULL &&
         objSegListIntersectTest(pObj, (float)anCur[2], (float)anCur[0], /* 0x414ce0 @0x40228c */
                                 (float)anFollow[2], (float)anFollow[0]) != 0) {
-        anTarget[1] = (anTarget[1] / pObj->field_10) * pObj->field_14; /* @0x402295 */
+        anTarget[1] = (anTarget[1] / pObj->nValue0) * pObj->nValue1; /* @0x402295 */
     }
 
     /* y follow (same rule as x/z). (@0x4022ad..0x4022d0) */
@@ -139,12 +140,13 @@ void cameraFollowUpdate(CameraFollowBlock *pBlk) /* @0x4020d0 */
         }
     }
 
-    /* Second wall-avoid pass: push the current position away from the walls
-     * around the follow node. (Original @0x4022d0..0x402356; same
+    /* Second wall-avoid pass: construct vectors, then push the current
+     * position away from the walls around the follow node. (Original
+     * @0x4022d0..0x402356; same
      * x=slot[2], y=slot[0] order as the first pass.) */
+    gxVec2Set(&vRef, (float)anFollow[2], (float)anFollow[0]);         /* @0x4022e4 */
+    gxVec2Set(&vPoint, (float)anCur[2], (float)anCur[0]);             /* @0x40230a */
     if (nSnapFlag == 0) {
-        gxVec2Set(&vRef, (float)anFollow[2], (float)anFollow[0]);     /* @0x40230a */
-        gxVec2Set(&vPoint, (float)anCur[2], (float)anCur[0]);         /* @0x4022e4 */
         if (zoneAvoidWalls(&vPoint, &vRef, (float)anTarget[1]) != 0) { /* @0x402332 */
             anCur[2] = (int)vPoint.x;                                 /* ftol @0x40233e */
             anCur[0] = (int)vPoint.y;
