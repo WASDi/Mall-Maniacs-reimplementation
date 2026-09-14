@@ -258,17 +258,24 @@ int objSegListIntersectTest(EventObject *pObj, float flX1, float flZ1,
 
 /* lineRecordNormal @0x414620 — unit normal of the segment: polar of the
  * direction (x2-x1, y2-y1), angle -= PI/2 (g_flHalfPi @0x44b270),
- * length fixed to 1.0, then back from polar into +0x10/+0x14. */
+ * length fixed to 1.0, then back from polar into +0x10/+0x14. The output
+ * buffer is distinct from the polar buffer: the original keeps the two
+ * locals separate (@0x41463a mathVec2Polar -> vPolar, @0x41465f
+ * gxVec2FromPolar -> vNormal) because gxVec2FromPolar is not alias-safe
+ * (it writes pOut->x before re-reading pPolar->x for pOut->y). Passing the
+ * same vector twice clobbered the length and zeroed every axis-aligned
+ * edge normal, breaking objContainsPoint. */
 void lineRecordNormal(ObjLine *pLine) /* @0x414620 */
 {
     GxVec2 vDir;
+    GxVec2 vPolar;
     GxVec2 vNormal;
 
     gxVec2Set(&vDir, pLine->x2 - pLine->x1, pLine->y2 - pLine->y1);  /* @0x434fa0 */
-    mathVec2Polar(&vNormal, &vDir);                                  /* @0x435060 */
-    vNormal.y -= g_flHalfPi;                                       /* @0x44b270 */
-    vNormal.x = 1.0f;
-    gxVec2FromPolar(&vNormal, &vNormal);                             /* @0x434fc0 */
+    mathVec2Polar(&vPolar, &vDir);                                   /* @0x435060 */
+    vPolar.y -= g_flHalfPi;                                        /* @0x44b270 */
+    vPolar.x = 1.0f;
+    gxVec2FromPolar(&vNormal, &vPolar);                              /* @0x434fc0 */
     pLine->nx = vNormal.x;
     pLine->ny = vNormal.y;
 }
@@ -493,7 +500,11 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
             sceneObjCtor4(pEvent, nId, flX, flY, flH, flH2);   /* @0x414700 */
         }
 
-        for (i = 1; ; i++) {
+        /* The block parser numbers array elements from 0 (config.c
+         * configParseTokensToTree @0x435c30: nBlockIdx starts at 0), and
+         * the original eloadCmd enumerates "line[%d]" starting at 0
+         * (fmtSprintf arg 0 @0x406f7a, then EBP 1,2,... @0x40703f). */
+        for (i = 0; ; i++) {
             ConfigNode *pLineNode;
             float flY2, flX2, flY1, flX1;
             float flOrgX = (pEvent != NULL) ? pEvent->flPosX : 0.0f;
