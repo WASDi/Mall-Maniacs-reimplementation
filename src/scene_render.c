@@ -334,44 +334,129 @@ void *sceneMorphInterp(SceneNode *pNode, SceneObjRenderInfo *pRender, void *pOut
  * meshDrawPoly @0x42e940  (project + draw via gxSoft)
  * verts/normals are 16-byte records (x,y,z @+0, w/clip @+8).
  * =================================================================== */
+/* Record layouts used by the near-plane clippers, verified against gxSoft
+ * gxDrawTriUV @0x100021f0 / gxDrawQuad @0x10002540:
+ *   color record   (COLS-derived, arg4): corner k rgb at byte k*4 + {0,1,2}
+ *   texture record (MAPI-derived, arg5): texture ptr at +0, corner k U/V at
+ *                                        byte 8 + k*2 + {0,1}
+ * The original clippers rebuild both records per output corner (interpolating
+ * the per-edge bytes); handing the source 3/4-corner records to a clipped
+ * polygon shears its texture. */
+
 /* meshDrawTriClip @0x42d070 */
 void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
                      void *pColor, int nUnk, int bInterpColor, int bInterpUV)
 {
     GxVert clipped[8];
+    int srcA[8];
+    int srcB[8];
+    float srcT[8];
+    unsigned char colR[8], colG[8], colB[8], uvU[8], uvV[8];
+    unsigned char colorRec[0x10] = {0};
+    unsigned char texRec[0x10] = {0};
+    float clipScale = (g_flSceneAspect * g_nSceneWidth != 0.0f)
+        ? (float)g_nSceneHalfWidth / (g_flSceneAspect * g_nSceneWidth) : 0.0f;
+    /* The original rebuilds the COLS color record (4th gx arg) only when
+     * bInterpUV (arg8) is set and the MAPI texture record (5th gx arg) only
+     * when bInterpColor (arg7) is set; otherwise the source record passes
+     * through (the NULL guards are defensive — the flags imply non-NULL). */
+    int bBuildColor = (bInterpUV != 0) && (pUV != NULL);
+    int bBuildTex = (bInterpColor != 0) && (pColor != NULL);
     int count = 0;
-    int i;
+    int i, k;
     (void)nUnk;
-    (void)bInterpColor;
-    (void)bInterpUV;
     for (i = 0; i < 3; i++) {
         int current = pIdxList[i] * 0x10;
         int previous = pIdxList[(i + 2) % 3] * 0x10;
         int currentDepth = *(int *)(pNormals + current + 8);
         int previousDepth = *(int *)(pNormals + previous + 8);
         if ((previousDepth >= 0) != (currentDepth >= 0)) {
-            GxVert *out = &clipped[count++];
+            GxVert *out = &clipped[count];
+            int *fromWorld = (int *)(pNormals + previous);
+            int *toWorld = (int *)(pNormals + current);
             GxVert *from = (GxVert *)(pVerts + previous);
             GxVert *to = (GxVert *)(pVerts + current);
             int denominator = currentDepth - previousDepth;
             float t = denominator ? (float)(-previousDepth) / (float)denominator : 0.0f;
-            out->x = from->x + (int)((float)(to->x - from->x) * t);
-            out->y = from->y + (int)((float)(to->y - from->y) * t);
-            out->z = from->z + (int)((float)(to->z - from->z) * t);
-            out->r = to->r; out->g = to->g; out->b = to->b; out->a = to->a;
+            float interpWX = (float)fromWorld[0] + ((float)toWorld[0] - (float)fromWorld[0]) * t;
+            float interpWY = (float)fromWorld[1] + ((float)toWorld[1] - (float)fromWorld[1]) * t;
+            /* Clipped corner: interpolate the WORLD pool and re-project with
+             * the original's constant clip scale (verified vs disasm
+             * 0x42dd36..0x42dd93). Interpolating the screen pool instead
+             * spreads the INT_MIN overflow of a behind-plane vertex across the
+             * polygon. */
+            out->x = (int)(interpWX * clipScale + (float)g_centerX);
+            out->y = (int)(g_flSceneYScale * clipScale * interpWY + (float)g_centerY);
+            out->z = (int)(g_flSceneAspect * 16.0f);
+            out->r = (unsigned char)(int)((float)from->r + ((float)to->r - (float)from->r) * t);
+            out->g = (unsigned char)(int)((float)from->g + ((float)to->g - (float)from->g) * t);
+            out->b = (unsigned char)(int)((float)from->b + ((float)to->b - (float)from->b) * t);
+            out->a = from->a;
+            srcA[count] = (i + 2) % 3;
+            srcB[count] = i;
+            srcT[count] = t;
+            count++;
         }
         if (currentDepth >= 0) {
-            memcpy(&clipped[count++], (void *)(pVerts + current), sizeof(GxVert));
+            memcpy(&clipped[count], (void *)(pVerts + current), sizeof(GxVert));
+            srcA[count] = i;
+            srcB[count] = i;
+            srcT[count] = 0.0f;
+            count++;
         }
+    }
+    if (count < 3) return;
+
+    for (k = 0; k < count; k++) {
+        int a = srcA[k];
+        int b = srcB[k];
+        float t = srcT[k];
+        colR[k] = colG[k] = colB[k] = 0;
+        uvU[k] = uvV[k] = 0;
+        if (bBuildColor) {
+            colR[k] = (unsigned char)(int)((float)((byte *)pUV)[a * 4 + 0] +
+                    ((float)((byte *)pUV)[b * 4 + 0] - (float)((byte *)pUV)[a * 4 + 0]) * t);
+            colG[k] = (unsigned char)(int)((float)((byte *)pUV)[a * 4 + 1] +
+                    ((float)((byte *)pUV)[b * 4 + 1] - (float)((byte *)pUV)[a * 4 + 1]) * t);
+            colB[k] = (unsigned char)(int)((float)((byte *)pUV)[a * 4 + 2] +
+                    ((float)((byte *)pUV)[b * 4 + 2] - (float)((byte *)pUV)[a * 4 + 2]) * t);
+        }
+        if (bBuildTex) {
+            uvU[k] = (unsigned char)(int)((float)((byte *)pColor)[8 + a * 2 + 0] +
+                    ((float)((byte *)pColor)[8 + b * 2 + 0] - (float)((byte *)pColor)[8 + a * 2 + 0]) * t);
+            uvV[k] = (unsigned char)(int)((float)((byte *)pColor)[8 + a * 2 + 1] +
+                    ((float)((byte *)pColor)[8 + b * 2 + 1] - (float)((byte *)pColor)[8 + a * 2 + 1]) * t);
+        }
+    }
+    if (bBuildColor) {
+        colorRec[0] = colR[0]; colorRec[1] = colG[0]; colorRec[2] = colB[0];
+        colorRec[4] = colR[1]; colorRec[5] = colG[1]; colorRec[6] = colB[1];
+        colorRec[8] = colR[2]; colorRec[9] = colG[2]; colorRec[10] = colB[2];
+    }
+    if (bBuildTex) {
+        memcpy(texRec, pColor, 0x10);
+        texRec[8] = uvU[0]; texRec[9] = uvV[0];
+        texRec[10] = uvU[1]; texRec[11] = uvV[1];
+        texRec[12] = uvU[2]; texRec[13] = uvV[2];
     }
     if (count == 3) {
         /* Original @0x42dabf passes the 4th param (COLS color record) to the
          * gx color slot and the 5th param (MAPI texture record) to the
          * gx texture-record slot — the names here follow the original's
          * (misleading) Ghidra labels, the call order must not swap them. */
-        gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2], (int)pUV, pColor);
+        gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2],
+                    (int)(bBuildColor ? (void *)colorRec : pUV),
+                    bBuildTex ? (void *)texRec : pColor);
     } else if (count >= 4) {
-        gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3], (int)pUV, pColor);
+        if (bBuildColor) {
+            colorRec[12] = colR[3]; colorRec[13] = colG[3]; colorRec[14] = colB[3];
+        }
+        if (bBuildTex) {
+            texRec[14] = uvU[3]; texRec[15] = uvV[3];
+        }
+        gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3],
+                   (int)(bBuildColor ? (void *)colorRec : pUV),
+                   bBuildTex ? (void *)texRec : pColor);
     }
 }
 
@@ -380,36 +465,121 @@ void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
                       void *pColor, int nUnk, int bInterpColor, int bInterpUV)
 {
     GxVert clipped[8];
+    int srcA[8];
+    int srcB[8];
+    float srcT[8];
+    unsigned char colR[8], colG[8], colB[8], uvU[8], uvV[8];
+    unsigned char colorRec[0x10] = {0};
+    unsigned char texRec[0x10] = {0};
+    float clipScale = (g_flSceneAspect * g_nSceneWidth != 0.0f)
+        ? (float)g_nSceneHalfWidth / (g_flSceneAspect * g_nSceneWidth) : 0.0f;
+    /* Same record/flag gating as meshDrawTriClip (see note there). */
+    int bBuildColor = (bInterpUV != 0) && (pUV != NULL);
+    int bBuildTex = (bInterpColor != 0) && (pColor != NULL);
     int count = 0;
-    int i;
+    int i, k;
     (void)nUnk;
-    (void)bInterpColor;
-    (void)bInterpUV;
     for (i = 0; i < 4; i++) {
         int current = pIdxList[i] * 0x10;
         int previous = pIdxList[(i + 3) % 4] * 0x10;
         int currentDepth = *(int *)(pNormals + current + 8);
         int previousDepth = *(int *)(pNormals + previous + 8);
         if ((previousDepth >= 0) != (currentDepth >= 0)) {
-            GxVert *out = &clipped[count++];
+            GxVert *out = &clipped[count];
+            int *fromWorld = (int *)(pNormals + previous);
+            int *toWorld = (int *)(pNormals + current);
             GxVert *from = (GxVert *)(pVerts + previous);
             GxVert *to = (GxVert *)(pVerts + current);
             int denominator = currentDepth - previousDepth;
             float t = denominator ? (float)(-previousDepth) / (float)denominator : 0.0f;
-            out->x = from->x + (int)((float)(to->x - from->x) * t);
-            out->y = from->y + (int)((float)(to->y - from->y) * t);
-            out->z = from->z + (int)((float)(to->z - from->z) * t);
-            out->r = to->r; out->g = to->g; out->b = to->b; out->a = to->a;
+            float interpWX = (float)fromWorld[0] + ((float)toWorld[0] - (float)fromWorld[0]) * t;
+            float interpWY = (float)fromWorld[1] + ((float)toWorld[1] - (float)fromWorld[1]) * t;
+            /* Same world-space interpolation + constant-scale projection as
+             * meshDrawTriClip (see note there). */
+            out->x = (int)(interpWX * clipScale + (float)g_centerX);
+            out->y = (int)(g_flSceneYScale * clipScale * interpWY + (float)g_centerY);
+            out->z = (int)(g_flSceneAspect * 16.0f);
+            out->r = (unsigned char)(int)((float)from->r + ((float)to->r - (float)from->r) * t);
+            out->g = (unsigned char)(int)((float)from->g + ((float)to->g - (float)from->g) * t);
+            out->b = (unsigned char)(int)((float)from->b + ((float)to->b - (float)from->b) * t);
+            out->a = from->a;
+            srcA[count] = (i + 3) % 4;
+            srcB[count] = i;
+            srcT[count] = t;
+            count++;
         }
         if (currentDepth >= 0) {
-            memcpy(&clipped[count++], (void *)(pVerts + current), sizeof(GxVert));
+            memcpy(&clipped[count], (void *)(pVerts + current), sizeof(GxVert));
+            srcA[count] = i;
+            srcB[count] = i;
+            srcT[count] = 0.0f;
+            count++;
+        }
+    }
+    if (count < 3) return;
+
+    for (k = 0; k < count; k++) {
+        int a = srcA[k];
+        int b = srcB[k];
+        float t = srcT[k];
+        colR[k] = colG[k] = colB[k] = 0;
+        uvU[k] = uvV[k] = 0;
+        if (bBuildColor) {
+            colR[k] = (unsigned char)(int)((float)((byte *)pUV)[a * 4 + 0] +
+                    ((float)((byte *)pUV)[b * 4 + 0] - (float)((byte *)pUV)[a * 4 + 0]) * t);
+            colG[k] = (unsigned char)(int)((float)((byte *)pUV)[a * 4 + 1] +
+                    ((float)((byte *)pUV)[b * 4 + 1] - (float)((byte *)pUV)[a * 4 + 1]) * t);
+            colB[k] = (unsigned char)(int)((float)((byte *)pUV)[a * 4 + 2] +
+                    ((float)((byte *)pUV)[b * 4 + 2] - (float)((byte *)pUV)[a * 4 + 2]) * t);
+        }
+        if (bBuildTex) {
+            uvU[k] = (unsigned char)(int)((float)((byte *)pColor)[8 + a * 2 + 0] +
+                    ((float)((byte *)pColor)[8 + b * 2 + 0] - (float)((byte *)pColor)[8 + a * 2 + 0]) * t);
+            uvV[k] = (unsigned char)(int)((float)((byte *)pColor)[8 + a * 2 + 1] +
+                    ((float)((byte *)pColor)[8 + b * 2 + 1] - (float)((byte *)pColor)[8 + a * 2 + 1]) * t);
+        }
+    }
+    if (bBuildColor) {
+        colorRec[0] = colR[0]; colorRec[1] = colG[0]; colorRec[2] = colB[0];
+        colorRec[4] = colR[1]; colorRec[5] = colG[1]; colorRec[6] = colB[1];
+        colorRec[8] = colR[2]; colorRec[9] = colG[2]; colorRec[10] = colB[2];
+        if (count >= 4) {
+            colorRec[12] = colR[3]; colorRec[13] = colG[3]; colorRec[14] = colB[3];
+        }
+    }
+    if (bBuildTex) {
+        memcpy(texRec, pColor, 0x10);
+        texRec[8] = uvU[0]; texRec[9] = uvV[0];
+        texRec[10] = uvU[1]; texRec[11] = uvV[1];
+        texRec[12] = uvU[2]; texRec[13] = uvV[2];
+        if (count >= 4) {
+            texRec[14] = uvU[3]; texRec[15] = uvV[3];
         }
     }
     if (count == 3) {
         /* Same slot order as meshDrawTriClip @0x42dabf (see note there). */
-        gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2], (int)pUV, pColor);
-    } else if (count >= 4) {
-        gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3], (int)pUV, pColor);
+        gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2],
+                    (int)(bBuildColor ? (void *)colorRec : pUV),
+                    bBuildTex ? (void *)texRec : pColor);
+    } else {
+        gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3],
+                   (int)(bBuildColor ? (void *)colorRec : pUV),
+                   bBuildTex ? (void *)texRec : pColor);
+        if (count >= 5) {
+            /* Quads crossed by one plane can yield a pentagon (3 in + 2 clip);
+             * the original @0x42daf0 emits quad + one extra triangle. */
+            if (bBuildColor) {
+                colorRec[4] = colR[3]; colorRec[5] = colG[3]; colorRec[6] = colB[3];
+                colorRec[8] = colR[4]; colorRec[9] = colG[4]; colorRec[10] = colB[4];
+            }
+            if (bBuildTex) {
+                texRec[10] = uvU[3]; texRec[11] = uvV[3];
+                texRec[12] = uvU[4]; texRec[13] = uvV[4];
+            }
+            gxDrawTriUV(&clipped[0], &clipped[3], &clipped[4],
+                        (int)(bBuildColor ? (void *)colorRec : pUV),
+                        bBuildTex ? (void *)texRec : pColor);
+        }
     }
 }
 
