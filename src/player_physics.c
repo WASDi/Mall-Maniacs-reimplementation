@@ -120,8 +120,8 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
                     sndPlaySfx3D(pEmitter, 1, 0x1a, 0xfde8, 0xff, (void *)(size_t)nCharKey, 0, 0, 0, 0, 0);
                 }
             }
-            gxVec2Set(&vIn, pEo->flPosZ - (float)(int)pWalk->vPos.y,        /* +0x3c @0x42720f */
-                      pEo->flPosX - (float)(int)pWalk->vPos.x);             /* +0x38 @0x42724c */
+            gxVec2Set(&vIn, pEo->flPosX - (float)(int)pWalk->vPos.x,        /* x=+0x38 @0x42724c */
+                      pEo->flPosZ - (float)(int)pWalk->vPos.y);             /* y=+0x3c @0x42720f */
             mathVec2Polar(&vPolar, &vIn);                                      /* @0x42725d */
             pRec->vVelPolar.y = vPolar.y;                                      /* +0x220 @0x427276 */
             pRec->vVelPolar.x = 300.0f;                                        /* 0x43960000 @0x427279 */
@@ -175,8 +175,8 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
                                  (float)(int)pWalk->vPos.y) == 0) {            /* @0x427496 */
                 continue;
             }
-            gxVec2Set(&vIn, pEo->flPosZ - (float)(int)pWalk->vPos.y,        /* @0x4274b2 */
-                      pEo->flPosX - (float)(int)pWalk->vPos.x);
+            gxVec2Set(&vIn, pEo->flPosX - (float)(int)pWalk->vPos.x,        /* x @0x4274b2 */
+                      pEo->flPosZ - (float)(int)pWalk->vPos.y);             /* y */
             mathVec2Polar(&vPolar, &vIn);                                      /* @0x427500 */
             pRec->vVelPolar.y = vPolar.y;                                      /* +0x220 @0x427509 */
             pRec->vVelPolar.x = 400.0f;                                        /* 0x43c80000 @0x427513 */
@@ -386,8 +386,8 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
             }
             {
                 GxVec2 vIn2;
-                gxVec2Set(&vIn2, pEo->flPosZ - (float)(int)pPos->vPos.y,      /* @0x427c0e */
-                          pEo->flPosX - (float)(int)pPos->vPos.x);
+                gxVec2Set(&vIn2, pEo->flPosX - (float)(int)pPos->vPos.x,      /* x @0x427c0e */
+                          pEo->flPosZ - (float)(int)pPos->vPos.y);            /* y */
                 mathVec2Polar(&vPolar, &vIn2);                                   /* @0x427c68 */
                 pRec->flPosVelAng = vPolar.y;                                    /* +0x260 @0x427c7b */
                 pRec->flPosVelLen = 350.0f;                                      /* 0x43af0000 @0x427c81 */
@@ -445,8 +445,8 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
                                  (float)(int)pPos->vPos.y) == 0) {               /* @0x427ed1 */
                 continue;
             }
-            gxVec2Set(&vIn2, pEo->flPosZ - (float)(int)pPos->vPos.y,          /* @0x427ef0 */
-                      pEo->flPosX - (float)(int)pPos->vPos.x);
+            gxVec2Set(&vIn2, pEo->flPosX - (float)(int)pPos->vPos.x,          /* x @0x427ef0 */
+                      pEo->flPosZ - (float)(int)pPos->vPos.y);                /* y */
             mathVec2Polar(&vPolar, &vIn2);                                       /* @0x427f4a */
             pRec->flPosVelAng = vPolar.y;                                        /* +0x260 @0x427f5d */
             pRec->flPosVelLen = 450.0f;                                          /* 0x43e10000 @0x427f63 */

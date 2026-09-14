@@ -37,6 +37,7 @@ GUI and single-player functionality.
 - To run ghidra scripts, follow `Ghidra_scripts.md`.
 - Inspect assembly closely enough for the reconstructed source to match the original. It should be logically equivalent, simplifications are accepted.
 - Follow established patterns and code format and comment structures.
+- After every thinking step, output a one sentence summary of the progress.
 
 ## Rules
 
