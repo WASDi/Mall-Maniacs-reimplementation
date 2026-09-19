@@ -70,7 +70,7 @@ typedef struct PlayerRecord {
     SceneNode *pCartHandleL;   /* +0x44 L cart handle anchor (handle_pos triple 2, levelObjectsCartsCameraInit @0x411b70) */
     SceneNode *pCartHandleR;   /* +0x48 R cart handle anchor (handle_pos triple 1) */
     char szCharName[0x100];      /* +0x4c unbounded strcpy of g_apCharNames[idx]
-                                  * (netIsActive()==0 path); spans 0x4c..0x14b */
+                                  * (single-player path); spans 0x4c..0x14b */
     int nStartPosIdx;            /* +0x14c start_positions[%d] index (player slot) */
     int nCharIdx;           /* +0x150 selected character 0..9 */
     int nCartIdx;                /* +0x154 selected cart 0..23 */

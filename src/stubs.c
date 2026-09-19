@@ -16,8 +16,6 @@
 #include "sound.h"
 #include "custom_helpers.h"
 
-extern HWND g_hWnd;
-
 /* =====================================================================
  * TODO stubs — see stubs.h for contracts. Safe, logged no-op or placeholder
  * transitions let future milestones wire real implementations without
@@ -38,33 +36,10 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType)
     return 0;
 }
 
-/* netExit @0x426b30 (thunk 0x414f60) — session teardown: nopDebugStub,
- * netShutdown (Winsock cleanup — out of scope for the offline rebuild),
- * then clears the client/server flags. The stub performs the observable
- * offline part (flag clear) and documents the omitted Winsock call. */
-void netExit(void) /* @0x426b30 */
-{
-    nopDebugStub();                                /* @0x426b3a */
-    g_nNetIsServer = 0;                            /* @0x45e598 @0x426b45 */
-    g_nNetIsClient = 0;                            /* @0x45e59c @0x426b4d */
-}
-
-/* consoleHandleKey @0x4086e0 — console line editor. Out of scope: the
- * offline rebuild never opens the console overlay (g_nScrollText stays 0),
- * so gameKeyHandler can never reach this. Safe no-op preserving the
- * original call hierarchy. */
-void consoleHandleKey(int nKey) /* @0x4086e0 */
-{
-    (void)nKey;
-}
-
-/* netGameUpdate @0x414fa0 — performs client/server state replication only
- * while a network session is active. Networking is out of scope for the
- * offline rebuild, so the no-op preserves the original frame-stage boundary
- * without creating a network session or mutating local player state. */
-void netGameUpdate(void)
-{
-}
+/* netExit @0x426b30, netGameUpdate @0x414fa0, netIsActive @0x426ed0,
+ * netServerSendSubCmd @0x415d20 and netClientSendSubCmd @0x415cb0 are not
+ * reconstructed and not called: networking is out of scope for the offline
+ * rebuild, and the offline branches no longer reference them. */
 
 /* commandDispatch — original command/config query contract. Returning NULL
  * is safe for callers that only use the result as optional text. The level
@@ -94,13 +69,10 @@ unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
 extern char g_szSceneDir[]; /* @0x45e950 defined in sen.c */
 /* scenSetDir @0x432e60 and scenExpandNameList @0x432dd0 are implemented in
  * sen.c (moved out of stubs when the name-expansion mechanism landed). */
-/* netIsActive @0x426ed0 — client/server flags ORed; both stay 0 offline. */
-int g_nNetIsClient;   /* @0x45e59c */
-int g_nNetIsServer;   /* @0x45e598 */
-int netIsActive(void) /* @0x426ed0 */
-{
-    return g_nNetIsClient | g_nNetIsServer;
-}
+
+/* consoleHandleKey @0x4086e0 — the console line editor is out of scope and no
+ * longer called: the offline rebuild never opens the console overlay
+ * (g_nScrollText stays 0), so gameKeyHandler drops that branch. */
 
 /* objTurretListFree @0x402b40 — free a turret sub-struct list (node +0x08
  * embedded list at +0x48). Turret objects are deferred; safe no-op. */
@@ -114,22 +86,6 @@ void objTurretListFree(int nMode) /* @0x402b40 */
 void objTurretListFree2(int nMode) /* @0x402b70 */
 {
     (void)nMode;
-}
-
-/* netServerSendSubCmd @0x415d20 — see stubs.h. Dead offline (no session). */
-void netServerSendSubCmd(int nSubCmd, int nArg1, int nArg2, int nArg3,
-                         int nArg4, int nArg5, int nArg6) /* @0x415d20 */
-{
-    (void)nSubCmd; (void)nArg1; (void)nArg2; (void)nArg3;
-    (void)nArg4; (void)nArg5; (void)nArg6;
-}
-
-/* netClientSendSubCmd @0x415cb0 — see stubs.h. Dead offline (no session). */
-void netClientSendSubCmd(int nSubCmd, int nArg1, int nArg2, int nArg3,
-                         int nArg4, int nArg5, int nArg6) /* @0x415cb0 */
-{
-    (void)nSubCmd; (void)nArg1; (void)nArg2; (void)nArg3;
-    (void)nArg4; (void)nArg5; (void)nArg6;
 }
 
 /* musicModuleInit @0x437b10 — see stubs.h. The slot-allocator entry and its

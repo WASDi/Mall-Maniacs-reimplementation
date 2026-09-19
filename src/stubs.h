@@ -27,15 +27,7 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
 /* Gameplay entry contracts used by stateLevelInit0..4. Player/world setup is
  * still deferred; commandDispatch routes the original run command to runCmd
  * and level startup scripts' "eload <file>.eo" to eloadCmd (src/obj_event.c). */
-void netExit(void);                                          /* @0x426b30 */
 unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand); /* @0x408b60 */
-void netGameUpdate(void);                                    /* @0x414fa0 */
-
-/* netIsActive @0x426ed0 — g_nNetIsClient | g_nNetIsServer. The offline
- * rebuild keeps both flags 0 (set by the deferred net subsystem). */
-int netIsActive(void);                                       /* @0x426ed0 */
-extern int g_nNetIsClient;                                   /* @0x45e59c */
-extern int g_nNetIsServer;                                   /* @0x45e598 */
 
 /* World-object sub-lists freed by objDtor @0x402ab0 (obj_world). The turret
  * object model is deferred; the player round-setup sub-objects never
@@ -50,20 +42,9 @@ void objTurretListFree2(int nMode);                          /* @0x402b70 */
 /* scenSetDir @0x432e60 and scenExpandNameList @0x432dd0 — implemented in
  * sen.c (sen.h declares them). */
 
-
-/* netServerSendSubCmd @0x415d20 — server broadcast of a sub-command packet
- * (nSubCmd plus six payload dwords). The offline rebuild keeps no network
- * session (netIsActive() == 0), so every call site is dead; the stub only
- * preserves the call hierarchy for the net paths of roundLogicUpdate and
- * the lobby states. Real implementation is deferred with networking. */
-void netServerSendSubCmd(int nSubCmd, int nArg1, int nArg2, int nArg3,
-                         int nArg4, int nArg5, int nArg6);      /* @0x415d20 */
-
-/* netClientSendSubCmd @0x415cb0 — client send of a sub-command packet
- * (nSubCmd plus six payload dwords) to the server. Same contract and
- * deferral as netServerSendSubCmd. */
-void netClientSendSubCmd(int nSubCmd, int nArg1, int nArg2, int nArg3,
-                         int nArg4, int nArg5, int nArg6);      /* @0x415cb0 */
+/* netServerSendSubCmd @0x415d20 / netClientSendSubCmd @0x415cb0 — not
+ * reconstructed and not called: networking is out of scope and the offline
+ * branches no longer reference them. */
 
 /* musicModuleInit @0x437b10 — init the music/streaming module: calls the
  * slot-allocator entry behind g_pMusicSlotAlloc @0x450f6c (original target
@@ -76,13 +57,8 @@ void netClientSendSubCmd(int nSubCmd, int nArg1, int nArg2, int nArg3,
 extern void *g_pMusicSlotAlloc;                              /* @0x450f6c */
 void *musicModuleInit(void *pModuleEntry);                   /* @0x437b10 */
 
-/* consoleHandleKey @0x4086e0 — console line editor (backspace/tab-completion/
- * enter/esc/history). The in-game console is out of scope for the offline
- * rebuild and g_nScrollText @0x4580ec is never set nonzero here, so the only
- * caller (gameKeyHandler @0x40db80 nKeyType==0 branch) can never reach it;
- * the stub exists only to keep the original call hierarchy intact. */
-void consoleHandleKey(int nKey);                             /* @0x4086e0 */
-
-
+/* consoleHandleKey @0x4086e0 — not reconstructed and not called: the in-game
+ * console is out of scope and g_nScrollText @0x4580ec is never set nonzero
+ * here, so gameKeyHandler drops the branch. */
 
 #endif /* STUBS_H */

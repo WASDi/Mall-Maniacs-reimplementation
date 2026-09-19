@@ -158,7 +158,7 @@ void playerSetupRound(void) /* @0x410e90 */
             objDtor((WorldNode *)pRec->pSubObjC);                          /* @0x410fd8 */
             memFreeDirect(pRec->pSubObjC);                                 /* @0x410fde */
         }
-        if (netIsActive() == 0) {                                          /* @0x45e59c @0x410fe6 */
+        {
             int nBurn = getGameTime() % 150;                               /* @0x40dfe0 @0x410fee */
             int j;
 
@@ -244,9 +244,7 @@ void playerSetupRound(void) /* @0x410e90 */
         configEnvGetString(&mstrValue, pNode, "object_name");              /* @0x44f9c4 @0x436990 @0x411256 */
         mStringAssignCopy(&pRec->mstrCharacterName, &mstrValue);           /* @0x435440 @0x41126f */
         mStringFree(&mstrValue);                                           /* @0x435430 @0x41127f */
-        if (netIsActive() == 0) {                                          /* @0x426ed0 @0x411284 */
-            lstrcpyA(pRec->szCharName, g_apCharNames[pRec->nCharIdx]);/* @0x45013c @0x41129b */
-        }
+        lstrcpyA(pRec->szCharName, g_apCharNames[pRec->nCharIdx]);/* @0x45013c @0x41129b */
         pRec->nStatSpeed = g_kCharStatSpeed[pRec->nCharIdx];          /* @0x4501b4 @0x4112c5 */
         pRec->nStatStrength = g_kCharStatStrength[pRec->nCharIdx];    /* @0x4501b8 @0x4112db */
         pRec->nStatAgility = g_kCharStatAgility[pRec->nCharIdx];      /* @0x4501bc @0x4112f1 */

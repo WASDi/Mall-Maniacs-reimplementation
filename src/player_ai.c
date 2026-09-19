@@ -1273,9 +1273,6 @@ int playerAiGrabItem(PlayerRecord *pRec) /* @0x40ea20 */
     if (pObj == NULL) {
         return 0;                                       /* @0x40ea36 */
     }
-    if (pRec == &g_playerRecords[g_nLocalPlayerIdx] && netIsActive() != 0) {
-        netClientSendSubCmd(0x3c, g_nLocalPlayerIdx, pObj->nId, 0, 0, 0, 0); /* @0x40ea76 */
-    }
     nItemId = pObj->nId;
     if (nItemId == 0x1f) {                              /* @0x40ea86 */
         if (pRec != &g_playerRecords[g_nLocalPlayerIdx]) {
@@ -1313,15 +1310,6 @@ int playerAiGrabItem(PlayerRecord *pRec) /* @0x40ea20 */
     if (g_nGameMode == 3) {                             /* @0x40ebae */
         g_nCurrentItemId = 0;                           /* @0x458128 @0x40ebbe */
         nopDebugStub();                                 /* @0x440159 @0x40ebc8 */
-        if (netIsActive() != 0) {
-            if (g_nNetIsServer != 0) {                  /* @0x45e598 */
-                netServerSendSubCmd(0x20, 0, g_nCurrentItemId, 0, 0, 0, 0); /* @0x40ebf5 */
-                return pRec->anHeldSlot[0];
-            }
-            if (g_nNetIsClient != 0) {                  /* @0x45e59c */
-                netClientSendSubCmd(0x3e, g_nLocalPlayerIdx, g_nCurrentItemId, 0, 0, 0, 0); /* @0x40ec27 */
-            }
-        }
     }
     return pRec->anHeldSlot[0];
 }
@@ -1829,10 +1817,6 @@ int aiCollectItem(PlayerRecord *pRec, int nSlot) /* @0x40f420 */
         return 0;
     }
     if (pRec == &g_playerRecords[g_nLocalPlayerIdx]) {
-        if (netIsActive() != 0) {
-            netClientSendSubCmd(0x3d, g_nLocalPlayerIdx,
-                                pRec->anHeldSlot[nSlot], 0, 0, 0, 0); /* @0x40f493 */
-        }
         sndPlaySfx(0, 1, 0x16, 0xffff, 0, 0x400);       /* @0x40f4ad */
     }
     pRec->anHeldSlot[nSlot] = 0;                       /* @0x40f4b5 */
@@ -2124,10 +2108,6 @@ void itemThrowUpdate(ThrownItem *pItem) /* @0x40f950 */
             continue;
         }
         if (pRec == &g_playerRecords[g_nLocalPlayerIdx]) {     /* @0x40fd64 */
-            if (netIsActive() != 0) {                          /* @0x426ed0 @0x40fd68 */
-                netClientSendSubCmd(0x3d, g_nLocalPlayerIdx,   /* @0x415cb0 @0x40fd85 */
-                                    pItem->nItemId, 0, 0, 0, 0);
-            }
             sndPlaySfx(0, 1, 0x16, 0xffff, 0, 0x400);          /* @0x437cf0 @0x40fd9f */
         }
         pItem->pMesh = NULL;                                   /* +0x24 @0x40fda9 */

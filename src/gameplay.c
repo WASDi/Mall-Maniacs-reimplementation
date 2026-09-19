@@ -264,9 +264,9 @@ void roundStartInit(void) /* @0x40a4d0 */
  * GRIND2..GRIND16 (wsprintf "GRIND%d" @0x44f4bc, scenNameToIdEx
  * @0x431e20, stride 2) into g_anRoundPhaseIds @0x458390 — these are the
  * name-table node ids the round-end blink pass in roundLogicUpdate
- * rotates with sceneObjSetPosOrient mode 5 — warms netIsActive
- * @0x426ed0, then dispatches to the per-level director reset
- * levelEventDirector_L<n>_Init on g_nLevelIdx @0x458100. */
+ * rotates with sceneObjSetPosOrient mode 5 — then dispatches to the
+ * per-level director reset levelEventDirector_L<n>_Init on g_nLevelIdx
+ * @0x458100. */
 void levelDirectorInits(void) /* @0x40bdf0 */
 {
     char szName[12];
@@ -278,7 +278,6 @@ void levelDirectorInits(void) /* @0x40bdf0 */
         wsprintfA(szName, "GRIND%d", i);                   /* "GRIND%d" @0x44f4bc */
         g_anRoundPhaseIds[j] = scenNameToIdEx(szName);     /* @0x431e20 @0x40be21 */
     }
-    netIsActive();                                         /* @0x40be36 */
     g_nGamePhase = 0;                                      /* @0x40be41 */
     g_nResultsScreen = 0;                                  /* @0x40be47 */
     g_nRoundSpareFlag = 0;                                 /* @0x40be4d */
@@ -305,9 +304,9 @@ static const int kGoalObjNameId = 0x6C616F67; /* *(int *)"goal" @0x44f4e4 */
  * @0x458134 = winner), play win sfx 8 through sndPlaySfx @0x437cf0, then
  * clear the game-frame active pair @0x45834c/@0x458350 (if either is
  * already clear the original returns without clearing) and stop. The
- * per-mode net announcements (server sub 10, client sub 0x3f) happen at
- * the call sites, before this tail. nWinner is the ESI/EBP loop index
- * at the call site. */
+ * per-mode net announcements (server sub 10, client sub 0x3f) are omitted
+ * with the rest of networking. nWinner is the ESI/EBP loop index at the
+ * call site. */
 #define ROUND_WIN_TAIL(nWinner)                                          \
     do {                                                                 \
         int nNameId = scenNameToId("KUNDKORT");      /* @0x431ed0 */     \
@@ -331,9 +330,8 @@ static const int kGoalObjNameId = 0x6C616F67; /* *(int *)"goal" @0x44f4e4 */
  * player whose anHeldSlot[1] (+0x180) reached the target has bStateFlags
  * |= 0x20, and when its +0x174 gate is set and the player's char node
  * pSubObjC (+0x2a4, position floats +0x20 x / +0x24 y) stands inside the
- * "goal" checkout zone, the ROUND_WIN_TAIL fires. nAnnounce bit0 makes
- * the server announce sub 10 (mode 2/3) and bit1 the client sub 0x3f
- * (mode 3); mode 1 announces nothing. Expands to "break out of the
+ * "goal" checkout zone, the ROUND_WIN_TAIL fires. The server/client
+ * announcements are omitted with networking. Expands to "break out of the
  * round when won". */
 #define ROUND_CHECK_WIN(nIdx, nTarget, nAnnounce)                        \
     do {                                                                 \
@@ -354,14 +352,9 @@ static const int kGoalObjNameId = 0x6C616F67; /* *(int *)"goal" @0x44f4e4 */
         {   float *pfPos = (float *)pRec->pSubObjC; /* +0x2a4 @0x40c16a */\
             /* original truncates the node coords (roundFloat @0x43dd10 +  \
              * FILD @0x40c170..0x40c197) before the zone test. */          \
+            (void)(nAnnounce);                                           \
             if (objContainsPoint(pGoal, (float)(int)pfPos[8],              \
                                  (float)(int)pfPos[9])) {                 \
-                if (((nAnnounce) & 1) && g_nNetIsServer != 0) {          \
-                    netServerSendSubCmd(10, (nIdx), 0, 0, 0, 0, 0);      \
-                }  /* @0x40c2b0 @0x40c3e2 */                             \
-                if (((nAnnounce) & 2) && g_nNetIsClient != 0) {          \
-                    netClientSendSubCmd(0x3f, (nIdx), 0, 0, 0, 0, 0);    \
-                }  /* @0x40c3fd */                                       \
                 ROUND_WIN_TAIL((nIdx));                                  \
                 return;                                                  \
             }                                                            \
@@ -369,12 +362,11 @@ static const int kGoalObjNameId = 0x6C616F67; /* *(int *)"goal" @0x44f4e4 */
     } while (0)
 
 /* roundLogicUpdate @0x40beb0 — per-frame round logic, called from
- * gameWorldUpdate @0x40b404 between movieFrameUpdate and netGameUpdate.
+ * gameWorldUpdate @0x40b404 between movieFrameUpdate and the item-pickup
+ * stage.
  * Structure (verified against the full disassembly):
- *   1. Net handshake (dead offline): the server counts peers whose
- *      nNetFlags (+0x310) announced 0x100 and, when all are ready,
- *      broadcasts sub 0xFF then sub 1; the client announces 0x100 once
- *      while nNetReady (+0x30c) is 0.
+ *   1. Net handshake: omitted with networking (the offline rebuild runs the
+ *      single-player clock path directly).
  *   2. Round clock: while g_nRoundElapsedTicks @0x455e94 stays below
  *      g_nRoundTimeLimit @0x4588f0 / g_nObjUpdateTime @0x4580d0, compute
  *      g_nGamePhase @0x458124 = (limit - objUpdate*ticks + 500)/1000
@@ -392,12 +384,11 @@ static const int kGoalObjNameId = 0x6C616F67; /* *(int *)"goal" @0x44f4e4 */
  *      animation state is zeroed instead.
  *   4. Mode rules (switch g_nGameMode @0x458120):
  *      mode 1 Frögesporten / mode 2 Varujakten: list complete
- *      (anHeldSlot[1] +0x180 == 10) + checkout zone -> win; mode 2 skips
- *      the check on clients. mode 3 Matkrig: anHeldSlot[1] == 5 + zone;
- *      afterwards the server/offline item spawner keeps g_nSpawnTimer
- *      @0x458950 (forced to 8999 during the first 3 s of player-0
- *      ticks): at 10000 ms it rolls g_nCurrentItemId @0x458128 =
- *      rand()%24+1 (net sub 0x20) and deals it to every player's
+ *      (anHeldSlot[1] +0x180 == 10) + checkout zone -> win. mode 3 Matkrig:
+ *      anHeldSlot[1] == 5 + zone; afterwards the item spawner keeps
+ *      g_nSpawnTimer @0x458950 (forced to 8999 during the first 3 s of
+ *      player-0 ticks): at 10000 ms it rolls g_nCurrentItemId @0x458128 =
+ *      rand()%24+1 and deals it to every player's
  *      anListIds[0]/abListTaken[0] (+0x184/+0x1ac); an active item
  *      resets the timer. mode 4 Vagnrace: per player, when the +0x174
  *      stage gate is 0 the bStateFlags bit 2 gates the first rail, else
@@ -415,39 +406,14 @@ void roundLogicUpdate(void) /* @0x40beb0 */
     int i;
     int j;
 
-    if (netIsActive() != 0) {                              /* @0x426ed0 @0x40beb5 */
-        if (g_nNetIsServer != 0) {                         /* @0x45e598 @0x40bec4 */
-            int nReady = 0;
-            for (i = 0; i < g_nPlayerCount; i++) {         /* @0x40bedd */
-                if ((g_playerRecords[i].nNetFlags & 0x100) == 0) {
-                    break;                                 /* +0x310 @0x40bedd */
-                }
-                nReady++;
-            }
-            if (nReady == g_nPlayerCount) {                /* @0x40beef */
-                netServerSendSubCmd(0xff, 0, 0, 0, 0, 0, 0);   /* @0x415d20 @0x40befe */
-                netServerSendSubCmd(1, 0, 0, 0, 0, 0, 0);      /* @0x40bf0b */
-                nopDebugStub();                            /* @0x40bf16 */
-            }
-        }
-        if (g_playerRecords[g_nLocalPlayerIdx].nNetReady == 0) {   /* @0x40bf35 */
-            nopDebugStub();                                /* @0x40bf44 */
-            netClientSendSubCmd(0x100, g_nLocalPlayerIdx, 0, 0, 0, 0, 0);  /* @0x415cb0 @0x40bf5a */
-            g_playerRecords[g_nLocalPlayerIdx].nNetReady = 1;      /* @0x40bf73 */
-        }
-    }
-
     if (g_nRoundElapsedTicks < g_nRoundTimeLimit / g_nObjUpdateTime) {     /* @0x40bf9b */
-        if (netIsActive() == 0 ||                          /* @0x40bfa3 */
-            g_playerRecords[g_nLocalPlayerIdx].nNetReady == 2) {   /* @0x40bfc9 */
-            g_nGamePhase = (g_nRoundTimeLimit
-                            - g_nObjUpdateTime * g_nRoundElapsedTicks
-                            + 500) / 1000;                 /* @0x40bfd3..0x40bff7 */
-            if (g_nGamePhase == 0) {                       /* @0x40bffd */
-                g_nGamePhase = 1;                          /* @0x40bfff */
-            }
-            g_nRoundElapsedTicks++;                        /* @0x455e94 @0x40c009 */
+        g_nGamePhase = (g_nRoundTimeLimit
+                        - g_nObjUpdateTime * g_nRoundElapsedTicks
+                        + 500) / 1000;                     /* @0x40bfd3..0x40bff7 */
+        if (g_nGamePhase == 0) {                       /* @0x40bffd */
+            g_nGamePhase = 1;                          /* @0x40bfff */
         }
+        g_nRoundElapsedTicks++;                        /* @0x455e94 @0x40c009 */
         for (i = 0; i < g_nPlayerCount; i++) {             /* anim-state zero @0x40c019 */
             g_playerRecords[i].flInputTurn = 0;        /* +0x2e0 */
             g_playerRecords[i].flInputAccel = 0;        /* +0x2e4 */
@@ -498,35 +464,27 @@ void roundLogicUpdate(void) /* @0x40beb0 */
         }
         break;
     case 2:                                                /* Varujakten @0x40c215 */
-        if (g_nNetIsClient == 0) {                         /* @0x45e59c @0x40c215 */
-            for (i = 0; i < g_nPlayerCount; i++) {
-                ROUND_CHECK_WIN(i, 10, 1);                 /* @0x40c229..0x40c2a9 */
-            }
+        for (i = 0; i < g_nPlayerCount; i++) {
+            ROUND_CHECK_WIN(i, 10, 1);                     /* @0x40c229..0x40c2a9 */
         }
         break;
     case 3:                                                /* Matkrig @0x40c30b */
         for (i = 0; i < g_nPlayerCount; i++) {
             ROUND_CHECK_WIN(i, 5, 3);                      /* @0x40c323..0x40c39a */
         }
-        if (g_nNetIsClient == 0) {                         /* spawner @0x40c39c */
-            if (g_playerRecords[0].nScoreTicks * g_nObjUpdateTime < 3000) {
-                g_nSpawnTimer = 8999;                      /* 0x2327 @0x40c3bc */
-            }
-            if (g_nCurrentItemId != 0) {                   /* @0x40c3c6 */
-                g_nSpawnTimer = 0;                         /* @0x40c3d3 */
-            } else if (g_nSpawnTimer >= 10000) {           /* 0x2710 @0x40c4a8 */
-                g_nCurrentItemId = rand() % 24 + 1;        /* rand @0x43ea7c @0x40c4b4 */
-                if (netIsActive() != 0) {
-                    netServerSendSubCmd(0x20, 0, g_nCurrentItemId,
-                                        0, 0, 0, 0);       /* @0x40c4e4 */
-                }
-                for (i = 0; i < g_nPlayerCount; i++) {     /* @0x40c4f6 */
-                    g_playerRecords[i].anListIds[0] = g_nCurrentItemId;    /* +0x184 @0x40c501 */
-                    g_playerRecords[i].abListTaken[0] = 0; /* +0x1ac @0x40c504 */
-                }
-            }
-            g_nSpawnTimer += g_nObjUpdateTime;             /* @0x40c512 */
+        if (g_playerRecords[0].nScoreTicks * g_nObjUpdateTime < 3000) {
+            g_nSpawnTimer = 8999;                      /* 0x2327 @0x40c3bc */
         }
+        if (g_nCurrentItemId != 0) {                   /* @0x40c3c6 */
+            g_nSpawnTimer = 0;                         /* @0x40c3d3 */
+        } else if (g_nSpawnTimer >= 10000) {           /* 0x2710 @0x40c4a8 */
+            g_nCurrentItemId = rand() % 24 + 1;        /* rand @0x43ea7c @0x40c4b4 */
+            for (i = 0; i < g_nPlayerCount; i++) {     /* @0x40c4f6 */
+                g_playerRecords[i].anListIds[0] = g_nCurrentItemId;    /* +0x184 @0x40c501 */
+                g_playerRecords[i].abListTaken[0] = 0; /* +0x1ac @0x40c504 */
+            }
+        }
+        g_nSpawnTimer += g_nObjUpdateTime;             /* @0x40c512 */
         break;
     case 4:                                                /* Vagnrace @0x40c52a */
         for (i = 0; i < g_nPlayerCount; i++) {             /* @0x40c53e */
@@ -563,12 +521,6 @@ void roundLogicUpdate(void) /* @0x40beb0 */
                     /* @0x43dd10 + FILD @0x40c6cd..0x40c6f4). */
                     if (objContainsPoint(pGoal, (float)(int)pfPos[8],
                                          (float)(int)pfPos[9])) {
-                        if (g_nNetIsServer != 0) {         /* @0x40c727 */
-                            netServerSendSubCmd(10, i, 0, 0, 0, 0, 0);
-                        }
-                        if (g_nNetIsClient != 0) {         /* @0x40c743 */
-                            netClientSendSubCmd(0x3f, i, 0, 0, 0, 0, 0);
-                        }
                         nopDebugStub();                    /* @0x40c722 */
                         ROUND_WIN_TAIL(i);                 /* @0x40c75b..0x40c79a */
                         return;
@@ -632,7 +584,7 @@ int runCmd(int nContext, LPCSTR pszArgs)
 /* roundTeardown @0x40aa10 — round-end teardown, called from killCmd
  * @0x407870 and WinMain @0x4160a0. Verified 2026-08-31 against the full
  * disassembly 0x40aa10..0x40ad5e. Sequence: g_bGameActive gate (0 -> log +
- * return, @0x44f440), netExit @0x414f60, mciStopCdaudio @0x416c80, free
+ * return, @0x44f440), mciStopCdaudio @0x416c80, free
  * every SndEmitter (g_pSndEmitterHead @0x45e5f0, next +0x04) +
  * sndShutdown @0x437cb0, free every ZoneConn (g_pZoneConnHead @0x45e5e8,
  * toward-tail link +0x04) via zoneConnUnlink @0x42b890, release the HUD
@@ -671,7 +623,6 @@ void roundTeardown(void) /* @0x40aa10 */
         return;                                      /* @0x40aa2b */
     }
     g_bGameActive = 0;                               /* @0x4580f8 @0x40aa2e */
-    netExit();                                       /* @0x414f60 @0x40aa34 */
     mciStopCdaudio();                                /* @0x416c80 @0x40aa39 */
     for (pEmitter = g_pSndEmitterHead; pEmitter != NULL; /* @0x40aa3e */
          pEmitter = pNextEmitter) {
@@ -850,8 +801,7 @@ int killCmd(int nContext, LPCSTR pszArgs) /* @0x407870 */
  * nKeyType 0 (WM_CHAR): J/Y/j/y and N/n route through the jump table
  * @0x40df9c/@0x40df90 into the quit-prompt / quest-answer branches
  * (pQuestMessage +0x1dc set -> nQuestStage +0x1e0 = 2 or 1). The console
- * branch (g_nScrollText != 0 -> consoleHandleKey @0x4086e0) is unreachable
- * offline: the rebuild never opens the console overlay.
+ * branch (g_nScrollText != 0) is dropped with the out-of-scope console.
  * Field +0x2fc is the action-wait timer, decremented once per event before
  * any dispatch; type-2 events are gated on it reaching 0 and on
  * g_bGameActive != 0, and every dispatch sets g_nReturnToMenu = 1. */
@@ -867,10 +817,6 @@ void gameKeyHandler(int nKey, int nKeyType) /* @0x40db80 */
     }
 
     if (nKeyType == 0) {                           /* @0x40dbb6 */
-        if (g_nScrollText != 0) {                  /* @0x4580ec @0x40de90 */
-            consoleHandleKey(nKey);                /* @0x4086e0 @0x40dea2 */
-            return;
-        }
         switch (nKey) {                            /* table @0x40df9c -> @0x40df90 */
         case 'J':                                  /* @0x40ded4 */
         case 'Y':                                  /* idx15 @0x40dfab */
@@ -938,8 +884,7 @@ void gameKeyHandler(int nKey, int nKeyType) /* @0x40db80 */
             return;                                /* @0x40df67 */
         }
         if (g_nGameMode != 1 && g_nGameMode != 4) {/* @0x458120 @0x40dcb7 */
-            if (netIsActive() == 0 &&              /* @0x426ed0 @0x40dcce */
-                g_nWinnerIdx == g_nLocalPlayerIdx) {/* @0x458134 @0x40dcd7 */
+            if (g_nWinnerIdx == g_nLocalPlayerIdx) {/* @0x458134 @0x40dcd7 */
                 if (g_nLevelIdx == 4) {            /* @0x458100 @0x40dcec */
                     fmtSprintf(szCmd, "request endscene %d",    /* @0x44f5a4 */
                                g_playerRecords[g_nWinnerIdx].nCharIdx);  /* +0x150 @0x456360 @0x40dd01 */
@@ -953,13 +898,10 @@ void gameKeyHandler(int nKey, int nKeyType) /* @0x40db80 */
                 commandDispatch(0, "kill");        /* @0x40dd3b */
                 return;                            /* @0x40dd51 */
             }
-            if (netIsActive() == 0) {              /* @0x40dd52 */
-                fmtSprintf(szCmd, "request play_level %d 0 0 0",
-                           g_nLevelIdx + 1);       /* @0x40dd64 */
-                commandDispatch(0, szCmd);         /* @0x40dd77 */
-                commandDispatch(0, "kill");        /* @0x40dd7c */
-            }
-            netIsActive();                         /* @0x40dd93 */
+            fmtSprintf(szCmd, "request play_level %d 0 0 0",
+                       g_nLevelIdx + 1);           /* @0x40dd64 */
+            commandDispatch(0, szCmd);         /* @0x40dd77 */
+            commandDispatch(0, "kill");        /* @0x40dd7c */
             return;                                /* @0x40dd9f */
         }
         commandDispatch(0, "kill");                /* @0x40dda0 */
@@ -967,8 +909,7 @@ void gameKeyHandler(int nKey, int nKeyType) /* @0x40db80 */
         return;                                    /* @0x40ddc5 */
     case 7:                                        /* Escape @0x40ddc6 */
         if (g_nResultsScreen != 0) {               /* @0x40ddc6 */
-            if (netIsActive() == 0 &&              /* @0x40de00 */
-                g_nWinnerIdx == g_nLocalPlayerIdx) {
+            if (g_nWinnerIdx == g_nLocalPlayerIdx) { /* @0x40de00 */
                 if (g_nLevelIdx == 4) {            /* @0x40de18 */
                     fmtSprintf(szCmd, "request endscene %d",
                                g_playerRecords[g_nWinnerIdx].nCharIdx);
@@ -1019,7 +960,6 @@ void gameWorldUpdate(void)
     roundLogicUpdate();
     if (g_bGameActive == 0) return;
 
-    netGameUpdate();
     g_nWorldFrameTick++;
     /* Local-player item pickup on even world ticks while the AI phase is
      * idle (@0x40b434..0x40b4a1): a blocked target raises the "action get

@@ -182,12 +182,12 @@ void renderGameHud(void)
         case 4:                                              /* @0x412c57 */
             gxDrawQuadColor(g_hHudGfx2Tpg, 0xc0, 0x190, 0x1bf, 0x1c3, 0, 0, 0xff, 0x32);
             textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x1a2,
-                             netIsActive() ? SZ_TRYCK_ENTER_A : SZ_TRYCK_ENTER_F_P);
+                             SZ_TRYCK_ENTER_F_P);
             nTmp = nWinTime / 100;                           /* @0x412909 */
             fmtSprintf(szBuf, SZ_TIME_FMT, nTmp / 60, nTmp % 60, nWinTime % 100);
             gxDrawQuadColor(g_hHudGfx2Tpg, 0xc0, 0x1e, 0x1bf, 0x51, 0, 0, 0xff, 0x32);
             textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x30, szBuf);
-            if (g_nLocalPlayerIdx == g_nWinnerIdx && !netIsActive()) { /* @0x412993 */
+            if (g_nLocalPlayerIdx == g_nWinnerIdx) { /* @0x412993 */
                 for (i = 0; i < 5; i++) {                    /* @0x4129b8 */
                     fmtSprintf(szBuf, g_nGameMode == 1 ? SZ_GET_FSHI : SZ_GET_VAHI,
                                g_nLevelIdx, g_nWinnerIdx);
@@ -221,24 +221,22 @@ void renderGameHud(void)
                 textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x30,
                                  pWinner->szCharName);
             }
-            if (!netIsActive()) {                            /* @0x412b0a */
-                if (g_nWinnerIdx == g_nLocalPlayerIdx) {
-                    n = fmtAtoi((const char *)commandDispatch(0, SZ_GET_TOPLEVEL)); /* @0x412b26 */
-                    if (n == g_nLevelIdx && g_bGameRunning) {
-                        fmtSprintf(szBuf, SZ_SET_TOPLEVEL, g_nLevelIdx + 1); /* @0x412b4c */
-                        commandDispatch(0, szBuf);
-                        commandDispatch(0, SZ_CMD_SAVE);     /* @0x412b68 */
-                    }
+            if (g_nWinnerIdx == g_nLocalPlayerIdx) {
+                n = fmtAtoi((const char *)commandDispatch(0, SZ_GET_TOPLEVEL)); /* @0x412b26 */
+                if (n == g_nLevelIdx && g_bGameRunning) {
+                    fmtSprintf(szBuf, SZ_SET_TOPLEVEL, g_nLevelIdx + 1); /* @0x412b4c */
+                    commandDispatch(0, szBuf);
+                    commandDispatch(0, SZ_CMD_SAVE);     /* @0x412b68 */
                 }
-                if (bFlash) {
-                    gxDrawQuadColor(g_hHudGfx2Tpg, 0xc0, 0x190, 0x1bf, 0x1c3, 0, 0, 0xff, 0x32);
-                    textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x1a2,
-                                     g_nWinnerIdx == g_nLocalPlayerIdx
-                                         ? SZ_TRYCK_ENTER_F : SZ_NYTT_FORSOK);
-                } else {
-                    gxDrawQuadColor(g_hHudGfx2Tpg, 0xc0, 0x190, 0x1bf, 0x1c3, 0, 0, 0xff, 0x32);
-                    textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x1a2, SZ_TRYCK_ESC_A);
-                }
+            }
+            if (bFlash) {
+                gxDrawQuadColor(g_hHudGfx2Tpg, 0xc0, 0x190, 0x1bf, 0x1c3, 0, 0, 0xff, 0x32);
+                textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x1a2,
+                                 g_nWinnerIdx == g_nLocalPlayerIdx
+                                     ? SZ_TRYCK_ENTER_F : SZ_NYTT_FORSOK);
+            } else {
+                gxDrawQuadColor(g_hHudGfx2Tpg, 0xc0, 0x190, 0x1bf, 0x1c3, 0, 0, 0xff, 0x32);
+                textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x1a2, SZ_TRYCK_ESC_A);
             }
             break;
         }
@@ -495,12 +493,6 @@ void renderGameHud(void)
             i += textWidth(g_hHudFontDigits, SZ_SLASH);      /* @0x413bf9 */
             textDrawInt(g_hHudFontDigits, 0x2004, i, 0x3c, g_nPlayerCount); /* @0x413c15 */
         }
-    }
-
-    if (netIsActive() &&                                     /* @0x413c1d */
-        g_playerRecords[g_nLocalPlayerIdx].nNetReady == 1) {  /* @0x413c37 */
-        gxDrawQuadColor(g_hHudGfx2Tpg, 0xc0, 0x32, 0x1bf, 0x65, 0, 0, 0xff, 0x32);
-        textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x44, SZ_VANTAR); /* @0x413c6a */
     }
 
     if (g_nGamePhase < 1) {                                  /* @0x413c80 */
