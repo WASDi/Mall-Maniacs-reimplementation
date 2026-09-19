@@ -1575,7 +1575,7 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
                 short anWalk[3];
                 int anCart[6];
 
-                sceneSetCurrentObj(pRec->pCharSceneObj, 1);     /* @0x430d98 @0x40cb5c */
+                sceneSetCurrentObj(pRec->pCharSceneObj, 1);     /* @0x430d90 @0x40cb5c */
 
                 sceneNodeGetPos(pRec->pCartHandleR, 0, anCart, 6);   /* @0x431270 @0x40cb70 */
                 sceneNodeGetPos(pRec->pCharSceneObj, 6, anCart + 3, 2); /* @0x40cb85 */

@@ -235,11 +235,11 @@ int sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode) /* @0x430e
 
 /* ===================================================================
  * sceneNodeGetPos @0x431270 / sceneNodeGetMesh @0x431ae0 /
- * sceneSetCurrentObj @0x430d98 / sceneMeshBBox @0x42ba40 /
+ * sceneSetCurrentObj @0x430d90 / sceneMeshBBox @0x42ba40 /
  * sceneDetailGridCtor @0x42ad00
  * =================================================================== */
 
-/* Current scene-object context for mode 6 (sceneSetCurrentObj @0x430d98,
+/* Current scene-object context for mode 6 (sceneSetCurrentObj @0x430d90,
  * consumed by playerAnimSfxUpdate). */
 SceneNode *g_pSceneNodeHead;   /* @0x45e810 */
 int g_nSceneCurrentObj;        /* @0x45e608 */
@@ -258,9 +258,9 @@ SceneObjTypeDef *sceneNodeGetMesh(SceneNode *pNode) /* @0x431ae0 */
     return pNode->pTypeDef;
 }
 
-/* sceneSetCurrentObj @0x430d98 — record the scene-object context used by
+/* sceneSetCurrentObj @0x430d90 — record the scene-object context used by
  * sceneNodeGetPos mode 6. Returns 1. */
-int sceneSetCurrentObj(SceneNode *pCharSceneObj, int nMode) /* @0x430d98 */
+int sceneSetCurrentObj(SceneNode *pCharSceneObj, int nMode) /* @0x430d90 */
 {
     g_pSceneNodeHead = pCharSceneObj;
     g_nSceneCurrentObj = nMode;

@@ -14,7 +14,7 @@ int sceneObjSetPosOrient(SceneNode *pObj, short nYaw, short nPitch, short nRoll,
 int sceneObjGetPos(SceneNode *pObj, short *pOutXYZ, byte nMode); /* @0x4317e0 */
 int sceneNodeGetPosWorld(SceneNode *pNode, float *pOutXYZ, int nMode); /* @0x430e80 */
 SceneObjTypeDef *sceneNodeGetMesh(SceneNode *pNode); /* @0x431ae0 */
-int sceneSetCurrentObj(SceneNode *pCharSceneObj, int nMode); /* @0x430d98 */
+int sceneSetCurrentObj(SceneNode *pCharSceneObj, int nMode); /* @0x430d90 */
 int sceneNodeGetPos(SceneNode *pNode, int nMeshIdx, int *anOutPos, int nMode); /* @0x431270 */
 int sceneNodeSetPos(SceneNode *pNode, void *pXYZ, int nMode); /* @0x431590 */
 int sceneNodeSetPosShorts(SceneNode *pNode, short *pAngles, byte nMode); /* @0x431850 */

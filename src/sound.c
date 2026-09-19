@@ -606,6 +606,11 @@ int dsoundRelease(void)
     return 0;
 }
 
+/* dsoundInitMixer @0x439050 — create the DirectSound object, set the
+ * cooperative level, then probe six output formats (stereo/mono × 16/8-bit ×
+ * 44100/22050 Hz) until a primary streaming buffer is created; configure the
+ * ring-buffer globals and start looping playback. Returns 1 on success, 0 on
+ * failure (releasing whatever was created so far). */
 static int dsoundInitMixer(int nFrameRegions)
 {
     static const struct Fmt { int ch; int bits; int rate; } kFmt[6] = {

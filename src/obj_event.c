@@ -17,7 +17,7 @@
  * obj_event.c — EventObject registry: creation (.eo load), id-hash and
  * point-in-zone tests. Reimplemented from the verified Ghidra
  * decompilations/disassemblies of lineRecordCtor @0x4145d0,
- * lineRecordNormal @0x414620, objSubDtor @0x414680, objHashDtor
+ * lineRecordNormal @0x414610, objSubDtor @0x414680, objHashDtor
  * @0x414760, sceneObjCtor4 @0x414700, eventObjAddLine @0x4147c0,
  * objHashRehash @0x4148c0, objHashRegister @0x4148f0, objHashFreeAll
  * @0x414950, objFindById @0x414a90, objContainsPoint @0x414bb0,
@@ -256,7 +256,7 @@ int objSegListIntersectTest(EventObject *pObj, float flX1, float flZ1,
     return 0;                                            /* @0x414eea */
 }
 
-/* lineRecordNormal @0x414620 — unit normal of the segment: polar of the
+/* lineRecordNormal @0x414610 — unit normal of the segment: polar of the
  * direction (x2-x1, y2-y1), angle -= PI/2 (g_flHalfPi @0x44b270),
  * length fixed to 1.0, then back from polar into +0x10/+0x14. The output
  * buffer is distinct from the polar buffer: the original keeps the two
@@ -265,7 +265,7 @@ int objSegListIntersectTest(EventObject *pObj, float flX1, float flZ1,
  * (it writes pOut->x before re-reading pPolar->x for pOut->y). Passing the
  * same vector twice clobbered the length and zeroed every axis-aligned
  * edge normal, breaking objContainsPoint. */
-void lineRecordNormal(ObjLine *pLine) /* @0x414620 */
+void lineRecordNormal(ObjLine *pLine) /* @0x414610 */
 {
     GxVec2 vDir;
     GxVec2 vPolar;
@@ -290,7 +290,7 @@ ObjLine *lineRecordCtor(ObjLine *pLine, float flX1, float flY1, float flX2, floa
     pLine->y2 = flY2;
     pLine->pNext = NULL;                 /* +0x18 */
     pLine->pPrev = NULL;                 /* +0x1c */
-    lineRecordNormal(pLine);             /* @0x414620 */
+    lineRecordNormal(pLine);             /* @0x414610 */
     return pLine;
 }
 

@@ -116,7 +116,7 @@ int objContainsPoint3D(EventObject *pObj, float flX, float flY, float flZ);
 int objSegListIntersectTest(EventObject *pObj, float flX1, float flZ1,
                             float flX2, float flZ2);
 
-/* lineRecordNormal @0x414620 — unit normal (nx,ny) of the line segment,
+/* lineRecordNormal @0x414610 — unit normal (nx,ny) of the line segment,
  * the polar direction rotated by -90 degrees (g_flHalfPi @0x44b270). */
 void lineRecordNormal(ObjLine *pLine);
 

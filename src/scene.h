@@ -191,7 +191,7 @@ extern CameraFollowBlock g_camFollowBlock; /* @0x4588f8..0x45890f */
 #define g_pCamAimNode    (g_camFollowBlock.pAimNode)  /* @0x458904 */
 
 /* Current scene-object context used by sceneNodeGetPos mode 6 (relative
- * positions). Written by sceneSetCurrentObj @0x430d98 (called from
+ * positions). Written by sceneSetCurrentObj @0x430d90 (called from
  * playerAnimSfxUpdate per player). */
 extern SceneNode *g_pSceneNodeHead;   /* @0x45e810 */
 extern int        g_nSceneCurrentObj; /* @0x45e608 channel index of current obj */
