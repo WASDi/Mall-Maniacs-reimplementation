@@ -6,6 +6,7 @@
 #include "pool.h"
 #include "stubs.h"
 #include "gameplay.h"
+#include "menu.h"
 #include "time.h"
 #include "util.h"
 #include "custom_helpers.h"
@@ -27,6 +28,12 @@ float g_configMapX;                    /* @0x45833c */
 float g_configMapY;                    /* @0x458340 */
 float g_configMapZoom;                 /* @0x458338 */
 int g_bAiEnabled;                      /* @0x458358 */
+
+/* Demo/movie database globals (0x455e68..0x455e87). g_movieName is the
+ * MovieDb name field and g_pMovieFrameNode the recorder's current frame
+ * block cursor; both are zero-initialized until movieCmd sets them. */
+MovieDb g_movieDb;                     /* @0x455e68 */
+int     g_nMovieFrame;                 /* @0x455e88 */
 
 /* shared empty-string source for the configEnvSetName-style resets in
  * configEnvFind (original passes the "" literal @0x4550d8). */
@@ -195,6 +202,121 @@ static void configLinkNode(ConfigEnv *pEnv, ConfigNode *pParent, ConfigNode *pNo
         pEnv->pRoot = pNode;
     }
     *ppLast = pNode;
+}
+
+/* configEnvAddValue @0x436eb0 — allocate a 0x28 value node, set its key and
+ * double value, and append it to the end of pParent's child list. Returns
+ * the node, or NULL when pParent is NULL or not a block node (the original
+ * dispatches the type query through the one-slot vtable). Used by
+ * movieFrameUpdate to record one "fb%d"/"lr%d"/"ac%d" value per player. */
+ConfigValueNode *configEnvAddValue(ConfigNode *pParent, const char *pKey,
+                                   double dValue) /* @0x436eb0 */
+{
+    ConfigNode *pLast;
+    ConfigValueNode *pNode;
+
+    if (pParent == NULL) {                               /* @0x436ecd */
+        return NULL;
+    }
+    if (pParent->nType != CONFIG_NODE_BLOCK) {           /* vtable type query @0x436eea */
+        return NULL;
+    }
+    pLast = pParent->pChild;                             /* @0x436f06 */
+    if (pLast != NULL) {
+        while (pLast->pNext != NULL) {                   /* @0x436f0d */
+            pLast = pLast->pNext;
+        }
+    }
+    pNode = (ConfigValueNode *)malloc(sizeof(ConfigValueNode));
+    if (pNode == NULL) {
+        pNode = NULL;
+    } else {
+        configValueNodeCtor(pNode);                      /* @0x436f39 */
+    }
+    configEnvSetName(&pNode->base.key, pKey);            /* @0x436f54 */
+    pNode->dValue = dValue;                              /* @0x436f61 */
+    if (pLast == NULL) {                                 /* @0x436f67 */
+        pParent->pChild = &pNode->base;                  /* @0x436f6b */
+        pNode->base.pParent = pParent;                   /* @0x436f6e */
+    } else {
+        pNode->base.pParent = pParent;                   /* @0x436f73 */
+        pLast->pNext = &pNode->base;                     /* @0x436f76 */
+        pNode->base.pPrev = pLast;                       /* @0x436f79 */
+    }
+    return pNode;
+}
+
+/* configBlockNodeNew @0x436d50 — allocate a 0x2c block node, key it (pPsz or
+ * "$DFF_BLOCK") and insert it into the env node list: after pTail when given,
+ * at the list head otherwise. When the neighbors share the key the original
+ * maintains the block-array bookkeeping (pFirst/pLast/nIndex/nCount), so
+ * consecutive same-named blocks resolve through configEnvFind's "name[idx]"
+ * path. Used by movieFrameUpdate to append one block per recorded frame. */
+ConfigBlockNode *configBlockNodeNew(ConfigEnv *pEnv, ConfigNode *pTail,
+                                    const char *pPsz) /* @0x436d50 */
+{
+    ConfigBlockNode *pNode;
+    ConfigBlockNode *pChain;
+    ConfigNode *pIter;
+    int nIndex;
+
+    pNode = (ConfigBlockNode *)malloc(sizeof(ConfigBlockNode));
+    if (pNode == NULL) {
+        pNode = NULL;
+    } else {
+        configBlockNodeCtor(pNode);                      /* @0x436d87 */
+    }
+    configEnvSetName(&pNode->base.key,
+                     (pPsz != NULL) ? pPsz : "$DFF_BLOCK"); /* @0x436daf */
+    pNode->nIndex = 0;                                   /* @0x436db4 */
+    pNode->nCount = 1;                                   /* @0x436dbb */
+    pNode->pFirst = &pNode->base;                        /* @0x436dc2 */
+    if (pEnv->pRoot != NULL) {                           /* @0x436dc5 */
+        if (pTail != NULL) {
+            pNode->base.pPrev = pTail;                   /* @0x436ddc */
+            pNode->base.pNext = pTail->pNext;            /* @0x436ddf */
+            pTail->pNext = &pNode->base;                 /* @0x436de5 */
+            if (pNode->base.pNext != NULL) {             /* @0x436de8 */
+                pNode->base.pNext->pPrev = &pNode->base; /* @0x436def */
+            }
+            pChain = NULL;
+            pNode->base.pParent = pTail->pParent;        /* @0x436dfa */
+            if (pNode->base.pNext != NULL &&
+                pNode->base.pNext->nType == CONFIG_NODE_BLOCK &&
+                mStringEqualsMString(&pNode->base.key,
+                                     &pNode->base.pNext->key) != 0) { /* @0x436e11 */
+                pNode->pLast = (ConfigNode *)pNode->base.pNext;   /* @0x436e22 */
+                pNode->pFirst = ((ConfigBlockNode *)pNode->base.pNext)->pFirst; /* @0x436e25 */
+                pChain = pNode;
+            }
+            if (pNode->base.pPrev != NULL &&
+                pNode->base.pPrev->nType == CONFIG_NODE_BLOCK &&
+                mStringEqualsMString(&pNode->base.key,
+                                     &pNode->base.pPrev->key) != 0) { /* @0x436e42 */
+                pChain = (ConfigBlockNode *)((ConfigBlockNode *)pNode->base.pPrev)->pFirst; /* @0x436e51 */
+                ((ConfigBlockNode *)pNode->base.pPrev)->pLast = &pNode->base; /* @0x436e54 */
+                pNode->pFirst = (ConfigNode *)pChain;    /* @0x436e57 */
+            }
+            if (pChain == NULL) {                        /* @0x436e5a */
+                return pNode;
+            }
+            nIndex = 0;                                  /* @0x436e5e */
+            pIter = &pChain->base;
+            do {
+                ((ConfigBlockNode *)pIter)->pFirst = &pChain->base; /* @0x436e62 */
+                ((ConfigBlockNode *)pIter)->nIndex = nIndex;        /* @0x436e65 */
+                pIter = (ConfigNode *)((ConfigBlockNode *)pIter)->pLast; /* @0x436e68 */
+                nIndex++;
+            } while (pIter != NULL);
+            pChain->nCount = nIndex;                     /* @0x436e70 */
+            return pNode;
+        }
+        pNode->base.pPrev = NULL;                        /* @0x436e75 */
+        pNode->base.pNext = pEnv->pRoot;                 /* @0x436e7c */
+        pEnv->pRoot->pPrev = &pNode->base;               /* @0x436e85 */
+    }
+    pEnv->pRoot = &pNode->base;                          /* @0x436e88 */
+    return pNode;
 }
 
 /* configNodeDtor @0x435700 — recursive child/sibling teardown. */
@@ -565,6 +687,18 @@ ConfigNode *configNodeGetId(ConfigNode *pNode) /* @0x436850 */
     return NULL;
 }
 
+/* configNodeGetKey @0x436900 — copy a node's key into pOut (empty string
+ * when pNode is NULL). Returns pOut. */
+MString *configNodeGetKey(MString *pOut, ConfigNode *pNode) /* @0x436900 */
+{
+    if (pNode == NULL) {
+        mStringCtorWithCapacity(pOut, 0);
+        return pOut;
+    }
+    mStringAssign(pOut, &pNode->key);
+    return pOut;
+}
+
 /* configEnvFind @0x4365c0 — resolve a path ("name", "name[2]",
  * "name[2]/sub/key") from pNode (default env root) to a node. Each
  * component matches name + block index; matching descends into pChild.
@@ -662,6 +796,14 @@ ConfigNode *configEnvGetValueByIndex(ConfigEnv *pEnv, const char *pKey) /* @0x43
     return configEnvGetValue(pEnv, NULL, pKey);
 }
 
+/* configEnvFindValue @0x4365a0 — path lookup (configEnvFind with a NULL
+ * start node) returning the resolved node or NULL. Used by movieFrameUpdate
+ * to read "%s[%d]" frame records from the movie database. */
+ConfigNode *configEnvFindValue(ConfigEnv *pEnv, const char *pKey) /* @0x4365a0 */
+{
+    return configEnvFind(pEnv, NULL, pKey);
+}
+
 /* configEnvGetString @0x436990 — string sibling lookup into pOut. */
 void configEnvGetString(MString *pOut, ConfigNode *pNode, const char *pKey) /* @0x436990 */
 {
@@ -753,22 +895,138 @@ void configMasterLoad(void) /* @0x410350 */
     g_bAiEnabled = 1;
 }
 
-/* configMasterEnvDtor @0x409bb0 — atexit teardown (configStringDtor
- * @0x407140): free the tree then the env name. */
+/* configStringDtor @0x407140 — free the parsed tree at pEnv+0x10
+ * (configNodeDtor then memFreeDirect) followed by the env name MString
+ * at pEnv+0x00. Also used by the temporary-env unwind handlers. */
+void configStringDtor(ConfigEnv *pEnv) /* @0x407140 */
+{
+    if (pEnv->pRoot != NULL) {
+        configNodeDtor(pEnv->pRoot);
+        memFreeDirect(pEnv->pRoot);
+    }
+    mStringFree(&pEnv->name);
+}
+
+/* configMasterEnvDtor @0x409bb0 — thiscall thunk -> configStringDtor
+ * @0x407140 with this = &g_configEnvMaster. */
 static void configMasterEnvDtor(void) /* @0x409bb0 */
 {
-    if (g_configEnvMaster.pRoot != NULL) {
-        configNodeDtor(g_configEnvMaster.pRoot);
-        memFreeDirect(g_configEnvMaster.pRoot);
-        g_configEnvMaster.pRoot = NULL;
-    }
-    mStringFree(&g_configEnvMaster.name);
+    configStringDtor(&g_configEnvMaster);
+}
+
+/* configMasterEnvCtor @0x409b90 — thiscall thunk -> configEnvCtor
+ * @0x4357c0 with this = &g_configEnvMaster. */
+void configMasterEnvCtor(void) /* @0x409b90 */
+{
+    configEnvCtor(&g_configEnvMaster);
+}
+
+/* configMasterEnvAtexit @0x409ba0 — atexit(configMasterEnvDtor)
+ * registration wrapper. */
+void configMasterEnvAtexit(void) /* @0x409ba0 */
+{
+    atexit(configMasterEnvDtor);
 }
 
 /* configMasterEnvInit @0x409b80 — MSVC dynamic initializer for
- * g_configEnvMaster; the rebuild calls it explicitly from gameInit. */
+ * g_configEnvMaster: construct the env then register its atexit teardown.
+ * The original runs this from the CRT init table (out of scope), so the
+ * rebuild keeps the function and its exact call pair but does not call it
+ * from gameInit (which does not call it in the original either). */
 void configMasterEnvInit(void) /* @0x409b80 */
 {
-    configEnvCtor(&g_configEnvMaster);
-    atexit(configMasterEnvDtor);
+    configMasterEnvCtor();
+    configMasterEnvAtexit();
+}
+
+/* movieFrameUpdate @0x40af80 — per-frame demo (movie) record/playback,
+ * called from gameWorldUpdate @0x40b3d0 between playerUpdateDispatch and
+ * roundLogicUpdate.
+ *
+ * PLAYBACK (g_nMovieRecord == 0 && g_nMoviePlay != 0): advance g_nMovieFrame
+ * and resolve the frame block "g_movieName[g_nMovieFrame]" from g_pMovieDb
+ * (configEnvFindValue). A missing block disables playback (g_nMoviePlay = 0)
+ * and bails. Each child of the block is a per-player key: the first char
+ * selects the field — 'l' -> flInputTurn (+0x2e0), 'f' -> flInputAccel
+ * (+0x2e4), 'a' -> nActionSubstate (+0x2e8, clamped to 0 outside 0..7) — and
+ * the digits after it are the player index (fmtAtoi). The numeric value is
+ * the node's double.
+ *
+ * RECORD (g_nMovieRecord != 0): append a new frame block to g_pMovieDb
+ * (configBlockNodeNew after the previous frame node) and, for each player
+ * whose flInputAccel/flInputTurn/nActionSubstate is nonzero, add the
+ * "fb%d"/"lr%d"/"ac%d" value to it.
+ *
+ * NOTE: the original comment claimed an X/Z swap between the 'l'/'f' names;
+ * the disassembly (0x40b035 lr<-+0x2e0, 0x40affb fb<-+0x2e4) shows record and
+ * playback use the same fields, so no swap is reproduced here. */
+void movieFrameUpdate(void) /* @0x40af80 */
+{
+    char szKey[256];
+    int i;
+
+    if (g_nMovieRecord == 0) {                           /* @0x40afa9 */
+        ConfigNode *pNode;
+
+        if (g_nMoviePlay == 0) {                         /* @0x40b0bf */
+            return;
+        }
+        g_nMovieFrame++;                                 /* @0x455e88 @0x40b0d5 */
+        fmtSprintf(szKey, "%s[%d]", mStringCStr(&g_movieName), g_nMovieFrame); /* @0x44f480 */
+        pNode = configEnvFindValue(&g_pMovieDb, szKey);  /* @0x4365a0 */
+        if (pNode == NULL) {                             /* @0x40b104 */
+            g_nMoviePlay = 0;
+            nopDebugStub();
+            return;
+        }
+        for (pNode = configNodeGetId(pNode); pNode != NULL; /* @0x40b13b */
+             pNode = configNextNode(&g_pMovieDb, pNode)) {
+            MString mstrKey;
+            char szName[256];
+            char cField;
+            int nPlayer;
+
+            configNodeGetKey(&mstrKey, pNode);           /* @0x436900 */
+            strcpy(szName, mStringCStr(&mstrKey));
+            mStringFree(&mstrKey);                       /* @0x435430 */
+            cField = szName[0];
+            if (cField == 'l') {                         /* @0x40b1a0 */
+                float flValue = (float)configEnvGetDouble(pNode); /* @0x4369f0 */
+                nPlayer = fmtAtoi(&szName[2]);           /* @0x43e75c */
+                g_playerRecords[nPlayer].flInputTurn = flValue;
+            } else if (cField == 'f') {                  /* @0x40b1dc */
+                float flValue = (float)configEnvGetDouble(pNode);
+                nPlayer = fmtAtoi(&szName[2]);
+                g_playerRecords[nPlayer].flInputAccel = flValue;
+            } else if (cField == 'a') {                  /* @0x40b218 */
+                int nSub = (int)configEnvGetDouble(pNode); /* __ftol @0x43dd10 */
+                nPlayer = fmtAtoi(&szName[2]);
+                g_playerRecords[nPlayer].nActionSubstate =
+                    ((unsigned int)nSub <= 7) ? nSub : 0;
+            }
+        }
+        return;
+    }
+    /* record */
+    g_pMovieFrameNode = (ConfigNode *)configBlockNodeNew(&g_pMovieDb, /* @0x436d50 @0x40afc2 */
+                            g_pMovieFrameNode, mStringCStr(&g_movieName));
+    for (i = 0; i < g_nPlayerCount; i++) {               /* @0x40afd8 */
+        PlayerRecord *pRec = &g_playerRecords[i];
+
+        if (pRec->flInputAccel != 0.0f) {                /* @0x44b244 @0x40afeb */
+            fmtSprintf(szKey, "fb%d", i);                /* @0x44f498 */
+            configEnvAddValue(g_pMovieFrameNode, szKey,
+                              (double)pRec->flInputAccel);
+        }
+        if (pRec->flInputTurn != 0.0f) {                 /* @0x40b026 */
+            fmtSprintf(szKey, "lr%d", i);                /* @0x44f490 */
+            configEnvAddValue(g_pMovieFrameNode, szKey,
+                              (double)pRec->flInputTurn);
+        }
+        if (pRec->nActionSubstate != 0) {                /* @0x40b05f */
+            fmtSprintf(szKey, "ac%d", i);                /* @0x44f488 */
+            configEnvAddValue(g_pMovieFrameNode, szKey,
+                              (double)pRec->nActionSubstate);
+        }
+    }
 }

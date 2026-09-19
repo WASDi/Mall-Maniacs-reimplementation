@@ -63,9 +63,9 @@ char g_acScratchText[256];
 /* format/name strings used by the HUD (verbatim, with addresses) */
 #define SZ_TIME_FMT        "%02d:%02d:%02d"                /* @0x44ff94 */
 #define SZ_KLARA           "Klara!"                        /* @0x44fe44 */
-#define SZ_FARDIGA         "F\x8a""rdiga!"                 /* @0x44fe38 "Färdiga!" */
-#define SZ_GA              "G\x85!!"                       /* @0x44fe30 "Gå!!" */
-#define SZ_VANTAR          "V\x84""ntar..."                /* @0x44fe4c "Väntar..." */
+#define SZ_FARDIGA         "F\xe4rdiga!"                   /* @0x44fe38 "Färdiga!" */
+#define SZ_GA              "G\xc5!!"                       /* @0x44fe30 "Gå!!" */
+#define SZ_VANTAR          "V\xe4ntar..."                  /* @0x44fe4c "Väntar..." */
 #define SZ_VAROR           "Varor"                         /* @0x44fe78 */
 #define SZ_MOT_KASSORNA    "Mot kassorna!!"                /* @0x44fe64 */
 #define SZ_J_ELLER_N       "J eller N?"                    /* @0x44fe58 */
@@ -73,11 +73,11 @@ char g_acScratchText[256];
 #define SZ_SLASH           "/"                             /* @0x44fe74 */
 #define SZ_NYTT_REKORD     "NYTT REKORD!!"                 /* @0x44ff70 */
 #define SZ_WINNER          "Vinnare"                       /* @0x44ff48 */
-#define SZ_TRYCK_ENTER_F   "Tryck ENTER f\x94r att forts\x84tta!"     /* @0x44ff08 */
-#define SZ_TRYCK_ENTER_F_P "Tryck ENTER f\x94r att forts\x84tta."     /* @0x44ffc4 */
-#define SZ_TRYCK_ENTER_A   "Tryck ENTER f\x94r att avsluta."          /* @0x44ffa4 */
-#define SZ_TRYCK_ESC_A     "Tryck ESC f\x94r att avsluta."            /* @0x44fed0 */
-#define SZ_NYTT_FORSOK     "Nytt f\x94rs\x94k tryck ENTER."           /* @0x44feec */
+#define SZ_TRYCK_ENTER_F   "Tryck ENTER f\xf6r att forts\xe4tta!"     /* @0x44ff08 */
+#define SZ_TRYCK_ENTER_F_P "Tryck ENTER f\xf6r att forts\xe4tta."     /* @0x44ffc4 */
+#define SZ_TRYCK_ENTER_A   "Tryck ENTER f\xf6r att avsluta."          /* @0x44ffa4 */
+#define SZ_TRYCK_ESC_A     "Tryck ESC f\xf6r att avsluta."            /* @0x44fed0 */
+#define SZ_NYTT_FORSOK     "Nytt f\xf6rs\xf6k tryck ENTER."           /* @0x44feec */
 #define SZ_GET_FSHI        "get fshi%dtime%d"              /* @0x44ff80 */
 #define SZ_REQ_FSHI        "request fshiscore %d %d %d %d" /* @0x44ff50 */
 #define SZ_GET_VAHI        "get vahi%dtime%d"              /* @0x44febc */

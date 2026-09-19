@@ -16,6 +16,7 @@ void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
                           int nRows, int nCellSize); /* @0x42ad00 */
 void sceneDetailGridSetRoot(SceneDetailGrid *pGrid, SceneNode *pRootNode); /* @0x42b350 */
 void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount); /* @0x42b000 */
+void sceneDetailGridUpdate(SceneDetailGrid *pGrid); /* @0x42b1d0 */
 void sceneDetailGridFree(SceneDetailGrid *pGrid); /* @0x42b190 */
 
 void *sceneMorphInterp(SceneNode *pNode, SceneObjRenderInfo *pRender, void *pOut); /* @0x4300d0 */

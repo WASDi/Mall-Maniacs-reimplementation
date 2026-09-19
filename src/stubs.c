@@ -24,10 +24,6 @@ extern HWND g_hWnd;
  * changing callers. Original addresses noted in stubs.h.
  * ===================================================================== */
 
-/* Main-menu row targets (menu.c dispatch table). TODO stubs: log once and
- * return to the menu. Replace the bodies later without changing the
- * interfaces or the dispatch table. */
-
 /* stateNetworkMenu @0x420190 — network/lobby menu. Original: host/join lobby
  * states; ESC tail -> menuUpdate. TODO stub: log + return to menu. */
 int stateNetworkMenu(int nType, int nKey, int nKeyType)
@@ -53,54 +49,6 @@ void netExit(void) /* @0x426b30 */
     g_nNetIsClient = 0;                            /* @0x45e59c @0x426b4d */
 }
 
-/* unloadGameWorld @0x41a670 — world/round teardown, called by stateLevelInit0
- * (each frame while it is the state func) and by the original roundTeardown.
- * VERIFIED 2026-08-31 vs disassembly @0x41a670..0x41a72a: when g_nMenuInit
- * @0x45a658 is nonzero it logs "menu exit" @0x4507b8, clears the deferred
- * resume slot g_pResumeStateFunc @0x45a710, resets g_nMenuInit = 0 (the next
- * gameFrameUpdate re-runs menuInit @0x419c20 and lands back on menuUpdate),
- * then frees the two char-select anim blocks (g_pCharAnimPrev @0x45a6dc /
- * g_pCharAnim @0x45a6d8 via anmFree @0x434050 when nonzero), the two anim
- * data blocks (g_pCharSelAnimData @0x45a6d0 / g_pThrowAnimData @0x45a6d4,
- * memPoolFree 0, unconditional), does the gxFlip/gxClearScreen(1,
- * g_nClearColor @0x45892c) x2 cycle, then tears the systems down:
- * scenNameTableFree @0x431e00, sceneSystemClose @0x42f180, sndShutdown
- * @0x437cb0, fontPoolDestroy @0x408fc0, memPoolSystemShutdown @0x419bb0,
- * winmmRestoreTimerRes @0x40e030 and the tail-jmp mciStopCdaudio
- * @0x416c80. roundStartInit re-inits every one of these pools/systems
- * behind its gxInit/memPoolSystemInit/sceneSystemInit cycle. */
-void unloadGameWorld(void) /* @0x41a670 */
-{
-    if (g_nMenuInit == 0) {
-        return;                                    /* @0x41a677 */
-    }
-    g_pResumeStateFunc = NULL;                     /* @0x45a710 @0x41a684 */
-    g_nMenuInit = 0;                               /* @0x45a658 @0x41a68e */
-    nopDebugStub();                                /* "menu exit" @0x4507b8 @0x41a698 */
-    if (g_pCharAnimPrev != NULL) {                 /* @0x45a6dc @0x41a6a5 */
-        anmFree(g_pCharAnimPrev);                  /* @0x434050 @0x41a6aa */
-    }
-    if (g_pCharAnim != NULL) {                     /* @0x45a6d8 @0x41a6b2 */
-        anmFree(g_pCharAnim);                      /* @0x41a6bc */
-    }
-    memPoolFree(0, g_pCharSelAnimData);            /* @0x45a6d0 @0x41a6cc */
-    memPoolFree(0, g_pThrowAnimData);              /* @0x45a6d4 @0x41a6da */
-    gxFlip();                                      /* @0x433340 @0x41a6df */
-    gxClearScreen(1, g_nClearColor);               /* @0x433350 @0x41a6ed */
-    gxFlip();                                      /* @0x41a6f2 */
-    gxClearScreen(1, g_nClearColor);               /* @0x41a6ff */
-    scenNameTableFree();                           /* @0x431e00 @0x41a707 */
-    sceneSystemClose();                            /* @0x42f180 @0x41a70c */
-    sndShutdown();                                 /* @0x437cb0 @0x41a711 */
-    fontPoolDestroy();                             /* @0x408fc0 @0x41a716 */
-    memPoolSystemShutdown();                       /* @0x419bb0 @0x41a71b */
-    winmmRestoreTimerRes();                        /* @0x40e030 @0x41a720 */
-    mciStopCdaudio();                              /* tail-jmp @0x416c80 @0x41a725 */
-}
-
-/* roundTeardown @0x40aa10 — implemented in gameplay.c (full teardown
- * sequence); the declaration lives in gameplay.h. */
-
 /* consoleHandleKey @0x4086e0 — console line editor. Out of scope: the
  * offline rebuild never opens the console overlay (g_nScrollText stays 0),
  * so gameKeyHandler can never reach this. Safe no-op preserving the
@@ -110,43 +58,12 @@ void consoleHandleKey(int nKey) /* @0x4086e0 */
     (void)nKey;
 }
 
-
-/* movieFrameUpdate @0x40af80 — records or replays per-player input against
- * the original config-node database. The offline game has neither movie data
- * nor config-node ownership yet, so this safe TODO preserves idle playback. */
-void movieFrameUpdate(void)
-{
-}
-
 /* netGameUpdate @0x414fa0 — performs client/server state replication only
  * while a network session is active. Networking is out of scope for the
  * offline rebuild, so the no-op preserves the original frame-stage boundary
  * without creating a network session or mutating local player state. */
 void netGameUpdate(void)
 {
-}
-
-/* zoneConnUpdateCulling @0x42b8f0 — updates visibility across AR/IN zone
- * connections. Level objects and zone connections are not loaded yet, so the
- * empty list is a safe rendering-stage boundary. */
-void zoneConnUpdateCulling(void)
-{
-}
-
-/* sceneDetailGridUpdate @0x42b1d0 — rebuilds the visible-cell list for the
- * current scene detail grid. The level loader will provide this owner later;
- * until then a NULL grid deliberately has no visible cells. */
-void sceneDetailGridUpdate(void *pDetailGrid)
-{
-    (void)pDetailGrid;
-}
-
-/* sndStopAllVoices @0x438100 — culls positional voices no longer in a
- * rendered zone. Positional voice ownership is deferred, so there is nothing
- * to stop in the offline gameplay slice. */
-void sndStopAllVoices(void *pVoiceList)
-{
-    (void)pVoiceList;
 }
 
 /* commandDispatch — original command/config query contract. Returning NULL

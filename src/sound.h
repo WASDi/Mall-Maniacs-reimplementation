@@ -56,6 +56,15 @@ extern int g_nMixRateDivisor;
 int sndInitSystem(unsigned int nMixStereoConfig, unsigned short nVoiceCap,
                   int nFrameRegions);
 
+/* sndStopAllVoices @0x438100 — stop every live voice in the voice set: for
+ * each of the 0x100 slots with a nonzero pitch (nPitch +0x10) whose 3D
+ * position pointer (+0x24) is not the shared centered/rate-divisor marker,
+ * clear the position pointer and, when the voice has an owner music-emitter
+ * record (+0x20), clear that record's active flag (+0x24). The original takes
+ * the voice-set address (0x45f0e0); the rebuild uses its own static voice set,
+ * so the argument is accepted and ignored. Returns 1. */
+int sndStopAllVoices(void *pVoiceList);                           /* @0x438100 */
+
 /* sndShutdown @0x437cb0 — release samples, the DirectSound objects, and the
  * software mix buffers. */
 int sndShutdown(void);

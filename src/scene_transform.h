@@ -29,6 +29,7 @@ void sceneNodeFree(SceneNode *pNode, int nFreeChildren); /* @0x430460 */
 void mat3x3Mul(float *a, float *b, float *out); /* @0x42f7d0 */
 void chanBuildRotMatrix(SceneChannel *ch); /* @0x42f030 */
 void chanCalcWorldTransform(SceneNode *pNode, int nChannel); /* @0x42f6e0 */
+void sceneMatBuildOrient(float *pMat, float *pOut); /* @0x431730 */
 int sceneNodeSetHiddenFlag(SceneNode *pNode, int nMode); /* @0x4305c0 */
 int sceneNodeGetHiddenFlag(SceneNode *pNode); /* @0x4305b0 */
 int sceneObjResetFlags(SceneNode *pNode, int nRecursive); /* @0x430620 */

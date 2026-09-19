@@ -405,14 +405,13 @@ int sceneNodeSetPosShorts(SceneNode *pNode, short *pAngles, byte nMode) /* @0x43
 
 /* sceneNodeGetChannelPos @0x4315e0 — channel orientation query.
  * (nMode & 0xf) == 2: copy the channel's raw rot[0..2] shorts.
- * (nMode & 0xf) == 4: world-space orientation via the ancestor-chain
- *   dirty-flag clear + chanCalcWorldTransform @0x42f6e0 and a
- *   sceneMatBuildOrient @0x432c50 decomposition into yaw/pitch/roll shorts
- *   (mathAtan2Deg triple). sceneMatBuildOrient/mathAtan2Deg are not rebuilt
- *   yet, so mode 4 currently falls back to the raw channel shorts — exact
- *   for unrotated hierarchies, which is the only current caller
- *   (levelObjectsCartsCameraInit @0x411b70 on the freshly placed
- *   g_pCamPosNode). TODO: sceneMatBuildOrient + mathAtan2Deg.
+ * (nMode & 0xf) == 4: world-space orientation. Clears the ancestor chain's
+ *   world-transform dirty flags (bFlagB), recomputes the channel's world
+ *   matrix (chanCalcWorldTransform @0x42f6e0) and decomposes it with
+ *   sceneMatBuildOrient @0x431730 into yaw/pitch/roll shorts via three
+ *   mathAtan2Deg @0x42d010 calls. The matrix read is the FINAL channel index
+ *   reached by the ancestor walk (the original's ESI), which equals nChannel
+ *   only when the walk stops immediately.
  * Mode byte bit 0x20 scales the output shorts by 0xb6. Returns 1 on
  * success, 0 when the channel index is out of range or the mode is
  * unsupported. */
@@ -429,14 +428,37 @@ int sceneNodeGetChannelPos(SceneNode *pNode, int nChannel, short *pOutAngles,
         pOutAngles[2] = ch->rot[2];
         pOutAngles2 = pOutAngles;                     /* unify the out ptrs */
     } else if ((nMode & 0xf) == 4) {                  /* 0x43163c */
-        /* TODO(0x43163c..0x4316d0): ancestor bFlagB clear walk +
-         * chanCalcWorldTransform + sceneMatBuildOrient/@0x432c50 +
-         * mathAtan2Deg decomposition. Raw channel shorts stand in until
-         * those helpers are rebuilt. */
-        SceneChannel *ch = &pNode->pChannels[nChannel];
-        pOutAngles2[0] = ch->rot[0];
-        pOutAngles2[1] = ch->rot[1];
-        pOutAngles2[2] = ch->rot[2];
+        int nIdx = nChannel;
+        SceneNode *pCur = pNode;
+
+        /* Ancestor dirty-flag clear @0x431652..0x431682: walk the
+         * parent/channel-index chain until the root node is reached (the
+         * root's bFlagB stays set so chanCalcWorldTransform terminates). */
+        if (pCur != &g_rootNode) {
+            do {
+                pCur->pChannels[nIdx].bFlagB = 0;               /* 0x431663 */
+                if (nIdx == 0) {
+                    int nNext = pCur->pChannels[0].nIdx;        /* 0x431670 */
+                    pCur = pCur->pParent;                       /* 0x43166d */
+                    nIdx = nNext;
+                } else {
+                    nIdx = pCur->pChannels[nIdx].nIdx;          /* 0x431678 */
+                }
+            } while (pCur != &g_rootNode);                      /* 0x431682 */
+        }
+        chanCalcWorldTransform(pNode, nChannel);                /* @0x42f6e0 */
+        {
+            float afMat[9];
+            float afOrient[6];
+            SceneChannel *ch = &pNode->pChannels[nIdx];         /* ESI index @0x4316a0 */
+            /* wmat is inside a packed struct: copy to an aligned temporary
+             * (no &packed-member, matching the chanCalcWorldTransform idiom). */
+            memcpy(afMat, (char *)ch + offsetof(SceneChannel, wmat), sizeof(afMat));
+            sceneMatBuildOrient(afMat, afOrient);               /* @0x431730 @0x4316a5 */
+            pOutAngles2[0] = (short)mathAtan2Deg(afOrient[0], afOrient[3]); /* @0x4316b4 */
+            pOutAngles2[1] = (short)mathAtan2Deg(afOrient[1], afOrient[4]); /* @0x4316ca */
+            pOutAngles2[2] = (short)mathAtan2Deg(afOrient[2], afOrient[5]); /* @0x4316dd */
+        }
     } else {
         return 0;
     }
@@ -471,10 +493,11 @@ int sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float
         float d3 = (float)sqrt(dy * dy + dHoriz * dHoriz);
         /* Original @0x4310a7..0x4310e6: FPATAN on (dx/d, dz/d) resp.
          * (-dy/d3, d/d3) followed by FMUL @0x44b780 (65536/(2*pi)) + ftol —
-         * the same binary-degree conversion as mathAtan2Deg. rot[2] forced
-         * to 0 (0x431081), bFlagA/bFlagB cleared (0x4310f7/0x431104). */
-        ch->rot[1] = (short)mathAtan2Deg(dx, dz);
-        ch->rot[0] = (short)mathAtan2Deg(-dy, d3);
+         * the same binary-degree conversion mathAtan2Deg @0x42d010 inlines
+         * (the original calls no helper here). rot[2] forced to 0 (0x431081),
+         * bFlagA/bFlagB cleared (0x4310f7/0x431104). */
+        ch->rot[1] = (short)(int)(atan2((double)dx, (double)dz) * g_dblRadToBdg);
+        ch->rot[0] = (short)(int)(atan2((double)-dy, (double)d3) * g_dblRadToBdg);
         ch->rot[2] = 0;
         ch->bFlagA = 0;
         ch->bFlagB = 0;
@@ -798,6 +821,33 @@ void chanCalcWorldTransform(SceneNode *pNode, int nChannel) /* @0x42f6e0 */
     ch->bFlagB = 1;
 }
 
+/* sceneMatBuildOrient @0x431730 — decompose a column-major world matrix into
+ * the six orientation components sceneNodeGetChannelPos feeds to
+ * mathAtan2Deg. Reads rows 1/2 of columns 0/1/2 (m[1]m[2], m[4]m[5],
+ * m[7]m[8]); the normalisation is 1.0 / sqrt(m[2]^2 + m[8]^2) (double 1.0
+ * @0x44b288). pOut receives { -m5, sb, -(sa*m1 - sb*m7), t, sa,
+ * m4*t + (sb*m1 + sa*m7)*-m5 }. */
+void sceneMatBuildOrient(float *pMat, float *pOut) /* @0x431730 */
+{
+    float m8 = pMat[8];                             /* [EAX+0x20] @0x431737 */
+    float m2 = pMat[2];                             /* [EAX+0x08] @0x43173a */
+    float scale = 1.0f / sqrtf(m2 * m2 + m8 * m8);  /* @0x431759 */
+    float sb = scale * m2;                          /* @0x431761 */
+    float sa = scale * m8;                          /* @0x43176d */
+    float m5 = pMat[5];                             /* [EAX+0x14] @0x431771 */
+    float t = sb * m2 + sa * m8;                    /* @0x43177c..0x431784 */
+    float m1 = pMat[1];                             /* [EAX+0x04] @0x431786 */
+    float m7 = pMat[7];                             /* [EAX+0x1c] @0x431789 */
+    float m4 = pMat[4];                             /* [EAX+0x10] @0x43179a */
+
+    pOut[0] = -m5;                                  /* @0x4317ae */
+    pOut[1] = sb;                                   /* @0x4317a5 */
+    pOut[2] = -(sa * m1 - sb * m7);                 /* @0x4317c3 */
+    pOut[3] = t;                                    /* @0x4317d0 */
+    pOut[4] = sa;                                   /* @0x4317d3 */
+    pOut[5] = m4 * t + (sb * m1 + sa * m7) * -m5;   /* @0x4317be */
+}
+
 
 /* sceneNodeSetHiddenFlag @0x4305c0 — node+0x02 is the bType byte the render
  * gate reads. nMode 1 = set bType 1 (transform+recurse, no draw); 2 = set
@@ -884,11 +934,81 @@ void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount) /*
     for (col = nCount; col < pGrid->nCols; col++) {       /* pad with last handle @0x42b04d */
         pGrid->pCells[col * pGrid->nRows + pGrid->nColsFilled] = pHandles[nCount - 1];
     }
-    sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->pCells[pGrid->nColsFilled], /* @0x42b07d */
-                         (float *)((char *)pGrid->pRowBuf + pGrid->nColsFilled * 0x14), 4);
-    *(int *)((char *)pGrid->pRowBuf + pGrid->nColsFilled * 0x14 + 0xc) = 0;  /* @0x42b096 */
-    *(int *)((char *)pGrid->pRowBuf + pGrid->nColsFilled * 0x14 + 0x10) = 1; /* @0x42b09f */
+    {
+        SceneDetailCell *pCell = &((SceneDetailCell *)pGrid->pRowBuf)[pGrid->nColsFilled];
+
+        sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->pCells[pGrid->nColsFilled], /* @0x42b07d */
+                             (float *)pCell, 4);
+        pCell->nLevel = 0;                                /* @0x42b096 */
+        pCell->bPosValid = 1;                             /* @0x42b09f */
+    }
     pGrid->nColsFilled++;                                 /* +0x08 @0x42b0a8 */
+}
+
+/* sceneDetailGridUpdate @0x42b1d0 — per-frame LOD/culling update over the
+ * grid's filled rows. Bails when the grid is marked failed (+0x00) or has
+ * no root viewer node (+0x04); reads the viewer's truncated world position
+ * (sceneNodeGetPosWorld mode 4). For each filled row cell (stride 0x14,
+ * skipped when its level is -1): refresh the mesh's cached position when
+ * bPosValid (+0x10) is set, compute the int-truncated squared distance from
+ * the viewer, and re-select the detail level when the current band no longer
+ * matches (level 0 only when dist >= threshold[0]; otherwise when
+ * threshold[level] <= dist or dist <= threshold[level-1]). The new level is
+ * the first whose threshold exceeds dist (clamped to the last level): the
+ * old level's mesh is hidden (sceneNodeSetHiddenFlag 1) and the new level's
+ * mesh is reset visible (sceneObjResetFlags 2). */
+void sceneDetailGridUpdate(SceneDetailGrid *pGrid) /* @0x42b1d0 */
+{
+    int anViewer[3];
+    int i;
+
+    if (pGrid->nRootNode == 0 || pGrid->nFailed != 0) {   /* @0x42b1d7 */
+        return;
+    }
+    sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->nRootNode, /* @0x42b1f3 */
+                         (float *)anViewer, 4);
+    for (i = 0; i < pGrid->nColsFilled; i++) {            /* @0x42b200 */
+        SceneDetailCell *pCell = &((SceneDetailCell *)pGrid->pRowBuf)[i];
+        float flDist;
+        int nLevel;
+        int nNew;
+
+        if (pCell->nLevel == -1) {                        /* @0x42b213 */
+            continue;
+        }
+        if (pCell->bPosValid != 0) {                      /* @0x42b21d */
+            sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->pCells[i],
+                                 (float *)pCell, 4);      /* @0x42b22e */
+        }
+        nLevel = pCell->nLevel;                           /* @0x42b25c */
+        flDist = (float)(anViewer[0] - pCell->nX) * (float)(anViewer[0] - pCell->nX) +
+                 (float)(anViewer[1] - pCell->nY) * (float)(anViewer[1] - pCell->nY) +
+                 (float)(anViewer[2] - pCell->nZ) * (float)(anViewer[2] - pCell->nZ);
+        if (nLevel == 0) {                                /* @0x42b287 */
+            if (pGrid->pColScales[0] > flDist) {          /* @0x42b2ba */
+                continue;
+            }
+        } else if (pGrid->pColScales[nLevel] > flDist &&  /* @0x42b298 */
+                   flDist > pGrid->pColScales[nLevel - 1]) {  /* @0x42b2a9 */
+            continue;
+        }
+        if (pGrid->nCols <= 0) {                          /* @0x42b2c6 */
+            continue;
+        }
+        nNew = 0;
+        do {                                              /* @0x42b2cf */
+            if (pGrid->pColScales[nNew] > flDist ||
+                nNew == pGrid->nCols - 1) {
+                break;
+            }
+            nNew++;
+        } while (nNew < pGrid->nCols);
+        sceneNodeSetHiddenFlag((SceneNode *)(size_t)
+            pGrid->pCells[pGrid->nRows * nLevel + i], 1); /* @0x42b308 */
+        sceneObjResetFlags((SceneNode *)(size_t)
+            pGrid->pCells[pGrid->nRows * nNew + i], 2);   /* @0x42b31e */
+        pCell->nLevel = nNew;                             /* @0x42b326 */
+    }
 }
 
 /* sceneDetailGridFree @0x42b190 — release the grid's three pool buffers

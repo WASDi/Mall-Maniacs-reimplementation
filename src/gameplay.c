@@ -3,6 +3,7 @@
 
 #include "gameplay.h"
 #include "anim.h"
+#include "charselect.h"
 #include "config.h"
 #include "font.h"
 #include "gx.h"
@@ -767,6 +768,51 @@ void roundTeardown(void) /* @0x40aa10 */
     g_pNavPointSel = NULL;                           /* @0x45e480 @0x40ad4a */
     g_pEditorHover = NULL;                           /* @0x45e498 @0x40ad50 */
     g_pEditorDrag = NULL;                            /* @0x45e49c @0x40ad56 */
+}
+
+/* unloadGameWorld @0x41a670 — world/round teardown, called by stateLevelInit0
+ * (each frame while it is the state func) and by the original roundTeardown.
+ * VERIFIED 2026-08-31 vs disassembly @0x41a670..0x41a72a: when g_nMenuInit
+ * @0x45a658 is nonzero it logs "menu exit" @0x4507b8, clears the deferred
+ * resume slot g_pResumeStateFunc @0x45a710, resets g_nMenuInit = 0 (the next
+ * gameFrameUpdate re-runs menuInit @0x419c20 and lands back on menuUpdate),
+ * then frees the two char-select anim blocks (g_pCharAnimPrev @0x45a6dc /
+ * g_pCharAnim @0x45a6d8 via anmFree @0x434050 when nonzero), the two anim
+ * data blocks (g_pCharSelAnimData @0x45a6d0 / g_pThrowAnimData @0x45a6d4,
+ * memPoolFree 0, unconditional), does the gxFlip/gxClearScreen(1,
+ * g_nClearColor @0x45892c) x2 cycle, then tears the systems down:
+ * scenNameTableFree @0x431e00, sceneSystemClose @0x42f180, sndShutdown
+ * @0x437cb0, fontPoolDestroy @0x408fc0, memPoolSystemShutdown @0x419bb0,
+ * winmmRestoreTimerRes @0x40e030 and the tail-jmp mciStopCdaudio
+ * @0x416c80. roundStartInit re-inits every one of these pools/systems
+ * behind its gxInit/memPoolSystemInit/sceneSystemInit cycle. */
+void unloadGameWorld(void) /* @0x41a670 */
+{
+    if (g_nMenuInit == 0) {
+        return;                                    /* @0x41a677 */
+    }
+    g_pResumeStateFunc = NULL;                     /* @0x45a710 @0x41a684 */
+    g_nMenuInit = 0;                               /* @0x45a658 @0x41a68e */
+    nopDebugStub();                                /* "menu exit" @0x4507b8 @0x41a698 */
+    if (g_pCharAnimPrev != NULL) {                 /* @0x45a6dc @0x41a6a5 */
+        anmFree(g_pCharAnimPrev);                  /* @0x434050 @0x41a6aa */
+    }
+    if (g_pCharAnim != NULL) {                     /* @0x45a6d8 @0x41a6b2 */
+        anmFree(g_pCharAnim);                      /* @0x41a6bc */
+    }
+    memPoolFree(0, g_pCharSelAnimData);            /* @0x45a6d0 @0x41a6cc */
+    memPoolFree(0, g_pThrowAnimData);              /* @0x45a6d4 @0x41a6da */
+    gxFlip();                                      /* @0x433340 @0x41a6df */
+    gxClearScreen(1, g_nClearColor);               /* @0x433350 @0x41a6ed */
+    gxFlip();                                      /* @0x41a6f2 */
+    gxClearScreen(1, g_nClearColor);               /* @0x41a6ff */
+    scenNameTableFree();                           /* @0x431e00 @0x41a707 */
+    sceneSystemClose();                            /* @0x42f180 @0x41a70c */
+    sndShutdown();                                 /* @0x437cb0 @0x41a711 */
+    fontPoolDestroy();                             /* @0x408fc0 @0x41a716 */
+    memPoolSystemShutdown();                       /* @0x419bb0 @0x41a71b */
+    winmmRestoreTimerRes();                        /* @0x40e030 @0x41a720 */
+    mciStopCdaudio();                              /* tail-jmp @0x416c80 @0x41a725 */
 }
 
 /* killCmd @0x407870 — console "kill" (command table @0x44b384, name

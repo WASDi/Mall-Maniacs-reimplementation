@@ -175,7 +175,8 @@ void objMovePolar(WorldNode *pNode, float flLen, float flAng) /* @0x404f10 */
     GxVec2 vSum;
 
     pNode->vPosB = pNode->vPos; /* +0x28 @0x404f24 */
-    gxVec2Set(&vPolar, flLen, flAng);
+    vPolar.x = flLen;                               /* the original takes the address */
+    vPolar.y = flAng;                               /* of the two float args @0x404f2a */
     gxVec2FromPolar(&vCart, &vPolar);                 /* @0x404f2b */
     gxVec2Add(&vSum, &pNode->vPos, &vCart);           /* @0x404f3b */
     pNode->vPos = vSum;                               /* @0x404f45 */

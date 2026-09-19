@@ -6,6 +6,8 @@
 #include "menu.h"
 #include "options.h"
 #include "gameplay.h"
+#include "stubs.h"
+#include "time.h"
 void gameInit(void); /* @0x409d90 — defined in game.c */
 
 /* =====================================================================
@@ -24,14 +26,17 @@ HWND      g_hWnd;          /* maniac g_hMainWindow @0x459ce0 */
 HINSTANCE g_hAppInstance;        /* maniac g_hAppInstance @0x459cdc */
 static int       g_bRunning = 1;  /* rebuild loop state; no original global */
 
-/* WindowProc @0x4161b0 — narrowed to close/escape for the slice. The
- * original routes inactive-menu keydowns through DirectInput polling and
- * dispatches WM_CHAR immediately. The rebuild records the mapped key state
- * here and lets pollKeyboard @0x416a10 (called from gameFrameUpdate after
- * the message batch) apply the original debounce and dispatch the events;
- * this preserves the original ordering where DirectInput polling follows the
- * message batch, preventing the translated character for Enter from being
- * consumed by the newly selected quit-confirm state. */
+/* WindowProc @0x4161b0 — close/escape, focus suspend/resume and key
+ * recording. The original routes inactive-menu keydowns through DirectInput
+ * polling and dispatches WM_CHAR immediately. The rebuild records the mapped
+ * key state here and lets pollKeyboard @0x416a10 (called from gameFrameUpdate
+ * after the message batch) apply the original debounce and dispatch the
+ * events; this preserves the original ordering where DirectInput polling
+ * follows the message batch, preventing the translated character for Enter
+ * from being consumed by the newly selected quit-confirm state.
+ * WM_ACTIVATE @0x4161f6 / WM_ACTIVATEAPP @0x416287 mirror the original focus
+ * handling: set g_nFrameDue (freezes the game clock), snooze the renderer on
+ * deactivation and re-init the GX mode on reactivation. */
 static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg) {
@@ -96,6 +101,39 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
         g_hWnd = NULL;
         PostQuitMessage(0);
         return 0;
+    case WM_ACTIVATE:                     /* 0x6 @0x4161f6 */
+        /* WA_INACTIVE (low word 0) freezes the clock and snoozes the
+         * renderer once; any active state advances the clock and re-inits
+         * GX if it had been snoozed. */
+        g_nFrameDue = (int)(wParam & 0xffff);
+        if ((wParam & 0xffff) == 0) {
+            if (g_nGameFrameActive == 0) {
+                gxSnooze();                            /* @0x433330 @0x416273 */
+                g_nGameFrameActive = 1;                /* @0x45834c @0x416278 */
+            }
+        }
+        else {
+            /* Original @0x416206 saves the clock cache, calls getGameTime
+             * (advancing g_nClock), reads g_nGameFrameActive and restores
+             * the cache before the GX re-init. */
+            int nSavedClockCache = g_nClockCache;
+            getGameTime();                             /* @0x40dfe0 @0x41620c */
+            if (g_nGameFrameActive != 0) {             /* @0x45834c @0x416211 */
+                GxMode mode;
+                mode.width = 0x280;                    /* @0x416233 */
+                mode.height = 0x1e0;                   /* @0x41623b */
+                mode.bpp = 0x10;                       /* @0x416242 */
+                mode.hInstance = (unsigned int)(size_t)g_hAppInstance; /* @0x416247 */
+                mode.hwnd = (unsigned int)(size_t)g_hWnd;              /* @0x41624b */
+                gxInit(&mode);                         /* @0x4332f0 @0x41624f */
+                g_nGameFrameActive = 0;                /* @0x416257 */
+            }
+            g_nClockCache = nSavedClockCache;          /* @0x416216 */
+        }
+        break;
+    case WM_ACTIVATEAPP:                  /* 0x1c @0x416287 */
+        g_nFrameDue = (int)wParam;        /* @0x459cd4 */
+        break;
     }
     return DefWindowProcA(hWnd, uMsg, wParam, lParam);
 }
@@ -197,13 +235,23 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     appLog("[winmain] exiting cleanly");
 
+    /* Original teardown (0x4162aa..0x4162d5): if a round is still live,
+     * end it before shutting the renderer down; otherwise unload the
+     * menu/game world first. Both paths then call shutdownRenderer
+     * @0x40a490 (save + moveState free + gxUnloadDriver). */
+    if (g_bGameActive != 0) {
+        roundTeardown();
+        shutdownRenderer();
+    } else {
+        unloadGameWorld();
+        shutdownRenderer();
+    }
+
     if (g_hWnd != NULL) {
         HWND hWnd = g_hWnd;
         g_hWnd = NULL;
         DestroyWindow(hWnd);
     }
-    /* Original cleanup path calls roundTeardown/shutdownRenderer/unloadGameWorld;
-     * gxUnloadDriver is NOT called directly by WinMain in the original. */
     appLog("[winmain] === done ===\n");
     return 0;
 }

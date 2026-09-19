@@ -82,7 +82,36 @@ ConfigNode *configNextNode(ConfigEnv *pEnv, ConfigNode *pNode);                /
 void        configEnvFreeChildren(ConfigEnv *pEnv);                            /* @0x4368a0 */
 unsigned char *configGetValue(const char *pKey);                               /* @0x408c60 */
 void        configMasterLoad(void);                                            /* @0x410350 */
+void        configStringDtor(ConfigEnv *pEnv);                                 /* @0x407140 */
+void        configMasterEnvCtor(void);                                         /* @0x409b90 */
+void        configMasterEnvAtexit(void);                                       /* @0x409ba0 */
 void        configMasterEnvInit(void);                                         /* @0x409b80 */
+
+/* movieFrameUpdate @0x40af80 — demo (movie) record/playback (implemented in
+ * config.c). */
+void        movieFrameUpdate(void);                                            /* @0x40af80 */
+
+/* --- demo/movie database (config-based recorder/player) --- */
+ConfigNode *configEnvFindValue(ConfigEnv *pEnv, const char *pKey);             /* @0x4365a0 */
+MString    *configNodeGetKey(MString *pOut, ConfigNode *pNode);                /* @0x436900 */
+ConfigValueNode *configEnvAddValue(ConfigNode *pParent, const char *pKey,
+                                   double dValue);                             /* @0x436eb0 */
+ConfigBlockNode *configBlockNodeNew(ConfigEnv *pEnv, ConfigNode *pTail,
+                                    const char *pPsz);                         /* @0x436d50 */
+
+/* MovieDb is the config environment + movie-name string + current frame-node
+ * cursor the demo recorder/player uses (original 0x455e68..0x455e87). */
+typedef struct MovieDb {
+    ConfigEnv   env;          /* +0x00 g_pMovieDb @0x455e68 */
+    MString     mstrMovie;    /* +0x14 g_movieName @0x455e7c */
+    ConfigNode *pFrameNode;   /* +0x1c g_pMovieFrameNode @0x455e84 */
+} MovieDb;                    /* 0x20 */
+
+extern MovieDb g_movieDb;      /* @0x455e68 */
+extern int     g_nMovieFrame;  /* @0x455e88 */
+#define g_pMovieDb       (g_movieDb.env)
+#define g_movieName      (g_movieDb.mstrMovie)
+#define g_pMovieFrameNode (g_movieDb.pFrameNode)
 
 /* --- master config values (configMasterLoad) --- */
 extern ConfigEnv g_configEnvMaster;    /* @0x455e48 */

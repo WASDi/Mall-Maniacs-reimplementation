@@ -8,6 +8,13 @@
 // CRT range 0x0043c850-0x0044966c, whose name does not begin with crt/unwind,
 // does not contain cmd, and does not begin with one of the excluded prefixes
 // (net, mnet, stateNet, stateNetwork, console, command, startServer, stateHost).
+// Additionally, functions whose every direct caller is an excluded function
+// are dropped: a tracked function is listed only when it has at least one
+// tracked caller or no caller at all (possible entry/indirect callback).
+// Reimplemented (annotated) and stubbed functions are never dropped. Not
+// transitive — pruning does not cascade. E.g. playerGrabCart is dropped
+// because its only caller has a "net" prefix, while cameraFollowUpdate and
+// WinMain stay (tracked caller / reimplemented respectively).
 //
 // For each tracked function (sorted alphabetically) the report gives:
 //   - function name
@@ -129,16 +136,15 @@ public class TrackRebuildDetailed extends GhidraScript {
     public void run() throws Exception {
         List<String> sources = discoverSources();
         Set<Long> annotated = findAnnotatedAddresses(sources);
+        Set<String> stubNames = findStubNames();
 
-        Map<Long, Function> tracked = classifyFunctions();
+        Map<Long, Function> tracked = classifyFunctions(annotated, stubNames);
         Set<Long> reimplemented = new TreeSet<Long>();
         for (Long address : annotated) {
             if (tracked.containsKey(address)) {
                 reimplemented.add(address);
             }
         }
-
-        Set<String> stubNames = findStubNames();
 
         Map<String, Set<String>> srcCalls = scanSourceCallGraph(sources);
 
@@ -165,12 +171,69 @@ public class TrackRebuildDetailed extends GhidraScript {
     }
 
     /** Same in-scope classification as TrackRebuildProgress.classifyFunctions:
-     *  address -> function, sorted by address. */
-    private Map<Long, Function> classifyFunctions() {
-        Map<Long, Function> result = new TreeMap<Long, Function>();
+     *  address -> function, sorted by address. On top of the name/range
+     *  filter, functions exclusively called by excluded functions are pruned
+     *  directly (see pruneExclusiveCallees). Reimplemented functions
+     *  (annotated addresses) and stub functions are never pruned. */
+    private Map<Long, Function> classifyFunctions(Set<Long> annotated, Set<String> stubNames) {
+        Map<Long, Function> base = new TreeMap<Long, Function>();
         for (Function function : currentProgram.getFunctionManager().getFunctions(true)) {
             if (exclusionReason(function) == null) {
-                result.put(function.getEntryPoint().getOffset(), function);
+                base.put(function.getEntryPoint().getOffset(), function);
+            }
+        }
+        return pruneExclusiveCallees(base, annotated, stubNames);
+    }
+
+    /** Drop base-tracked functions whose every direct caller is an excluded
+     *  function (external, CRT, out-of-scope prefix, etc.), except functions
+     *  that are reimplemented (in {@code annotated}) or stubbed (in
+     *  {@code stubNames}) — those are always kept and listed. A function with
+     *  at least one tracked caller is also always kept — e.g.
+     *  cameraFollowUpdate stays because it is called by tracked game
+     *  functions, while playerGrabCart is dropped because its only caller has
+     *  a "net" prefix. Callerless functions (possible entries / indirect
+     *  callbacks) are always kept. Deliberately not transitive: pruning a
+     *  function does not cascade to the functions it calls, since those still
+     *  have a tracked caller themselves. */
+    private Map<Long, Function> pruneExclusiveCallees(
+            Map<Long, Function> base, Set<Long> annotated, Set<String> stubNames) {
+        if (base.isEmpty()) {
+            return base;
+        }
+        Set<Long> pruned = new HashSet<Long>();
+        for (Map.Entry<Long, Function> entry : base.entrySet()) {
+            long address = entry.getKey();
+            if (annotated.contains(address) || stubNames.contains(entry.getValue().getName())) {
+                continue;
+            }
+            Set<Function> callers = entry.getValue().getCallingFunctions(monitor);
+            if (callers == null || callers.isEmpty()) {
+                continue;
+            }
+            boolean hasTrackedCaller = false;
+            for (Function caller : callers) {
+                Function resolved = resolveThunk(caller);
+                if (resolved == null) {
+                    hasTrackedCaller = true;
+                    break;
+                }
+                if (base.containsKey(resolved.getEntryPoint().getOffset())) {
+                    hasTrackedCaller = true;
+                    break;
+                }
+            }
+            if (!hasTrackedCaller) {
+                pruned.add(entry.getKey());
+            }
+        }
+        if (pruned.isEmpty()) {
+            return base;
+        }
+        Map<Long, Function> result = new TreeMap<Long, Function>();
+        for (Map.Entry<Long, Function> entry : base.entrySet()) {
+            if (!pruned.contains(entry.getKey())) {
+                result.put(entry.getKey(), entry.getValue());
             }
         }
         return result;
@@ -275,7 +338,8 @@ public class TrackRebuildDetailed extends GhidraScript {
         lines.add("Scope exclusions: external/imported, thunks/import stubs, CRT range "
             + hex(CRT_START) + "-" + hex(CRT_END)
             + ", names beginning crt/unwind, names containing cmd, prefixes "
-            + join(DEFAULT_EXCLUDED_PREFIXES));
+            + join(DEFAULT_EXCLUDED_PREFIXES)
+            + ", plus functions exclusively called by excluded functions");
         lines.add("");
 
         List<Function> funcs = new ArrayList<Function>(tracked.values());

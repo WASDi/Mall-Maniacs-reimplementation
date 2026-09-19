@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "zone.h"
 #include "scene.h"
+#include "scene_transform.h"
 #include "pool.h"
 #include "stubs.h"
 #include "util.h"
@@ -638,6 +639,67 @@ void zoneConnUnlink(ZoneConn *pConn) /* @0x42b890 */
     }
     if (pConn->pNext != NULL) {                          /* @0x42b8c2 */
         pConn->pNext->pPrev = pConn->pPrev;              /* @0x42b8c8 */
+    }
+}
+
+/* zoneConnUpdateCulling @0x42b8f0 — two passes over the zone-connection
+ * list (walking pPrev +0x04, i.e. insertion order). Each pass reads the
+ * detail grid viewer position (sceneNodeGetPosWorld mode 4 on grid->nRootNode
+ * +0x04) and tests it against the node's IN zone (+0x14) with
+ * objContainsPoint3D(flX=Z, flY=X, flZ=Y). Pass 1, when the viewer is
+ * OUTSIDE the zone, hides every collected detail mesh (pMeshIdx +0x10):
+ * the mesh at pCells[nRows * level + cell] is hidden (sceneNodeSetHiddenFlag
+ * 1) and its pRowBuf entry level (+0xc) is set to -1. Pass 2, when the
+ * viewer is INSIDE, restores meshes whose level is -1 to level 0
+ * (sceneObjResetFlags 2 on pCells[cell], since 0*nRows == 0). */
+void zoneConnUpdateCulling(void) /* @0x42b8f0 */
+{
+    ZoneConn *pConn;
+    int i;
+
+    for (pConn = (ZoneConn *)g_pZoneConnHead; pConn != NULL; /* @0x42b908 */
+         pConn = pConn->pPrev) {
+        SceneDetailGrid *pGrid = (SceneDetailGrid *)pConn->pDetailLevels;
+        int anPos[3];
+
+        sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->nRootNode,
+                             (float *)anPos, 4);          /* @0x42b916 */
+        if (objContainsPoint3D(pConn->pInZone, (float)anPos[2], /* @0x42b938 */
+                               (float)anPos[0], (float)anPos[1]) == 0) {
+            for (i = 0; i < pConn->nCount; i++) {          /* @0x42b94a */
+                int nCell = pConn->pMeshIdx[i];
+                SceneDetailCell *pCell =
+                    &((SceneDetailCell *)pGrid->pRowBuf)[nCell];
+
+                if (pCell->nLevel != -1) {                 /* @0x42b95f */
+                    sceneNodeSetHiddenFlag((SceneNode *)(size_t)
+                        pGrid->pCells[pGrid->nRows * pCell->nLevel + nCell], 1); /* @0x42b974 */
+                    pCell->nLevel = -1;                    /* @0x42b97f */
+                }
+            }
+        }
+    }
+    for (pConn = (ZoneConn *)g_pZoneConnHead; pConn != NULL; /* @0x42b996 */
+         pConn = pConn->pPrev) {
+        SceneDetailGrid *pGrid = (SceneDetailGrid *)pConn->pDetailLevels;
+        int anPos[3];
+
+        sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->nRootNode,
+                             (float *)anPos, 4);          /* @0x42b9b2 */
+        if (objContainsPoint3D(pConn->pInZone, (float)anPos[2], /* @0x42b9d4 */
+                               (float)anPos[0], (float)anPos[1]) != 0) {
+            for (i = 0; i < pConn->nCount; i++) {          /* @0x42b9e6 */
+                int nCell = pConn->pMeshIdx[i];
+                SceneDetailCell *pCell =
+                    &((SceneDetailCell *)pGrid->pRowBuf)[nCell];
+
+                if (pCell->nLevel == -1) {                 /* @0x42b9fc */
+                    pCell->nLevel = 0;                     /* @0x42ba00 */
+                    sceneObjResetFlags((SceneNode *)(size_t)
+                        pGrid->pCells[nCell], 2);          /* @0x42ba19 */
+                }
+            }
+        }
     }
 }
 

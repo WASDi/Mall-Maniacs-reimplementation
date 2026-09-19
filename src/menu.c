@@ -893,12 +893,15 @@ void menuInit(int nRestartMode)
             for (int k = 0; k < n; k++) sceneNodeSetHiddenFlag(apTmp[k], 3);
         }
         {
-            MString a, b;
-            mStringCtorEmpty(&a);
-            mStringCtorEmpty(&b);
+            /* Original tail: per-record name copy (mStringAssignCopy only;
+             * it constructs neither side here). */
+            MString a;
+            MString b;
+            a.pPsz = (char *)"";
+            a.nLen = 1;
+            b.pPsz = (char *)"";
+            b.nLen = 1;
             mStringAssignCopy(&a, &b);
-            mStringFree(&a);
-            mStringFree(&b);
         }
     }
 

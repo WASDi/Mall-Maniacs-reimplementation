@@ -70,10 +70,10 @@ typedef struct SndVoiceSet {
  * (sndMixBuildVoiceChains @0x437fe0) reads owner+0x24 and, when it equals 1
  * (musicCbInitEmitter @0x437b40 clears it, musicModulePosCheck @0x437b60
  * sets it), aims the voice's 3D position at owner+0x28. The rebuild keeps
- * just those fields; the position cache is refreshed per frame in
- * sndEmitterUpdateAll (the original refreshes it through the streaming
- * module's per-emitter callback). Field offsets match the original so the
- * chain-build logic stays byte-compatible. */
+ * just those fields; the position cache is primed once at allocation in
+ * sndPlaySfx3D (the original refreshes it through the streaming module's
+ * per-emitter callback, which is not reproduced). Field offsets match the
+ * original so the chain-build logic stays byte-compatible. */
 typedef struct MusicEmitter {
     unsigned char aReserved[0x24]; /* +0x00 scene-node fields not needed */
     int           nActive;         /* +0x24 active flag (chain build: ==1) */
@@ -560,6 +560,29 @@ int sndInitVoices(int pVoiceSet)
     s_voiceSet.nMasterVol = 0x10000;
     g_nMixMasterVol = 0x10000;
     return 1;
+}
+
+/* sndStopAllVoices @0x438100 — see sound.h. The 0x100-slot walk checks the
+ * live-voice flag (nPitch +0x10), skips voices parked on the shared centered
+ * rate-divisor marker, then clears the 3D position pointer (+0x24) and the
+ * owning music-emitter's active flag (+0x24 of the owner at +0x20). The
+ * original takes the voice-set address (0x45f0e0); the rebuild uses its own
+ * static voice set, so the argument is accepted and ignored. */
+int sndStopAllVoices(void *pVoiceList) /* @0x438100 */
+{
+    SndVoiceSlot *v = (SndVoiceSlot *)s_voiceSet.aSlots;
+    int i;
+
+    (void)pVoiceList;
+    for (i = 0; i < 0x100; i++, v++) {                   /* @0x43810f */
+        if (v->nPitch != 0 && v->pPos != &g_nMixRateDivisor) { /* @0x438114 */
+            v->pPos = NULL;                              /* @0x43811f */
+            if (v->nOwner != 0) {                        /* @0x438121 */
+                ((MusicEmitter *)(size_t)v->nOwner)->nActive = 0; /* @0x438125 */
+            }
+        }
+    }
+    return 1;                                            /* @0x43812e */
 }
 
 /* =====================================================================
@@ -1487,27 +1510,17 @@ static void sndEmitterUpdateFree(SndEmitter *pEmitter) /* @0x42bf60 */
 }
 
 /* sndEmitterUpdateAll @0x42bf40 — per-frame pass over the emitter list
- * (head = newest, pPrev walks toward the older end). Also refreshes each
- * emitter's owner-record position cache from its pos node — the role the
- * original's streaming module fills by calling musicModulePosCheck
- * @0x437b60 per emitter per tick (that module is not reproduced; this is
- * the same per-frame emitter set, so the refresh lives here). The original
- * re-caches only when the node moved outside its cached radius; the rebuild
- * always re-caches, which yields the same positions. Frees finished
- * non-persistent emitters. */
+ * (head = newest, pPrev walks toward the older end); frees each finished
+ * non-persistent emitter via sndEmitterUpdateFree. The original refreshes
+ * each emitter's owner-record position cache through the streaming
+ * module's musicModulePosCheck @0x437b60 callback (that module is not
+ * reproduced), so this function itself only walks and frees. */
 void sndEmitterUpdateAll(void) /* @0x42bf40 */
 {
     SndEmitter *pEmitter = g_pSndEmitterHead;
 
     while (pEmitter != NULL) {
         SndEmitter *pPrev = pEmitter->pPrev;
-        if (pEmitter->pMusicEmitter != NULL) {
-            MusicEmitter *pMusic = (MusicEmitter *)pEmitter->pMusicEmitter;
-            if (pEmitter->pPosNode != NULL) {
-                sceneNodeGetPos((SceneNode *)pEmitter->pPosNode, 0,
-                                pMusic->anPos, 4);
-            }
-        }
         sndEmitterUpdateFree(pEmitter);
         pEmitter = pPrev;
     }

@@ -174,7 +174,7 @@ void levelSetup(void) /* @0x4108a0 */
                g_aszLevelDirs[g_nLevelIdx]);
     g_nTexHudFlingbjorn = (int)imageLoadByMode(szPath);
     if (g_nTexHudFlingbjorn == 0) {
-        fatalError("Flingbj\x94rn picture not found!!");     /* @0x44f93c */
+        fatalError("Flingbj\xf6rn picture not found!!");     /* @0x44f93c */
     }
 
     mStringCtorEmpty(&mstrScenePath);

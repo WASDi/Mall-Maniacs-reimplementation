@@ -27,14 +27,9 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
 /* Gameplay entry contracts used by stateLevelInit0..4. Player/world setup is
  * still deferred; commandDispatch routes the original run command to runCmd
  * and level startup scripts' "eload <file>.eo" to eloadCmd (src/obj_event.c). */
-void unloadGameWorld(void);                                  /* @0x41a670 */
 void netExit(void);                                          /* @0x426b30 */
 unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand); /* @0x408b60 */
-void movieFrameUpdate(void);                                 /* @0x40af80 */
 void netGameUpdate(void);                                    /* @0x414fa0 */
-void zoneConnUpdateCulling(void);                            /* @0x42b8f0 */
-void sceneDetailGridUpdate(void *pDetailGrid);               /* @0x42b1d0 */
-void sndStopAllVoices(void *pVoiceList);                     /* @0x438100 */
 
 /* netIsActive @0x426ed0 — g_nNetIsClient | g_nNetIsServer. The offline
  * rebuild keeps both flags 0 (set by the deferred net subsystem). */

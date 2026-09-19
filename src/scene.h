@@ -211,6 +211,20 @@ typedef struct SceneDetailGrid {
     float *pColScales;  /* +0x1c nCols squared-distance detail thresholds */
 } SceneDetailGrid;      /* 0x20 */
 
+/* One pRowBuf entry of SceneDetailGrid (+0x18), stride 0x14, filled by
+ * sceneDetailGridAddRow @0x42b000 and updated by sceneDetailGridUpdate
+ * @0x42b1d0. nX/nY/nZ are the node's world position truncated to int by
+ * sceneNodeGetPosWorld mode 4; nLevel is the currently selected detail
+ * level (-1 = culled, skipped by the update). bPosValid (written 1 by
+ * AddRow) forces a per-frame position refresh. */
+typedef struct SceneDetailCell {
+    int nX;         /* +0x00 world X (int-truncated) */
+    int nY;         /* +0x04 world Y (int-truncated) */
+    int nZ;         /* +0x08 world Z (int-truncated) */
+    int nLevel;     /* +0x0c current detail level, -1 = culled */
+    int bPosValid;  /* +0x10 nonzero = refresh nX/nY/nZ this frame */
+} SceneDetailCell;      /* 0x14 */
+
 /* camera/root block passed to sceneRender (mode==2 @+0, viewport rect @+0x20)
  * Layout verified vs disasm 0x4318e0 / 0x42f1c0: +0 mode (short, ==2),
  * +0x20 vx/vy/vw/vh (short), +0x28 nWidth (float), +0x2c nHeight (float),

@@ -158,6 +158,15 @@ void zoneWallListBuild(void);                                     /* @0x42a650 *
  * node itself is freed by the caller (roundTeardown @0x40aa8f). */
 void zoneConnUnlink(ZoneConn *pConn);                             /* @0x42b890 */
 
+/* zoneConnUpdateCulling @0x42b8f0 — per-frame room-interior culling. Two
+ * passes over g_pZoneConnHead (walking pPrev +0x04): pass 1 hides, pass 2
+ * shows. Each node resolves its IN-zone containment test from the detail
+ * grid's viewer position (sceneNodeGetPosWorld mode 4 on grid+0x04) against
+ * pInZone (+0x14) via objContainsPoint3D; pass 1 hides the collected detail
+ * meshes when the viewer is outside (level -> -1), pass 2 restores them
+ * (level -> 0, sceneObjResetFlags 2) when inside. */
+void zoneConnUpdateCulling(void);                                 /* @0x42b8f0 */
+
 /* zoneWallListFree @0x42a150 — free every AiNavNode on g_pNavNodeList
  * (per node: the pEdgeList +0x3c walk-edge records, then the pConnList
  * +0x38 connection records, then the node; walk order via pNext +0x40)

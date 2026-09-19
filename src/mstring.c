@@ -135,7 +135,7 @@ void *mStringSubstr(MString *pThis, MString *pOut, int nStart, int nEnd) /* @0x4
 {
     MString tmp;
     int i, nLen;
-    mStringCtorWithCapacity(&tmp, mStringLength(pThis));
+    mStringCtorWithCapacity(&tmp, (int)strlen(pThis->pPsz) + 1);
     nLen = 0;
     for (i = nStart; i <= nEnd; i++) {
         tmp.pPsz[nLen] = pThis->pPsz[i];

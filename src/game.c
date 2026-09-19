@@ -5,6 +5,7 @@
 #include "config.h"
 #include "gameplay.h"
 #include "pool.h"
+#include "stubs.h"
 #include "util.h"
 #include "custom_helpers.h"
 #include "time.h"
@@ -60,6 +61,26 @@ int moveStateCtor(int pObj) /* @0x401000 */
     return pObj;
 }
 
+/* moveStateNoopDtor @0x401030 — empty destructor for the movement-state
+ * object. shutdownRenderer calls it before freeing the block itself. */
+void moveStateNoopDtor(void) /* @0x401030 */
+{
+}
+
+/* shutdownRenderer @0x40a490 — config save, movement-state teardown, then
+ * unload the GX driver. Called from WinMain's teardown path (and from
+ * stateOptionsExit @0x41c630). g_szCmdSave @0x44e398 = "save". */
+void shutdownRenderer(void) /* @0x40a490 */
+{
+    commandDispatch(0, "save");            /* @0x408b60 @0x40a49a */
+    if (g_pMoveState != NULL) {
+        moveStateNoopDtor();               /* @0x401030 @0x40a4ac */
+        memFreeDirect(g_pMoveState);       /* @0x43dd37 @0x40a4b4 */
+    }
+    nopDebugStub();                        /* @0x401590 @0x40a4bd */
+    gxUnloadDriver();                      /* @0x433280 @0x40a4c2 */
+}
+
 /* gameInit @0x409d90 — full game initialization.
  * Reimplemented: guarded one-time leaf calls, GxMode build,
  * gxLoadDriver fallback, gxInit, moveState alloc. Deferred:
@@ -73,11 +94,6 @@ void gameInit(void) /* @0x409d90 */
         return;
     }
     g_bGameInitDone |= 1;
-
-    /* Original runs the g_configEnvMaster dynamic initializer
-     * (configMasterEnvInit @0x409b80) before WinMain; the rebuild calls
-     * it at the top of the guarded one-time block. */
-    configMasterEnvInit();
 
     /* One-time leaf block (original does mStringCtorEmpty*2 etc).
      * We keep the gxVec2/moveState part that is safe and in-scope;
@@ -144,14 +160,14 @@ void gameInit(void) /* @0x409d90 */
                 fclose(pOut);
             } else {
                 fclose(pOut);
-                fatalError("Kunde inte l\x84sa \"maniac.cfg\".");   /* @0x44f1f0 */
+                fatalError("Kunde inte l\xe4sa \"maniac.cfg\".");   /* @0x44f1f0 */
             }
         } else {
-            fatalError("Kunde inte l\x84sa \"maniac.cfg\".");
+            fatalError("Kunde inte l\xe4sa \"maniac.cfg\".");
         }
         if (g_bSommarSolFirstRun && configParseFile(&g_configEnvMaster, "sommar.sol") < 0) {
             fileDelete("sommar.sol");
-            fatalError("Kunde inte l\x84sa \"maniac.cfg\".");
+            fatalError("Kunde inte l\xe4sa \"maniac.cfg\".");
         }
         fileDelete("sommar.sol");
         configMasterLoad();
