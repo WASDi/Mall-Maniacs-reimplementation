@@ -130,8 +130,10 @@ void roundStartInit(void) /* @0x40a4d0 */
     /* AR/IN zone-connection objects: for i in 0..98, look up the
      * "AR%02.2d" EventObject by its 4-byte name tag (the formatted text's
      * first dword is the integer id) and pair it with "IN%02.2d". Both
-     * lookup results feed zoneConnCtor @0x42b410 (the IN zone may be
-     * NULL — the original still constructs the node). */
+     * lookup results feed zoneConnCtor @0x42b410: when the IN zone is
+     * missing (some future-level AR zones have no matching IN) the AR zone
+     * stands in for both, so pInZone is never NULL
+     * (0x40a6a3 TEST EDI,EDI / JZ 0x40a6dd pushes EBP=AR twice). */
     {
         char szName[8];
         int i;
@@ -144,10 +146,18 @@ void roundStartInit(void) /* @0x40a4d0 */
             if (pAr == NULL) continue;
             fmtSprintf(szName, "IN%02.2d", i);    /* @0x44f31c @0x40a691 */
             pIn = objFindById(*(int *)szName, 0); /* @0x40a6a2 */
-            nopDebugStub();                       /* @0x40a6ab / @0x40a6b6 */
-            pConn = (ZoneConn *)malloc(0x1c);     /* operator_new @0x43dd42 @0x40a6b2 */
-            if (pConn != NULL) {
-                zoneConnCtor(pConn, pIn, pAr, g_pSceneDetailGrid); /* @0x42b410 @0x40a6c8 */
+            if (pIn == NULL) {
+                nopDebugStub();                   /* " AR%02.2d found." @0x44f2dc @0x40a6e4 */
+                pConn = (ZoneConn *)malloc(0x1c); /* operator_new @0x43dd42 @0x40a6eb */
+                if (pConn != NULL) {
+                    zoneConnCtor(pConn, pAr, pAr, g_pSceneDetailGrid); /* @0x42b410 @0x40a711 */
+                }
+            } else {
+                nopDebugStub();                   /* " AR%02.2d found and linked with..." @0x44f2f0 @0x40a6b0 */
+                pConn = (ZoneConn *)malloc(0x1c); /* operator_new @0x43dd42 @0x40a6b7 */
+                if (pConn != NULL) {
+                    zoneConnCtor(pConn, pIn, pAr, g_pSceneDetailGrid); /* @0x42b410 @0x40a711 */
+                }
             }
         }
     }

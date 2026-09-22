@@ -129,7 +129,7 @@ public class TrackRebuildDetailed extends GhidraScript {
 
     private static final List<String> DEFAULT_EXCLUDED_PREFIXES = Arrays.asList(
         "net", "mnet", "stateNet", "stateNetwork", "console", "command",
-        "startServer", "stateHost"
+        "startServer", "stateHost", "editor"
     );
 
     @Override

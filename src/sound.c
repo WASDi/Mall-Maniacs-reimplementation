@@ -1515,17 +1515,32 @@ static void sndEmitterUpdateFree(SndEmitter *pEmitter) /* @0x42bf60 */
 }
 
 /* sndEmitterUpdateAll @0x42bf40 — per-frame pass over the emitter list
- * (head = newest, pPrev walks toward the older end); frees each finished
- * non-persistent emitter via sndEmitterUpdateFree. The original refreshes
- * each emitter's owner-record position cache through the streaming
- * module's musicModulePosCheck @0x437b60 callback (that module is not
- * reproduced), so this function itself only walks and frees. */
+ * (head = newest, pPrev walks toward the older end); re-arms each 3D voice's
+ * owner record then frees each finished non-persistent emitter via
+ * sndEmitterUpdateFree.
+ *
+ * The re-arm reproduces the streaming module's musicModulePosCheck @0x437b60
+ * callback (that module is not reproduced): it sets the owner's active flag
+ * (+0x24 = 1) the mixer chain build reads, and re-caches the emitter's
+ * position (+0x28) from its pos node. This must run every frame because
+ * gameFrameRender's sndStopAllVoices @0x438100 clears both the voice's
+ * cached pPos and the owner's active flag as a per-frame reset; without the
+ * re-arm the voice falls to the silent advance-only chain after one tick
+ * (persistent background loops such as the level ambience die after <1 s). */
 void sndEmitterUpdateAll(void) /* @0x42bf40 */
 {
     SndEmitter *pEmitter = g_pSndEmitterHead;
 
     while (pEmitter != NULL) {
         SndEmitter *pPrev = pEmitter->pPrev;
+        if (pEmitter->pMusicEmitter != NULL) {
+            MusicEmitter *pMusic = (MusicEmitter *)pEmitter->pMusicEmitter;
+            if (pEmitter->pPosNode != NULL) {
+                sceneNodeGetPos((SceneNode *)pEmitter->pPosNode, 0,
+                                pMusic->anPos, 4);
+            }
+            pMusic->nActive = 1;
+        }
         sndEmitterUpdateFree(pEmitter);
         pEmitter = pPrev;
     }
