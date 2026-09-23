@@ -22,7 +22,7 @@
 #include "obj_event.h"
 
 // For debugging
-#define DISABLE_AI 1
+#define DISABLE_AI 0
 
 /* g_nPlayerAiTick @0x45894c — global AI tick, incremented once per
  * playerUpdateAI pass; drives the %5 checkout-tick decay. */

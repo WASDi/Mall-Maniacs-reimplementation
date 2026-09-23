@@ -230,7 +230,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
          * gameFrameUpdate returns without work most iterations, and
          * without this the pump spins one core at 100%. ~10 ms keeps the
          * menu/gameplay frame pacing smooth (input polled every turn). */
-        Sleep(10);
+        //Sleep(10);
     }
 
     appLog("[winmain] exiting cleanly");
