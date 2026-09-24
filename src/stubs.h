@@ -1,7 +1,7 @@
 #ifndef STUBS_H
 #define STUBS_H
 
-#include <windows.h>
+#include "compat_types.h"
 
 #include "gameplay.h"
 #include "player.h"
@@ -25,9 +25,12 @@
 int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
 
 /* Gameplay entry contracts used by stateLevelInit0..4. Player/world setup is
- * still deferred; commandDispatch routes the original run command to runCmd
- * and level startup scripts' "eload <file>.eo" to eloadCmd (src/obj_event.c). */
-unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand); /* @0x408b60 */
+ * still deferred; commandDispatch routes the original run command to runCmd,
+ * level startup scripts' "eload <file>.eo" to eloadCmd (src/obj_event.c),
+ * and the record-table queries ("get fshi/vahi<lvl>time<slot>",
+ * "get/set toplevel", "request fshi/vahiscore ...") to record.c. Anything
+ * else returns NULL (callers must treat a NULL reply as "no data"). */
+unsigned char *commandDispatch(intptr_t nCommand, LPCSTR pszCommand); /* @0x408b60 */
 
 /* World-object sub-lists freed by objDtor @0x402ab0 (obj_world). The turret
  * object model is deferred; the player round-setup sub-objects never

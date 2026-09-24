@@ -1,10 +1,13 @@
 #include <math.h>
 
-#include "../src/maniac.c"
+#include "../src/menu.h"
+#include "../src/levelselect.h"
+#include "../src/options.h"
+#include "../src/gx.h"
 
 extern int g_nLevelSel;
 extern float g_endSceneT;
-extern void *g_hMenuTexLevel;
+extern int g_hMenuTexLevel;
 
 static int drawCount;
 static int arrowX[2];
@@ -45,18 +48,18 @@ int main(void)
 
     g_nLevelSel = 1;
     g_flFrameDelta = 0.0f;
-    g_hMenuTexGfx = (void *)1;
-    g_hMenuTexLevel = NULL;
-    g_hMenuTexSmal = NULL;
-    g_hMenuTexWood = NULL;
-    g_hMenuTexOrie = NULL;
-    g_hMenuTexAqua = NULL;
-    g_hMenuTexRock = NULL;
-    g_hMenuTexSec100 = NULL;
-    g_hMenuTexSec200 = NULL;
-    g_hMenuTexSec300 = NULL;
-    g_hMenuTexSec400 = NULL;
-    g_hMenuTexSec500 = NULL;
+    g_hMenuTexGfx = 1;
+    g_hMenuTexLevel = 0;
+    g_hMenuTexSmal = 0;
+    g_hMenuTexWood = 0;
+    g_hMenuTexOrie = 0;
+    g_hMenuTexAqua = 0;
+    g_hMenuTexRock = 0;
+    g_hMenuTexSec100 = 0;
+    g_hMenuTexSec200 = 0;
+    g_hMenuTexSec300 = 0;
+    g_hMenuTexSec400 = 0;
+    g_hMenuTexSec500 = 0;
     g_driver.api.nSoftwareMode = 0;
     g_driver.api.pDrawPolygon = capturePolygon;
 

@@ -3,22 +3,22 @@
 #include <string.h>
 #include <math.h>
 #include <stdint.h>
-#include <windows.h>
-#include <dsound.h>
+#include "compat_types.h"
 
 #include "sound.h"
 #include "scene.h"
 #include "pool.h"
+#include "util.h"
+#include "audio_sdl2.h"
 #include "custom_helpers.h"
 
 /* =====================================================================
  * Sound subsystem — reimplementation of the maniac sample-bank and
- * playback interface using the same DirectSound output path as the
- * original: DirectSoundCreate + SetCooperativeLevel + streaming sound
- * buffer, with per-frame Lock/Write/Unlock of free write regions. A
- * software mixer renders the active voices into a stereo 16-bit scratch
- * which is then converted into the locked region in the negotiated
- * format. MCI CD-audio (the original's music path) is intentionally not
+ * playback interface. SDL2 port: the legacy output path
+ * (@0x439050 ring + @0x438cd0/@0x438f20 lock/write/unlock) is
+ * fully replaced by an SDL2 queue-mode device (see audio_sdl2.c); the
+ * software mixer still renders active voices into a stereo 16-bit
+ * scratch which is converted into the SDL device format and queued. MCI CD-audio (the original's music path) is intentionally not
  * reproduced. See sound.h + docs/09-sound.md for the symbol map.
  * ===================================================================== */
 
@@ -50,7 +50,8 @@ typedef struct __attribute__((packed)) SndVoiceSlot {
     int        nLoop;      /* +0x14 [5] remaining loops (0x7fffffff) */
     int        nFlags;     /* +0x18 [6] (char) flags */
     int        nHandle;    /* +0x1c [7] slot index + 0x10000 */
-    int        nOwner;     /* +0x20 [8] mixer voice id */
+    intptr_t   nOwner;     /* +0x20 [8] mixer voice id (0 or a MusicEmitter*;
+                         * int on 32-bit, widened for 64-bit pointers) */
     int       *pPos;       /* +0x24 [9] 3D position or centered marker */
     char       nVolL;      /* +0x28 [10] */
     char       nVolR;      /* +0x29 [11] */
@@ -61,7 +62,7 @@ typedef struct __attribute__((packed)) SndVoiceSlot {
 typedef struct SndVoiceSet {
     SndVoiceSlot *pChainA;             /* +0x00 active chain */
     SndVoiceSlot *pChainB;             /* +0x04 (kept for layout) */
-    unsigned char aSlots[0x100 * 0x2e];/* +0x08 the 0x100 voice slots */
+    unsigned char aSlots[0x100 * sizeof(SndVoiceSlot)];/* +0x08 the 0x100 voice slots (stride was 0x2e on 32-bit) */
     int           nMasterVol;          /* +0x2e08 (+0x320c in set) 0x10000 */
 } SndVoiceSet;
 
@@ -88,10 +89,18 @@ char  g_bSoundMute      = 0;           /* @0x45f0d8 */
 void *g_apSndBank[0x100];              /* @0x45ec94 */
 void *g_pSndQueue[0x100];              /* @0x461ee8 */
 int   g_nSndQueueCount;                /* @0x4622e8 */
-int   g_nMixRateDivisor;               /* @0x46235c */
+int   g_audSentinelPos[3];               /* @0x46235c sentinel position {0,0,0}.
+                                 * The original hands sndPlaySfx voices
+                                 * &DAT_0046235c as a "centered" position
+                                 * (sound.c:1294, kept by sndStopAllVoices)
+                                 * and sndVolFromPos @0x4389a0 reads it as
+                                 * int[3]; nothing ever writes those words (no
+                                 * xrefs at 0x46235c/60/64), so the sentinel is
+                                 * permanently {0,0,0} = full centered volume.
+                                 * One object so the 12-byte read is always
+                                 * in-bounds; g_nMixRateDivisor (sound.h)
+                                 * aliases element 0. */
 
-static LPDIRECTSOUND       g_pDSoundObj;       /* @0x46237c */
-static LPDIRECTSOUNDBUFFER g_pDsBufferPrimary; /* @0x4623d0 */
 static int                 g_nDsBufferSel;     /* @0x462384 */
 static int                 g_nDsBufferSize;    /* @0x4623d8 */
 static int                 g_nDsFrameBytes;    /* @0x4623d4 */
@@ -159,23 +168,26 @@ static int         *g_pMixCoreScratch;  /* @0x4511dc */
 static int          g_nMixCoreSteps;    /* @0x4511e0 */
 static int          g_nMixCoreRateDiv;  /* @0x4511e4 */
 static unsigned int g_nMixCoreFrac;     /* @0x4511e8 */
-static int          g_nMixCoreSrcBase;  /* @0x4511ec */
+static uintptr_t  g_nMixCoreSrcBase;  /* @0x4511ec sample data base (an
+                                 * address: int on 32-bit, widened here) */
 
-/* DSMix write region descriptor (maniac @0x4623c0, a contiguous 4-dword
- * struct) — kept as one struct so sndMixRenderRegion's pRegion[0..3]
- * indexing follows the original memory layout. */
+/* SDL-port write region descriptor (original @0x4623c0 was a contiguous
+ * 4-dword struct holding raw pointer bits; on 64-bit the two address
+ * fields must be pointer-sized, so the struct is {ptr, ptr, int, int}).
+ * sndMixRenderRegion reads it by field, not by word index. */
 typedef struct SndMixRegion {
-    int nStart;   /* +0x00 @0x4623c0 g_nMixRegionStart */
-    int nSize;    /* +0x04 @0x4623c4 g_nMixRegionSize  (lockPtr2) */
-    int nDiv1;    /* +0x08 @0x4623c8 g_nMixRegionDiv1 */
-    int nDiv2;    /* +0x0c @0x4623cc g_nMixRegionDiv2 */
+    void *pStart; /* @0x4623c0 region base (was g_nMixRegionStart dword) */
+    void *pSize;  /* @0x4623c4 second region base (was lockPtr2 dword) */
+    int nDiv1;    /* @0x4623c8 g_nMixRegionDiv1 */
+    int nDiv2;    /* @0x4623cc g_nMixRegionDiv2 */
 } SndMixRegion;
 static SndMixRegion s_mixRegion;
 
 static SndVoiceSet s_voiceSet;        /* maniac 0x45f0e0 */
 
 static const char g_szWavExt[] = ".WAV";  /* @0x4511b4 */
-static const char g_szDirGlob[]   = "\\*";   /* @0x4511bc tail */
+/* g_szDirGlob "\\*" @0x4511bc tail is obsolete: enumeration now uses
+ * utilScanDir (no legacy glob API). */
 
 /* =====================================================================
  * Math helpers
@@ -342,7 +354,7 @@ int sndLoadWav(LPCSTR pszFilename, int nBank, int nSlot)
     SndSample     *s = NULL;
     int            gotFmt = 0, nBits = 0, nRate = 0, nChans = 0, dataSize = 0;
 
-    fp = fopen(pszFilename, "rb");
+    fp = fileOpenMode(pszFilename, 0);
     if (fp == NULL) return 0;
     if (fread(hdr, 1, 12, fp) != 12) { fclose(fp); return 0; }
     if (hdr[0] != 'R' || hdr[1] != 'I' || hdr[2] != 'F' || hdr[3] != 'F') { fclose(fp); return 0; }
@@ -395,17 +407,57 @@ int sndLoadWav(LPCSTR pszFilename, int nBank, int nSlot)
     return sndRegisterSample(nBank, nSlot, s);
 }
 
+/* Bank-scan context for the directory-enumeration callback. */
+typedef struct SndBankScan {
+    char dir[MAX_PATH];
+    int selBank;
+    int failed;
+} SndBankScan;
+
+static int sndBankScanCb(const char *name, void *ctx)
+{
+    SndBankScan *sc = (SndBankScan *)ctx;
+    const char *ext;
+    char full[MAX_PATH + 64];
+    int idx = 0;
+    /* Digit-prefix (bank slot index), as the original inlined parse. */
+    if (name[0] < '0' || name[0] > '9') return 0;
+    {
+        const char *q = name;
+        while (*q >= '0' && *q <= '9') { idx = idx * 10 + (*q - '0'); q++; }
+    }
+    /* ".WAV" suffix check (case-insensitive extension compare). */
+    ext = strrchr(name, '.');
+    {
+        int i, len, isWav = 0;
+        if (ext != NULL) {
+            len = (int)strlen(ext);
+            if (len == 4) {
+                isWav = 1;
+                for (i = 1; i < 4; i++) {
+                    char c = ext[i];
+                    if (c >= 'a' && c <= 'z') c = (char)(c - 0x20);
+                    if (c != g_szWavExt[i]) { isWav = 0; break; }
+                }
+            }
+        }
+        if (!isWav) return 0;
+    }
+    snprintf(full, sizeof(full), "%s/%s", sc->dir, name);
+    if (sndLoadWav(full, sc->selBank, idx) != 1) { sc->failed = 1; return 1; }
+    return 0;
+}
+
 /* sndLoadBankFromDir @0x437170 — scan pszDir for digit-prefixed .wav files
  * and load them into one bank (nBank==0 auto-selects a free bank). The free
- * bank scan, leading-index parse, and ".WAV" suffix check are inlined here
- * exactly as the original does them (no separate helper functions). */
+ * bank scan, leading-index parse, and ".WAV" suffix check match the
+ * original; enumeration goes through the Phase 5 directory helper
+ * (platform-specific implementations). Bank/slot
+ * semantics are unchanged. */
 int sndLoadBankFromDir(int nBank, char *pszDir)
 {
-    char             search[MAX_PATH];
-    char             full[MAX_PATH];
-    WIN32_FIND_DATAA fd;
-    HANDLE           hFind;
-    int              selBank = nBank;
+    SndBankScan sc;
+    int selBank = nBank;
 
     if (nBank < 0 || nBank > 0x10) return 0;
     if (nBank == 0) {
@@ -421,51 +473,15 @@ int sndLoadBankFromDir(int nBank, char *pszDir)
     } else {
         sndFreeBank(selBank);
     }
-    strcpy(search, pszDir);
-    while (strlen(search) > 0 &&
-           (search[strlen(search) - 1] == '\\' || search[strlen(search) - 1] == '/')) {
-        search[strlen(search) - 1] = '\0';
+    snprintf(sc.dir, sizeof(sc.dir), "%s", pszDir);
+    while (strlen(sc.dir) > 0 &&
+           (sc.dir[strlen(sc.dir) - 1] == '\\' || sc.dir[strlen(sc.dir) - 1] == '/')) {
+        sc.dir[strlen(sc.dir) - 1] = '\0';
     }
-    strcat(search, g_szDirGlob);
-
-    hFind = FindFirstFileA(search, &fd);
-    if (hFind == INVALID_HANDLE_VALUE) return 0;
-    do {
-        const char *name = fd.cFileName;
-        const char *ext;
-        int idx = 0, loaded;
-        if ((fd.dwFileAttributes & 0x16) != 0) continue;
-        if (name[0] < '0' || name[0] > '9') continue;
-        {
-            const char *p = name;
-            while (p[0] >= '0' && p[0] <= '9') {
-                idx = idx * 10 + (p[0] - '0'); p++;
-            }
-        }
-        /* ".WAV" suffix check (case-insensitive extension compare). */
-        ext = strrchr(name, '.');
-        {
-            int i, len;
-            int isWav = 0;
-            if (ext != NULL) {
-                len = (int)strlen(ext);
-                if (len == 4) {
-                    isWav = 1;
-                    for (i = 1; i < 4; i++) {
-                        char c = ext[i];
-                        if (c >= 'a' && c <= 'z') c = (char)(c - 0x20);
-                        if (c != g_szWavExt[i]) { isWav = 0; break; }
-                    }
-                }
-            }
-            if (!isWav) continue;
-        }
-        snprintf(full, sizeof(full), "%s\\%s", pszDir, name);
-        loaded = sndLoadWav(full, selBank, idx);
-        if (loaded != 1) { FindClose(hFind); return 0; }
-    } while (FindNextFileA(hFind, &fd) != 0);
-    FindClose(hFind);
-    return 1;
+    sc.selBank = selBank;
+    sc.failed = 0;
+    if (!utilScanDir(sc.dir, sndBankScanCb, &sc)) return 0;
+    return sc.failed ? 0 : 1;
 }
 
 /* =====================================================================
@@ -511,7 +527,7 @@ int sndCreateMixBuffer(void)
 
     g_pMixRateTable = malloc(0x10200);
     if (g_pMixRateTable == NULL) return 0;
-    g_pMixWaveTable = (void *)(((int)g_pMixRateTable + 0x1ff) & ~0x1ff);
+    g_pMixWaveTable = (void *)(((uintptr_t)g_pMixRateTable + 0x1ff) & ~(uintptr_t)0x1ff);
     sndBuildWaveTable(0x20000 / g_nMixVoiceCap);
     g_pMixScratch2 = malloc((size_t)g_nMixScratchSamples * 4);
     if (g_pMixScratch2 == NULL) {
@@ -586,131 +602,114 @@ int sndStopAllVoices(void *pVoiceList) /* @0x438100 */
 }
 
 /* =====================================================================
- * DirectSound output
+ * SDL2 output (replaces the legacy ring @0x439050/@0x438cd0/
+ * @0x438f20/@0x438bb0/@0x438ff0). The 4-int region descriptor contract
+ * (SndMixRegion {start,size,div1,div2}) and the write-limit fence math are
+ * preserved; the backing store is an in-memory ring drained to the SDL2
+ * queue device instead of a legacy audio buffer. No legacy audio
+ * headers or OS audio calls; no play-cursor/write-ahead ring syscalls. When no audio device is available the mixer still runs
+ * (regions render and are dropped) while the game stays silent.
  * ===================================================================== */
 
-/* dsoundRelease @0x438ff0. */
+static unsigned char *s_ring;      /* SDL-port ring backing (replaces DS buffer) */
+static int            s_ringBytes;
+/* Total bytes ever pushed to the SDL queue device. SDL_QueueAudio is a
+ * push queue, not a ring: the device drains it in real time, so the
+ * sndGetWriteRegion fence derives the true play cursor as
+ * played = pushed - currently-queued (see below). Reset whenever the
+ * queue is created or cleared. */
+static unsigned g_totalPushed;
+
+/* dsoundRelease @0x438ff0 — SDL port: drain/close the audio device and free
+ * the ring. Keeps the original name so callers are untouched. */
 int dsoundRelease(void)
 {
     if (g_nMixActive != 1) return 0;
     g_nMixActive = 0;
-    if (g_pDSoundObj != NULL) {
-        if (g_pDsBufferPrimary != NULL) {
-            IDirectSoundBuffer_Stop(g_pDsBufferPrimary);
-            IDirectSoundBuffer_Release(g_pDsBufferPrimary);
-            g_pDsBufferPrimary = NULL;
-        }
-        IDirectSound_Release(g_pDSoundObj);
-        g_pDSoundObj = NULL;
-    }
+    audioQueueClear();
+    audioShutdown();
+    free(s_ring);
+    s_ring = NULL;
+    s_ringBytes = 0;
+    g_pDsLockPtr = NULL; g_pDsLockPtr2 = NULL;
+    g_nDsLockSize = 0; g_nDsLockSize2 = 0;
     return 0;
 }
 
-/* dsoundInitMixer @0x439050 — create the DirectSound object, set the
- * cooperative level, then probe six output formats (stereo/mono × 16/8-bit ×
- * 44100/22050 Hz) until a primary streaming buffer is created; configure the
- * ring-buffer globals and start looping playback. Returns 1 on success, 0 on
- * failure (releasing whatever was created so far). */
+/* dsoundInitMixer @0x439050 — SDL port: open one SDL2 queue device and
+ * honor its obtained rate/channels (convert as required); do not assume
+ * 44.1 kHz stereo. Sizes one frame region at rate/100 frames and a ring
+ * of (nFrameRegions + 10) regions, mirroring the original probe math with
+ * the SDL device format instead of the legacy six-format probe.
+ * Returns 1 on success (or silent-no-device), 0 only on allocation
+ * failure. */
 static int dsoundInitMixer(int nFrameRegions)
 {
-    static const struct Fmt { int ch; int bits; int rate; } kFmt[6] = {
-        {2, 16, 44100}, {2, 16, 22050}, {2, 8, 22050},
-        {1, 16, 44100}, {1, 16, 22050}, {1, 8, 22050}
-    };
-    HRESULT h;
-    int i;
+    int ch, bits, rate;
+    int nFrameByte, nRegionFrames, nBufferBytes;
 
     if (g_nMixActive == 1) return 1;
     g_nDsWriteLimit = 0;
+    g_totalPushed   = 0;
     g_nDsPlaying    = 0;
     g_nMixActive    = 0;
     g_nDsBufferSel  = 1;
 
-    h = DirectSoundCreate(NULL, &g_pDSoundObj, NULL);
-    if (h != DS_OK) { g_pDSoundObj = NULL; return 0; }
-    h = IDirectSound_SetCooperativeLevel(g_pDSoundObj, GetForegroundWindow(),
-                                         DSSCL_NORMAL);
-    if (h != DS_OK) { dsoundRelease(); return 0; }
-
-    for (i = 0; i < 6; i++) {
-        WAVEFORMATEX  w;
-        DSBUFFERDESC  dsc;
-        int  ch   = kFmt[i].ch;
-        int  bits = kFmt[i].bits;
-        int  rate = kFmt[i].rate;
-        int  nFrameByte  = ch * bits / 8;
-        int  nRegionFrames = rate / 100;
-        int  nBufferBytes = nRegionFrames * nFrameByte * (nFrameRegions + 10);
-
-        w.wFormatTag      = WAVE_FORMAT_PCM;
-        w.nChannels       = (WORD)ch;
-        w.nSamplesPerSec  = (DWORD)rate;
-        w.wBitsPerSample  = (WORD)bits;
-        w.nBlockAlign     = (WORD)nFrameByte;
-        w.nAvgBytesPerSec = (DWORD)(rate * nFrameByte);
-        w.cbSize          = 0;
-
-        memset(&dsc, 0, sizeof(dsc));
-        dsc.dwSize        = sizeof(dsc);
-        dsc.dwBufferBytes = (DWORD)nBufferBytes;
-        dsc.lpwfxFormat   = &w;
-        g_pDsBufferPrimary = NULL;
-        h = IDirectSound_CreateSoundBuffer(g_pDSoundObj, &dsc,
-                                           &g_pDsBufferPrimary, NULL);
-        if (h != DS_OK || g_pDsBufferPrimary == NULL) {
-            if (g_pDsBufferPrimary != NULL) {
-                IDirectSoundBuffer_Release(g_pDsBufferPrimary);
-                g_pDsBufferPrimary = NULL;
-            }
-            continue;
-        }
-        g_nDsSampleRate   = rate;
-        g_nDsBits         = bits;
-        g_nDsChannels1    = ch - 1;
-        g_nDsBlockAlign1  = (bits / 8) - 1;
-        g_nDsFrameBytes   = nFrameByte;
-        g_nDsFrameCount   = nRegionFrames;
-        g_nDsBufferSize   = nBufferBytes;
-        g_nDsWriteBase    = nRegionFrames * nFrameByte * nFrameRegions;
-        break;
+    /* SDL device owns the format; silent (muted path) when unavailable. */
+    audioInit();
+    if (audioHaveDevice()) {
+        rate = audioDeviceRate();
+        ch = audioDeviceChannels();
+    } else {
+        rate = 44100;
+        ch = 2;
     }
-    if (g_pDsBufferPrimary == NULL) { dsoundRelease(); return 0; }
+    bits = 16;
 
-    /* Zero the DirectSound primary buffer (inlined from the original:
-     * lock the whole buffer, clear both wrapped regions, unlock). */
-    {
-        void  *p1 = NULL, *p2 = NULL;
-        DWORD  s1 = 0, s2 = 0;
-        if (IDirectSoundBuffer_Lock(g_pDsBufferPrimary, 0, (DWORD)g_nDsBufferSize,
-                                    &p1, &s1, &p2, &s2, 0) == DS_OK) {
-            if (p1 != NULL) memset(p1, 0, (size_t)s1);
-            if (p2 != NULL) memset(p2, 0, (size_t)s2);
-            IDirectSoundBuffer_Unlock(g_pDsBufferPrimary, p1, s1, p2, s2);
-        }
-    }
-    IDirectSoundBuffer_SetCurrentPosition(g_pDsBufferPrimary, 0);
-    h = IDirectSoundBuffer_Play(g_pDsBufferPrimary, 0, 0, DSBPLAY_LOOPING);
-    if (h != DS_OK) appLog("[sound] dsInit: Play failed hr=%08x", (unsigned)h);
+    nFrameByte  = ch * bits / 8;
+    nRegionFrames = rate / 100;
+    nBufferBytes = nRegionFrames * nFrameByte * (nFrameRegions + 10);
+
+    free(s_ring);
+    s_ring = (unsigned char *)malloc((size_t)nBufferBytes);
+    if (!s_ring) { s_ringBytes = 0; return 0; }
+    memset(s_ring, 0, (size_t)nBufferBytes);
+    s_ringBytes = nBufferBytes;
+
+    g_nDsSampleRate   = rate;
+    g_nDsBits         = bits;
+    g_nDsChannels1    = ch - 1;
+    g_nDsBlockAlign1  = (bits / 8) - 1;
+    g_nDsFrameBytes   = nFrameByte;
+    g_nDsFrameCount   = nRegionFrames;
+    g_nDsBufferSize   = nBufferBytes;
+    g_nDsWriteBase    = nRegionFrames * nFrameByte * nFrameRegions;
     g_nDsPlaying = 1;
     g_nMixActive = 1;
     return 1;
 }
 
-/* sndGetWriteRegion @0x438cd0 — lock the next free DirectSound write region.
+/* sndGetWriteRegion @0x438cd0 — lock the next free ring region.
  * Returns &s_mixRegion {start, size, div1, div2} or NULL when no free
- * space. Mirrors the original: cursor = playCursor + writeBase, free-space
- * rejection per the write-limit fence, and buffer-lost restore. */
+ * space. Mirrors the original fence: the play cursor advances as queued
+ * audio drains (audioQueuedBytes), free-space rejection per the
+ * write-limit fence. */
 static void *sndGetWriteRegion(void)
 {
-    LPDIRECTSOUNDBUFFER b = g_pDsBufferPrimary;
-    HRESULT h;
-    if (g_nMixActive != 1 || b == NULL) return NULL;
-    if (g_nDsPlaying == 0) {
-        IDirectSoundBuffer_Play(b, 0, 0, DSBPLAY_LOOPING);
-        g_nDsPlaying = 1;
-    }
-    if (IDirectSoundBuffer_GetCurrentPosition(b, (LPDWORD)&g_nDsPlayCursor,
-                                              (LPDWORD)&g_nDsWriteCursor) != DS_OK) return NULL;
+    unsigned int queued;
+    unsigned int played;
+    if (g_nMixActive != 1 || s_ring == NULL) return NULL;
+    if (g_nDsPlaying == 0) g_nDsPlaying = 1;
+    /* Play cursor = bytes already drained to the device. SDL_QueueAudio
+     * only reports the still-queued (unplayed) tail, so played preferably
+     * comes from pushed-minus-queued: the old formula used the queued
+     * tail alone, which grows without bound whenever the mixer outruns
+     * the device, so the fence below never rejected and every tick
+     * queued ~10 MB more into SDL (RSS explosion from the intro on). */
+    queued = audioQueuedBytes();
+    if (queued > g_totalPushed) queued = g_totalPushed;
+    played = g_totalPushed - queued;
+    g_nDsPlayCursor = (int)(played % (unsigned)g_nDsBufferSize);
     g_nDsWriteCursor = g_nDsPlayCursor + g_nDsWriteBase;
     if (g_nDsWriteCursor >= g_nDsBufferSize) g_nDsWriteCursor -= g_nDsBufferSize;
 
@@ -724,33 +723,31 @@ static void *sndGetWriteRegion(void)
             return NULL;                                        /* wrapped, not free */
     }
 
-    h = IDirectSoundBuffer_Lock(b, (DWORD)g_nDsWriteLimit,
-                                (DWORD)(g_nDsFrameBytes * g_nDsFrameCount),
-                                &g_pDsLockPtr, (LPDWORD)&g_nDsLockSize,
-                                &g_pDsLockPtr2, (LPDWORD)&g_nDsLockSize2, 0);
-    g_nDsLockResult = (int)h;
-    if (h == DSERR_BUFFERLOST) {                                /* restore buffer */
-        IDirectSoundBuffer_Restore(b);
-        IDirectSoundBuffer_Play(b, 0, 0, DSBPLAY_LOOPING);
-        return NULL;
-    }
-    if (h != DS_OK) return NULL;
+    g_pDsLockPtr = s_ring + g_nDsWriteLimit;
+    g_nDsLockSize = g_nDsFrameBytes * g_nDsFrameCount;
+    if (g_nDsWriteLimit + g_nDsLockSize > g_nDsBufferSize)
+        g_nDsLockSize = g_nDsBufferSize - g_nDsWriteLimit;
+    g_pDsLockPtr2 = NULL;
+    g_nDsLockSize2 = 0;
+    g_nDsLockResult = 0;
 
-    s_mixRegion.nStart = (int)g_pDsLockPtr;
-    s_mixRegion.nSize  = (int)g_pDsLockPtr2;
+    s_mixRegion.pStart = g_pDsLockPtr;
+    s_mixRegion.pSize  = g_pDsLockPtr2;
     s_mixRegion.nDiv1  = (int)g_nDsLockSize / g_nDsFrameBytes;
     s_mixRegion.nDiv2  = (int)g_nDsLockSize2 / g_nDsFrameBytes;
     return (void *)&s_mixRegion;
 }
 
-/* sndMixAdvanceUnlock @0x438f20 — unlock the region and advance the write
- * limit by one frame's bytes with wrap at the buffer length. */
+/* sndMixAdvanceUnlock @0x438f20 — queue the rendered region to the SDL
+ * device (dropped when silent) and advance the write limit by one frame's
+ * bytes with wrap at the buffer length. */
 static int sndMixAdvanceUnlock(void)
 {
     if (g_nMixActive == 1) {
-        IDirectSoundBuffer_Unlock(g_pDsBufferPrimary,
-                                  g_pDsLockPtr, (DWORD)g_nDsLockSize,
-                                  g_pDsLockPtr2, (DWORD)g_nDsLockSize2);
+        if (g_pDsLockPtr != NULL && g_nDsLockSize > 0) {
+            audioQueuePush(g_pDsLockPtr, (unsigned)g_nDsLockSize);
+            g_totalPushed += (unsigned)g_nDsLockSize;
+        }
         g_nDsWriteLimit = g_nDsWriteLimit + g_nDsFrameBytes * g_nDsFrameCount;
         if (g_nDsBufferSize <= g_nDsWriteLimit) {
             do {
@@ -761,23 +758,13 @@ static int sndMixAdvanceUnlock(void)
     return 0;
 }
 
-/* sndClearMixBuffer @0x438bb0 — stop playback and zero the DirectSound buffer. */
+/* sndClearMixBuffer @0x438bb0 — clear the SDL queue and zero the ring. */
 static int sndClearMixBuffer(void)
 {
     if (g_nMixActive != 1) return 0;
-    IDirectSoundBuffer_Stop(g_pDsBufferPrimary);
-    /* Zero the DirectSound primary buffer (inlined; see sndClearMixBuffer
-     * @0x438bb0 — lock the whole buffer, clear both wrapped regions). */
-    {
-        void  *p1 = NULL, *p2 = NULL;
-        DWORD  s1 = 0, s2 = 0;
-        if (IDirectSoundBuffer_Lock(g_pDsBufferPrimary, 0, (DWORD)g_nDsBufferSize,
-                                    &p1, &s1, &p2, &s2, 0) == DS_OK) {
-            if (p1 != NULL) memset(p1, 0, (size_t)s1);
-            if (p2 != NULL) memset(p2, 0, (size_t)s2);
-            IDirectSoundBuffer_Unlock(g_pDsBufferPrimary, p1, s1, p2, s2);
-        }
-    }
+    audioQueueClear();
+    g_totalPushed = 0;
+    if (s_ring) memset(s_ring, 0, (size_t)s_ringBytes);
     g_nDsPlaying = 0;
     return 0;
 }
@@ -823,16 +810,16 @@ static int sndFixedMul(unsigned int a, unsigned int b)
     return (int)(((unsigned long long)a * (unsigned long long)b) >> 0x20);
 }
 
-/* sndVolFromPos @0x4389a0 — 3D position -> L/R 16-bit volume attenuation.
- * Reads pPos[0..2], clamps each to +-0x7c17, computes
- * 0x640000/(sqrt(x^2+y^2+z^2)+0x64) and derives the two pan-weighted
- * volumes. Pan mode 0 = mono (both identical). Out-of-range -> 0/0. */
+/* sndVolFromPos @0x4389a0 — SDL port: simple distance+pan formula
+ * replacing the sqrt/pan-mode tables. Gain falls with distance
+ * (0x640000/(d+0x64) attenuation shape preserved); pan weights L/R by the
+ * x/z direction. Out-of-range -> 0/0. Pan mode 0 = mono. */
 static void sndVolFromPos(short *pOutVol, int *pPos)
 {
     int x = pPos[0] >> 4;
     int y = pPos[1] >> 4;
     int z = pPos[2] >> 4;
-    int sq, dist, side;
+    double dist, gain, pan, gl, gr;
 
     if (x < -0x7c17 || x > 0x7c17 ||
         y < -0x7c17 || y > 0x7c17 ||
@@ -841,27 +828,19 @@ static void sndVolFromPos(short *pOutVol, int *pPos)
         pOutVol[1] = 0;
         return;
     }
-    sq = x*x + y*y + z*z;
-    dist = (int)sqrt((double)sq);
-    dist = 0x640000 / (dist + 0x64);
+    dist = sqrt((double)x * x + (double)y * y + (double)z * z);
+    gain = 0x640000 / (dist + 0x64) / 0x3fff;
+    if (gain > 1.0) gain = 1.0;
     if (g_nMixPanMode == 0) {
-        pOutVol[0] = (short)dist;
-        pOutVol[1] = (short)dist;
+        pOutVol[0] = (short)(gain * 0x3fff);
+        pOutVol[1] = (short)(gain * 0x3fff);
         return;
     }
-    sq = x*x + z*z;
-    side = (int)sqrt((double)sq);
-    side = ((z < 0 ? -z : z) + 1) * 0x3fff / (side + 1);
-    if (x >= 0) {
-        pOutVol[0] = (short)side;
-        pOutVol[1] = 0x3fff;
-    } else {
-        pOutVol[0] = 0x3fff;
-        pOutVol[1] = (short)side;
-    }
-    if (g_nMixPanMode == 2 && z < 0) pOutVol[0] = (short)-pOutVol[0];
-    pOutVol[0] = (short)((pOutVol[0] * dist) >> 16);
-    pOutVol[1] = (short)((pOutVol[1] * dist) >> 16);
+    pan = (dist > 0.0) ? (double)x / dist : 0.0; /* -1 left .. +1 right */
+    gl = gain * (pan <= 0 ? 1.0 : 1.0 - pan);
+    gr = gain * (pan >= 0 ? 1.0 : 1.0 + pan);
+    pOutVol[0] = (short)(gl * 0x3fff);
+    pOutVol[1] = (short)(gr * 0x3fff);
 }
 
 /* sndMixBuildVoiceChains @0x437fe0 — build the per-tick voice chains from the
@@ -1044,7 +1023,7 @@ static void sndMixSamples(int nSteps, unsigned int nPosFrac, int nRateDiv,
  * set up by sndMixVoiceCore. nSrc is the source data pointer
  * (rec->pSample->pData), nFrac is the leftover division result passed
  * through the original call (kept for the original call shape). */
-static long long sndMixStep(int nSrc, unsigned int nFrac)
+static long long sndMixStep(uintptr_t nSrc, unsigned int nFrac)
 {
     SndMixRec *rec = g_pMixCoreWave;
 
@@ -1116,12 +1095,12 @@ static void sndMixVoiceCore(int nFrames, SndMixRec *rec, short *pScratch,
 
         if (g_nMixCoreRemain < g_nMixCoreSteps) {
             g_nMixCoreSteps = g_nMixCoreRemain;
-            sndMixStep(pS ? (int)(uintptr_t)pS->pData : 0, uRes);
+            sndMixStep(pS ? (uintptr_t)pS->pData : 0, uRes);
             break;
         }
         {
             int stepCount = g_nMixCoreSteps;
-            sndMixStep(pS ? (int)(uintptr_t)pS->pData : 0, uRes);
+            sndMixStep(pS ? (uintptr_t)pS->pData : 0, uRes);
             if (rec->nLoop == 0) {
                 rec->nRate = 0;
                 break;
@@ -1155,10 +1134,10 @@ static void sndVoiceRender(SndVoiceSlot *pVoice, short *pScratch,
     rec.nPos     = pVoice->nPos;
     rec.nPosFrac = pVoice->nPosFrac;
     rec.nRate    = pVoice->nPitch;
-    rec.pWaveL   = (short *)((int)g_pMixWaveTable + absL * 0x200);
-    rec.pWaveR   = (short *)((int)g_pMixWaveTable + absR * 0x200);
-    if (volL < 0) rec.pWaveL = (short *)((int)rec.pWaveL + 0x8000);
-    if (volR < 0) rec.pWaveR = (short *)((int)rec.pWaveR + 0x8000);
+    rec.pWaveL   = (short *)((uintptr_t)g_pMixWaveTable + (uintptr_t)absL * 0x200);
+    rec.pWaveR   = (short *)((uintptr_t)g_pMixWaveTable + (uintptr_t)absR * 0x200);
+    if (volL < 0) rec.pWaveL = (short *)((uintptr_t)rec.pWaveL + 0x8000);
+    if (volR < 0) rec.pWaveR = (short *)((uintptr_t)rec.pWaveR + 0x8000);
     rec.nLoop    = pVoice->nLoop;
 
     sndMixVoiceCore(nFrames, &rec, pScratch, pParams);
@@ -1229,7 +1208,7 @@ static void sndVoiceReclaimFinished(void)
 }
 
 /* sndMixScratchToBuffer @0x4382f0 — convert scratch[frames] into the locked
- * DirectSound region. g_nMixBufferBytes is the original format selector:
+ * ring region. g_nMixBufferBytes is the original format selector:
  * zero means unsigned PCM (bias the sample), one means signed PCM. */
 static void sndMixScratchToBuffer(void *dst, int nFrames, int nOffsetFrames)
 {
@@ -1296,7 +1275,7 @@ static void sndMixScratchToBuffer(void *dst, int nFrames, int nOffsetFrames)
  * region(s). */
 static int sndMixRenderRegion(void *pRegion)
 {
-    int *pi = (int *)pRegion;
+    SndMixRegion *pr = (SndMixRegion *)pRegion;
 
     g_nMixMasterVol = s_voiceSet.nMasterVol;
     sndVoicePriorityUpdate();
@@ -1304,9 +1283,9 @@ static int sndMixRenderRegion(void *pRegion)
     sndVoiceUpdateFinished(s_voiceSet.pChainA);
     sndVoiceAdvancePosition(s_voiceSet.pChainB);
     sndVoiceReclaimFinished();
-    sndMixScratchToBuffer((void *)pi[0], pi[2], 0);
-    if (pi[1] != 0 && pi[3] != 0) {
-        sndMixScratchToBuffer((void *)pi[1], pi[3], pi[2]);
+    sndMixScratchToBuffer(pr->pStart, pr->nDiv1, 0);
+    if (pr->pSize != NULL && pr->nDiv2 != 0) {
+        sndMixScratchToBuffer(pr->pSize, pr->nDiv2, pr->nDiv1);
     }
     return 1;
 }
@@ -1318,7 +1297,7 @@ static int sndMixRenderRegion(void *pRegion)
 /* sndPlaySfx @0x437cf0 — queue a one-shot effect. nMixerVoice is 0 for plain
  * cues or the owning MusicEmitter record pointer for 3D emitter voices (the
  * chain build borrows the owner's cached position when the voice has none). */
-int sndPlaySfx(int nMixerVoice, unsigned nBank, unsigned nSfxIndex,
+int sndPlaySfx(intptr_t nMixerVoice, unsigned nBank, unsigned nSfxIndex,
                unsigned nVolume, int nPitch, unsigned nFlags)
 {
     SndSample *p;
@@ -1350,7 +1329,7 @@ int sndPlaySfx(int nMixerVoice, unsigned nBank, unsigned nSfxIndex,
 }
 
 /* sndMixTick @0x437c50 — per-frame software mixer tick. If unmuted,
- * repeatedly locks the next free DirectSound write region (sndGetWriteRegion),
+ * repeatedly locks the next free SDL ring region (sndGetWriteRegion),
  * builds the voice chains once, mixes each region (sndMixRenderRegion), and
  * unlocks it (sndMixAdvanceUnlock) until no region is available. Queued
  * sndPlaySfx requests are drained by this loop. */
@@ -1373,8 +1352,8 @@ int sndMixTick(unsigned nFrameCounter)
     return 1;
 }
 
-/* sndInitSystem @0x437a30 — init the sample banks + voice queue + DirectSound
- * streaming output; failure sets g_bSoundMute like the original. */
+/* sndInitSystem @0x437a30 — init the sample banks + voice queue + SDL2
+ * audio output; silent-no-device sets g_bSoundMute like the original. */
 int sndInitSystem(unsigned nMixStereoConfig, unsigned short nVoiceCap,
                   int nFrameRegions)
 {
@@ -1384,7 +1363,7 @@ int sndInitSystem(unsigned nMixStereoConfig, unsigned short nVoiceCap,
     g_nSoundInit = 1;
 
     if (!dsoundInitMixer(nFrameRegions)) {
-        appLog("[sound] sndInitSystem: DirectSound unavailable — muted");
+        appLog("[sound] sndInitSystem: audio unavailable — silent");
         g_bSoundMute = 1;
         g_nSoundInit = 1;
         return 1;   /* the original also keeps running muted */
@@ -1406,7 +1385,7 @@ int sndInitSystem(unsigned nMixStereoConfig, unsigned short nVoiceCap,
         return 0;
     }
     sndInitVoices(0x45f0e0);
-    appLog("[sound] sndInitSystem: DirectSound %dHz/%d-bit x%d step %d",
+    appLog("[sound] sndInitSystem: SDL %dHz/%d-bit x%d step %d",
            g_nDsSampleRate, g_nDsBits, g_nDsChannels1 + 1, g_nMixRateStep);
     return 1;
 }
@@ -1640,7 +1619,7 @@ SndEmitter *sndPlaySfx3D(SndEmitter *pEmitter, unsigned int nBank,
             sceneNodeGetPos((SceneNode *)pPosNode, 0, pMusic->anPos, 4);
         }
     }
-    pEmitter->nSfxHandle = sndPlaySfx((int)pEmitter->pMusicEmitter, nBank,
+    pEmitter->nSfxHandle = sndPlaySfx((intptr_t)pEmitter->pMusicEmitter, nBank,
                                       nIdx, nVol, nPitch, nSndFlags);
     return pEmitter;
 }

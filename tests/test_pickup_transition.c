@@ -2,9 +2,6 @@
 #include "../src/gameplay.h"
 #include "../src/menu.h"
 
-HINSTANCE g_hAppInstance;
-HWND g_hWnd;
-
 int main(void)
 {
     PlayerRecord *pRec = &g_playerRecords[0];

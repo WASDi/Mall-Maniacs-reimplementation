@@ -6,26 +6,28 @@
 /* scene_render.h — query, detail grid, morph, poly, camera and render
  * (maniac.exe 0x42b360/0x42f8c0/0x42f1c0 etc). */
 
-int scenNameToId(LPCSTR pszName); /* @0x431ed0 */
-int sceneCollectMeshHandles(int *pOut, int nMax, const char *pszFilter); /* @0x42b360 */
+void *scenNameToId(LPCSTR pszName); /* @0x431ed0 (native pointer on 64-bit) */
+int sceneCollectMeshHandles(struct SceneNode **pOut, int nMax, const char *pszFilter); /* @0x42b360 */
 int sceneFindByName(SceneNode **pOut, int nMax, const char *pszFilter); /* @0x431fd0 */
-int scenNameToIdEx(LPCSTR pszName); /* @0x431e20 */
+void *scenNameToIdEx(LPCSTR pszName); /* @0x431e20 (native pointer on 64-bit) */
 
 void sceneMeshBBox(SceneNode *pNode, int *pOutBBox); /* @0x42ba40 */
-void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
+void *sceneDetailGridCtor(SceneDetailGrid *pGrid, struct SceneNode *pRootNode, int nCols,
                           int nRows, int nCellSize); /* @0x42ad00 */
 void sceneDetailGridSetRoot(SceneDetailGrid *pGrid, SceneNode *pRootNode); /* @0x42b350 */
-void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount); /* @0x42b000 */
+void sceneDetailGridAddRow(SceneDetailGrid *pGrid, struct SceneNode **pHandles, int nCount); /* @0x42b000 */
 void sceneDetailGridUpdate(SceneDetailGrid *pGrid); /* @0x42b1d0 */
 void sceneDetailGridFree(SceneDetailGrid *pGrid); /* @0x42b190 */
 
 void *sceneMorphInterp(SceneNode *pNode, SceneObjRenderInfo *pRender, void *pOut); /* @0x4300d0 */
-void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
+/* 64-bit port: vertex/normal/color buffers are native byte pointers (the
+ * original passed 32-bit addresses as int). Slot order unchanged. */
+void meshDrawTriClip(byte *pIdxList, byte *pVerts, byte *pNormals, void *pUV,
                      void *pColor, int nUnk, int bInterpColor, int bInterpUV); /* @0x42d070 */
-void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
+void meshDrawQuadClip(byte *pIdxList, byte *pVerts, byte *pNormals, void *pUV,
                       void *pColor, int nUnk, int bInterpColor, int bInterpUV); /* @0x42daf0 */
-void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, int pPalColors); /* @0x42e940 */
-void gxSortPushKey(void *pMesh, void *pVerts, void *pNormals, int pTex, int pPalette); /* @0x42ecf0 */
+void meshDrawPoly(ushort *pPolyData, byte *pNormals, byte *pVerts, byte *pTexColors, byte *pPalColors); /* @0x42e940 */
+void gxSortPushKey(void *pMesh, void *pVerts, void *pNormals, void *pTex, void *pPalette); /* @0x42ecf0 */
 void sceneCameraBasisCalc(void); /* @0x42f460 */
 void sceneBuildRootMatrix(SceneNode *pRootNode); /* @0x42f520 */
 int sceneNodeRender(SceneNode *pNode); /* @0x42f8c0 */

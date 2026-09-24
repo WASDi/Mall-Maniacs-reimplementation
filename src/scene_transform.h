@@ -33,6 +33,6 @@ void sceneMatBuildOrient(float *pMat, float *pOut); /* @0x431730 */
 int sceneNodeSetHiddenFlag(SceneNode *pNode, int nMode); /* @0x4305c0 */
 int sceneNodeGetHiddenFlag(SceneNode *pNode); /* @0x4305b0 */
 int sceneObjResetFlags(SceneNode *pNode, int nRecursive); /* @0x430620 */
-int sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMode); /* @0x430db0 */
+int sceneObjSetClassMesh(SceneNode *pObj, SceneNode *pClassNode, int nMeshIdx, int nMode); /* @0x430db0 */
 
 #endif /* SCENE_TRANSFORM_H */

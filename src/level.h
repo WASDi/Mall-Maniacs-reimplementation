@@ -1,7 +1,7 @@
 #ifndef LEVEL_H
 #define LEVEL_H
 
-#include <windows.h>
+#include "compat_types.h"
 
 #include "obj.h"
 
@@ -11,10 +11,10 @@
  * reads the music track and runs the level's startup command script. */
 
 extern int g_nLevelScene;        /* @0x4580b0 main level .sen (sceneLoadSen) */
-extern int g_nCharScene;         /* @0x4580b4 characters.sen (sceneLoadSen) */
-extern int g_nObjScene;          /* @0x4580b8 objects.sen (sceneLoadSen) */
+extern int g_nCharScene;         /* @0x4580b4 CHARACTERS.SEN (sceneLoadSen) */
+extern int g_nObjScene;          /* @0x4580b8 OBJECTS.SEN (sceneLoadSen) */
 extern int g_bMusicTrack;        /* @0x4580c0 levels[%d]/music */
-extern int g_nTexHudFlingbjorn;  /* @0x458348 hud\flingbjorn.tga texture */
+extern void *g_nTexHudFlingbjorn;  /* @0x458348 hud\flingbjorn.tga pixels (int handle in 32-bit original) */
 
 /* Per-level scene base dirs (table @0x44f0d8, indexed by g_nLevelIdx). */
 extern const char *g_aszLevelDirs[5];
@@ -24,15 +24,17 @@ extern const char *g_aszLevelDirs[5];
  * roundStartInit's first scene-system cycle. See level.c. */
 void levelSceneTexturesLoad(void);
 
-/* Item slot: 30 entries, 0x2c stride; the name field lives 0x1c before
- * the mesh id (original base 0x4583c8, mesh ids at 0x4583e4). */
+/* Item slot: 30 entries (0x2c stride in the 32-bit original, native stride
+ * here); the name field lives 0x1c before the mesh id (original base
+ * 0x4583c8, mesh ids at 0x4583e4). 64-bit port: nMeshId is a native
+ * SceneObjTypeDef* (the original int truncated it). */
 typedef struct LevelItemSlot {
     char szName[0x1c];       /* +0x00 items[%d]/name */
-    int  nMeshId;            /* +0x1c scenNameToId of items[%d]/mesh */
-    void *pSceneObj;         /* +0x20 sceneryObjAlloc result */
-    void *pSubObj;           /* +0x24 sceneNodeAllocChild result */
-    EventObject *pEventObj;  /* +0x28 objFindById(id) (roundStartInit @0x40a84f) */
-} LevelItemSlot;             /* 0x2c */
+    void *nMeshId;           /* +0x1c scenNameToId of items[%d]/mesh */
+    void *pSceneObj;         /* sceneryObjAlloc result */
+    void *pSubObj;           /* sceneNodeAllocChild result */
+    EventObject *pEventObj;  /* objFindById(id) (roundStartInit @0x40a84f) */
+} LevelItemSlot;
 
 #define LEVEL_ITEM_SLOT_COUNT 30
 

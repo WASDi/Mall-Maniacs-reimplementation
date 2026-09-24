@@ -2,6 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#ifndef _WIN32
+#include <dirent.h>
+#else
+#include <io.h>
+#endif
 #include "pool.h"
 #include "util.h"
 #include "gx.h"
@@ -9,36 +14,105 @@
 #include "scene.h"
 #include "custom_helpers.h"
 
-extern HWND g_hWnd;   /* maniac g_hMainWindow @0x459ce0 (defined in maniac.c) */
+#include "platform_sdl2.h"
+
+extern void *g_hWnd;   /* @0x459ce0 (defined in platform_sdl2.c) */
 
 /* --- file helper cluster (fileOpenMode @0x408cd0 .. fileExists @0x408f60) --- */
 
-/* path normalize helper — convert Windows separators to POSIX and try
- * case variants. The original Windows CRT is case-insensitive; the rebuild
- * runs under Wine/linux where fopen is case-sensitive and '\\' is literal.
- * Keep original disassembly behavior (direct fopen) first, then fall back. */
+/* Canonical resolver (Phase 5): separator normalization + data-directory
+ * resolution, then the Windows-parity case-insensitive fallback
+ * (platformFopenCI) for read-only assets — config/.sen literals don't
+ * always match disk casing. Exact case is always tried first; literals
+ * that already match never touch the fallback. Write modes ("wb")
+ * resolve against the user pref dir, never beside installed assets. */
 static FILE *fopen_normalized(const char *path, const char *mode)
 {
-    FILE *f = fopen(path, mode);
+    char norm[1024], full[2048];
+    size_t n;
+    int isWrite = (mode[0] == 'w' || mode[0] == 'a');
+    FILE *f;
+    if (!path) return NULL;
+    n = strlen(path);
+    if (n >= sizeof(norm)) n = sizeof(norm) - 1;
+    for (size_t i = 0; i < n; i++) norm[i] = (path[i] == '\\') ? '/' : path[i];
+    norm[n] = '\0';
+    if (isWrite) {
+        const char *pref = platformPrefDir();
+        if (pref && pref[0]) {
+            const char *base = strrchr(norm, '/');
+            base = base ? base + 1 : norm;
+            snprintf(full, sizeof(full), "%s/%s", pref, base);
+            f = fopen(full, mode);
+            if (f) return f;
+        }
+        return fopen(norm, mode);
+    }
+    f = fopen(norm, mode);
     if (f) return f;
-    char alt[1024];
-    size_t n = strlen(path);
-    if (n >= sizeof(alt)) n = sizeof(alt)-1;
-    for (size_t i=0;i<n;i++) alt[i] = (path[i]=='\\') ? '/' : path[i];
-    alt[n]='\0';
-    f = fopen(alt, mode);
+    /* Data-dir lookup for read-only assets. */
+    platformAssetPath(norm, full, sizeof(full));
+    f = fopen(full, mode);
     if (f) return f;
-    /* try lowercasing (CHARACTERS.SEN vs characters.sen) */
-    for (size_t i=0;i<n;i++) alt[i] = (char)tolower((unsigned char)alt[i]);
-    f = fopen(alt, mode);
-    return f;
+    /* Last resort: component-wise case-insensitive match. */
+    f = platformFopenCI(norm, mode);
+    if (f) return f;
+    return platformFopenCI(full, mode);
 }
 
-/* fileOpenMode @0x408cd0 — fopen with "wb"/"rb"; FILE* as int, -1 on fail. */
-int fileOpenMode(LPCSTR path, int mode)
+/* Directory enumeration abstraction (Phase 5): platform-specific
+ * implementations behind one contract. Linux/macOS use dirent; Windows
+ * uses the CRT findfirst set (no Win32 GUI headers needed). Callback
+ * receives each entry name; nonzero return stops the scan. */
+int utilScanDir(const char *dir, int (*cb)(const char *name, void *ctx), void *ctx)
 {
-    FILE *f = fopen_normalized(path, (mode == 1) ? "wb" : "rb");   /* g_sz_wb @0x44e6c8 / g_sz_rb @0x44e6c0 */
-    return (f != NULL) ? (int)(size_t)f : -1;
+    char norm[1024], full[2048];
+    size_t n;
+    if (!dir || !cb) return 0;
+    n = strlen(dir);
+    if (n >= sizeof(norm)) n = sizeof(norm) - 1;
+    for (size_t i = 0; i < n; i++) norm[i] = (dir[i] == '\\') ? '/' : dir[i];
+    norm[n] = '\0';
+    platformAssetPath(norm, full, sizeof(full));
+#ifdef _WIN32
+    {
+        /* NOTE: native Windows build only; Linux uses dirent below. */
+        char search[2200];
+        struct _finddata_t fd;
+        intptr_t h;
+        snprintf(search, sizeof(search), "%s/*", full);
+        h = _findfirst(search, &fd);
+        if (h == -1) return 0;
+        do {
+            if (cb(fd.name, ctx)) break;
+        } while (_findnext(h, &fd) == 0);
+        _findclose(h);
+        return 1;
+    }
+#else
+    {
+        DIR *d = opendir(full);
+        struct dirent *e;
+        if (!d) {
+            d = opendir(norm);
+            if (!d) return 0;
+        }
+        while ((e = readdir(d)) != NULL) {
+            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+            if (cb(e->d_name, ctx)) break;
+        }
+        closedir(d);
+        return 1;
+    }
+#endif
+}
+
+/* fileOpenMode @0x408cd0 — fopen with "wb"/"rb".
+ * 64-bit port: returns FILE* directly (original returned the pointer as an
+ * int/0xffffffff sentinel, which truncates on 64-bit). Callers test NULL. */
+FILE *fileOpenMode(LPCSTR path, int mode)
+{
+    return fopen_normalized(path, (mode == 1) ? "wb" : "rb");   /* g_sz_wb @0x44e6c8 / g_sz_rb @0x44e6c0 */
 }
 
 /* fileCloseStream @0x408d00 */
@@ -191,7 +265,7 @@ void fatalError(const char *pFmt, ...) /* @0x414570 */
     vsnprintf(buf, sizeof(buf), pFmt, args);
     va_end(args);
     appLog("[fatalError] %s", buf);     /* log before the modal box so headless runs show the cause */
-    MessageBoxA(g_hWnd, buf, "Mall Maniacs - Error", MB_ICONERROR);  /* caption @0x44ffe4, uType 0x10 */
+    platformShowError("Mall Maniacs - Error", buf);  /* caption @0x44ffe4; SDL msgbox + stderr */
     exit(-1);                             /* exitProc(0xffffffff) */
 }
 /* ===================================================================
@@ -201,8 +275,11 @@ void fatalError(const char *pFmt, ...) /* @0x414570 */
 /* fmtAtoi @0x43e75c — CRT atoi (fmtAtoiCore): skip whitespace, optional
  * +/-, parse decimal digits. The ECX 'this' operand of the original
  * thiscall is never dereferenced by fmtAtoiCore, so the rebuild exposes
- * only the string argument. */
+ * only the string argument. 64-bit-port hardening: commandDispatch
+ * returns NULL for unhandled "get ..." queries (stubs.c contract), so a
+ * NULL reply means "no data" (0) instead of crashing in atoi. */
 int fmtAtoi(const char *pszText) /* @0x43e75c */
 {
+    if (pszText == NULL) return 0;
     return atoi(pszText);   /* fmtAtoiCore @0x43e6d1 */
 }

@@ -1,15 +1,16 @@
 #ifndef SOUND_H
 #define SOUND_H
 
-#include <windows.h>
+#include "compat_types.h"
 
 /* =====================================================================
  * Sound subsystem — reimplementation of the maniac sample-bank and
- * playback interface using the same DirectSound output path as the
- * original: DirectSoundCreate + SetCooperativeLevel + streaming buffer,
- * with per-frame Lock/Write/Unlock of free write regions and a software
- * mixer (docs/09-sound.md). MCI CD-audio (the original's music path) is
- * intentionally not reproduced. Original addresses noted per symbol.
+ * playback interface. SDL2 port (@0x437a30/@0x437cb0/@0x437c50): the
+ * legacy streaming-audio ring is replaced by an SDL2 queue device
+ * (see audio_sdl2.c); per-frame lock/write/unlock of free regions and
+ * the software mixer are preserved (docs/09-sound.md). MCI CD-audio
+ * (the original's music path) is intentionally not reproduced.
+ * Original addresses noted per symbol.
  *
  * Functions implemented here (maniac addresses):
  *   sndInitSystem     0x437a30
@@ -45,14 +46,18 @@ extern void *g_apSndBank[0x100];
 extern void *g_pSndQueue[0x100];
 /* g_nSndQueueCount @0x4622e8 — number of free voice slots. */
 extern int g_nSndQueueCount;
-/* g_nMixRateDivisor @0x46235c — rate divisor handed to pitched voices. */
-extern int g_nMixRateDivisor;
+/* g_audSentinelPos @0x46235c — the original's word at 0x46235c (handed to
+ * pitched voices as a "centered" position sentinel, read as int[3] by
+ * sndVolFromPos; permanently {0,0,0}). g_nMixRateDivisor aliases element 0
+ * so existing address-taken uses keep working. */
+extern int g_audSentinelPos[3];
+#define g_nMixRateDivisor (g_audSentinelPos[0])
 
 /* --- public interface --- */
 
-/* sndInitSystem @0x437a30 — init the sample banks + voice queue + DirectSound
- * streaming output; failure sets g_bSoundMute (the original keeps running
- * muted). */
+/* sndInitSystem @0x437a30 — init the sample banks + voice queue + SDL2
+ * audio output; silent-no-device sets g_bSoundMute (the original keeps
+ * running muted). */
 int sndInitSystem(unsigned int nMixStereoConfig, unsigned short nVoiceCap,
                   int nFrameRegions);
 
@@ -65,7 +70,7 @@ int sndInitSystem(unsigned int nMixStereoConfig, unsigned short nVoiceCap,
  * so the argument is accepted and ignored. Returns 1. */
 int sndStopAllVoices(void *pVoiceList);                           /* @0x438100 */
 
-/* sndShutdown @0x437cb0 — release samples, the DirectSound objects, and the
+/* sndShutdown @0x437cb0 — release samples, the SDL2 audio device, and the
  * software mix buffers. */
 int sndShutdown(void);
 
@@ -78,11 +83,11 @@ int sndLoadBankFromDir(int nBank, char *pszDir);
  * stored as the voice flags (0x200 loop, 0x400 rate-divisor, 0x800 scale
  * pitch). nMixerVoice is 0 for plain cues or the owning MusicEmitter record
  * pointer for 3D emitter voices. Returns a handle or 0 when dropped. */
-int sndPlaySfx(int nMixerVoice, unsigned int nBank, unsigned int nSfxIndex,
+int sndPlaySfx(intptr_t nMixerVoice, unsigned int nBank, unsigned int nSfxIndex,
                unsigned int nVolume, int nPitch, unsigned int nFlags);
 
 /* sndMixTick @0x437c50 — per-frame: build the active voice chain, lock free
- * DirectSound write regions, render voices into them, and recycle finished
+ * SDL ring regions, render voices into them, and recycle finished
  * voices. */
 int sndMixTick(unsigned int nFrameCounter);
 

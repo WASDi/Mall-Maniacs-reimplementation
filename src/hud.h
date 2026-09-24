@@ -7,10 +7,10 @@
  * HUD fonts defined in font.c. */
 
 /* HUD textures @0x458980..0x45898c (loaded by hudLoadGraphics @0x412700). */
-extern void *g_hHudListTpg;    /* @0x458980 hud/list00.tpg — shopping list panel */
-extern void *g_hHudCharTpg;    /* @0x458984 hud/char00.tpg — character face panel */
-extern void *g_hHudGfx2Tpg;    /* @0x458988 hud/gfx2200.tpg — panels, arrows, bars */
-extern void *g_hHudFrogeTpg;   /* @0x45898c hud/froge00.tpg — frog message panel */
+extern int g_hHudListTpg;    /* @0x458980 hud/list00.tpg — shopping list panel */
+extern int g_hHudCharTpg;    /* @0x458984 hud/char00.tpg — character face panel */
+extern int g_hHudGfx2Tpg;    /* @0x458988 hud/gfx2200.tpg — panels, arrows, bars */
+extern int g_hHudFrogeTpg;   /* @0x45898c hud/froge00.tpg — frog message panel */
 
 /* HUD draw state @0x458990..0x4589a4. */
 extern int g_nScoreDisplay;    /* @0x458990 mode 3 final score (ticks*obj_update) */

@@ -1,5 +1,6 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "level.h"
@@ -31,7 +32,7 @@ int g_nLevelScene;        /* @0x4580b0 */
 int g_nCharScene;         /* @0x4580b4 */
 int g_nObjScene;          /* @0x4580b8 */
 int g_bMusicTrack;        /* @0x4580c0 */
-int g_nTexHudFlingbjorn;  /* @0x458348 */
+void *g_nTexHudFlingbjorn;  /* @0x458348 */
 
 const char *g_aszLevelDirs[5] = {      /* @0x44f0d8 pointer table */
     "scene_ica",                       /* [0] @0x44f128 */
@@ -53,7 +54,7 @@ extern void *g_pSceneDetailGrid;   /* @0x45838c (defined in gameplay.c) */
  * roundStartInit's FIRST scene-system cycle (scenNameTableInit 10000/10000),
  * before the teardown + load screen + second cycle that levelSetup uses.
  * Streams the "levels[%d]/texture_files" pattern (e.g.
- * "Scene_ica\merged%02d.tpg") into GX with names "MERGED%02d" until
+ * "scene_ica\MERGED%02d.TPG") into GX with names "MERGED%02d" until
  * fileReadRaw fails, plus the per-level extra sets (aqua/future/orient).
  * Then reloads the "levels[%d]" block, builds "%s\ph%s" from scene_path +
  * scene_file, loads that scene into g_nLevelScene @0x4580b0, turns every
@@ -72,7 +73,7 @@ void levelSceneTexturesLoad(void) /* @0x4104b0 */
     ConfigNode *pLevel;
     int i;
     int n;
-    int anHandles[1024];
+    SceneNode *anHandles[1024];
 
     fmtSprintf(szLevelKey, "levels[%d]", g_nLevelIdx);            /* wsprintfA @0x4104e9 */
     pLevel = configEnvGetValue(&g_configEnvMaster, NULL, szLevelKey);  /* @0x4104fa */
@@ -93,7 +94,7 @@ void levelSceneTexturesLoad(void) /* @0x4104b0 */
     }
     if (g_nLevelIdx == 3) {                                       /* aqua extras @0x4105f4 */
         for (i = 0; ; i++) {
-            fmtSprintf(szPath, "scene_aqua\\aqua%02d.tpg", i);    /* @0x44f74c */
+            fmtSprintf(szPath, "scene_aqua\\AQUA%02d.TPG", i);    /* @0x44f74c */
             pData = fileReadRaw(0, szPath);
             if (pData == NULL) break;
             fmtSprintf(szPath, "AQUA%02d", i);                    /* @0x44f740 */
@@ -102,7 +103,7 @@ void levelSceneTexturesLoad(void) /* @0x4104b0 */
         }
     } else if (g_nLevelIdx == 4) {                                /* future extras @0x410657 */
         for (i = 0; ; i++) {
-            fmtSprintf(szPath, "scene_future\\fut%02d.tpg", i);   /* @0x44f724 */
+            fmtSprintf(szPath, "scene_future\\FUT%02d.TPG", i);   /* @0x44f724 */
             pData = fileReadRaw(0, szPath);
             if (pData == NULL) break;
             fmtSprintf(szPath, "FUT%02d", i);                     /* @0x44f71c */
@@ -111,7 +112,7 @@ void levelSceneTexturesLoad(void) /* @0x4104b0 */
         }
     } else if (g_nLevelIdx == 2) {                                /* orient extras @0x4106ba */
         for (i = 0; ; i++) {
-            fmtSprintf(szPath, "scene_orient\\orient%02d.tpg", i); /* @0x44f700 */
+            fmtSprintf(szPath, "scene_orient\\ORIENT%02d.TPG", i); /* @0x44f700 */
             pData = fileReadRaw(0, szPath);
             if (pData == NULL) break;
             fmtSprintf(szPath, "ORIENT%02d", i);                  /* @0x44f6f4 */
@@ -137,7 +138,7 @@ void levelSceneTexturesLoad(void) /* @0x4104b0 */
         for (i = 0; i < n; i++) {
             AiNavNode *pNav = malloc(sizeof(AiNavNode));          /* operator_new @0x43dd42 @0x41083a */
             if (pNav != NULL) {
-                aiNavNodeCtorScene(pNav, (SceneNode *)(size_t)anHandles[i]); /* @0x428cf0 @0x410857 */
+                aiNavNodeCtorScene(pNav, anHandles[i]); /* @0x428cf0 @0x410857 */
             }
         }
     }
@@ -160,25 +161,25 @@ void levelSetup(void) /* @0x4108a0 */
     int i;
     LevelItemSlot *pSlot;
 
-    wsprintf(szPath, "levels[%d]", g_nLevelIdx);              /* "levels[%d]" @0x44f7b4 */
+    snprintf(szPath, sizeof(szPath), "levels[%d]", g_nLevelIdx);              /* "levels[%d]" @0x44f7b4 */
     pLevel = configEnvGetValue(&g_configEnvMaster, NULL, szPath);
     if (pLevel == NULL) {
         fatalError("'levels[%d]' not found in cfg.", g_nLevelIdx);   /* @0x44f794 */
     }
     configEnvGetString(&mstrTmp, pLevel, "texture_files");   /* @0x44f784 */
-    lstrcpyn(szTexFiles, mStringCStr(&mstrTmp), (int)sizeof(szTexFiles));
+    snprintf(szTexFiles, sizeof(szTexFiles), "%s", mStringCStr(&mstrTmp));
     mStringFree(&mstrTmp);
     nopDebugStub();                                          /* original keeps the copy unused */
 
     fmtSprintf(szPath, "%s\\hud\\flingbjorn.tga",             /* @0x44f95c */
                g_aszLevelDirs[g_nLevelIdx]);
-    g_nTexHudFlingbjorn = (int)imageLoadByMode(szPath);
-    if (g_nTexHudFlingbjorn == 0) {
+    g_nTexHudFlingbjorn = imageLoadByMode(szPath);
+    if (g_nTexHudFlingbjorn == NULL) {
         fatalError("Flingbj\xf6rn picture not found!!");     /* @0x44f93c */
     }
 
     mStringCtorEmpty(&mstrScenePath);
-    wsprintf(szPath, "levels[%d]", g_nLevelIdx);
+    snprintf(szPath, sizeof(szPath), "levels[%d]", g_nLevelIdx);
     pLevel = configEnvGetValue(&g_configEnvMaster, NULL, szPath);
     if (pLevel == NULL) {
         fatalError("'levels[%d]' not found in cfg.", g_nLevelIdx);
@@ -195,7 +196,7 @@ void levelSetup(void) /* @0x4108a0 */
     g_nLevelScene = sceneLoadSen(g_szLevelScenePath, NULL);
 
     {
-        void *pGrid = malloc(0x20);                          /* operator_new @0x43dd42 */
+        void *pGrid = malloc(sizeof(SceneDetailGrid));                          /* operator_new @0x43dd42 */
         g_pSceneDetailGrid = (pGrid != NULL)
             ? sceneDetailGridCtor(pGrid, 0, 4, 0x400, 10000)
             : NULL;
@@ -227,7 +228,7 @@ void levelSetup(void) /* @0x4108a0 */
     g_nCharScene = sceneLoadSen(g_szCharScenePath, NULL);
     scenSetDir("");                                          /* "" @0x4550d8 */
 
-    wsprintf(szPath, "levels[%d]/startup", g_nLevelIdx);     /* @0x44f854 */
+    snprintf(szPath, sizeof(szPath), "levels[%d]/startup", g_nLevelIdx);     /* @0x44f854 */
     pStartup = configEnvGetValue(&g_configEnvMaster, NULL, szPath);
     if (pStartup == NULL) {
         nopDebugStub();                                      /* "WARNING! No startup script..." @0x44f824 */
@@ -244,13 +245,13 @@ void levelSetup(void) /* @0x4108a0 */
     /* Item slots: mesh field base 0x4583e4, stride 0x2c, bound 0x45890c. */
     for (i = 0; i < LEVEL_ITEM_SLOT_COUNT; i++) {
         pSlot = &g_apLevelItemSlots[i];
-        wsprintf(szPath, "items[%d]", i);                    /* @0x44f818 */
+        snprintf(szPath, sizeof(szPath), "items[%d]", i);                    /* @0x44f818 */
         pCur = configEnvGetValue(&g_configEnvMaster, NULL, szPath);
         if (pCur == NULL) {
             fatalError("'items' block not found in cfg.");   /* @0x44f7f8 */
         }
         configEnvGetString(&mstrTmp, pCur, "name");          /* @0x44f7f0 */
-        lstrcpyn(pSlot->szName, mStringCStr(&mstrTmp), (int)sizeof(pSlot->szName));
+        snprintf(pSlot->szName, sizeof(pSlot->szName), "%s", mStringCStr(&mstrTmp));
         mStringFree(&mstrTmp);
         if (g_nGameMode == 4) {
             pSlot->nMeshId = scenNameToId("CHECKFLAG");      /* @0x44f7c0 */
@@ -264,7 +265,7 @@ void levelSetup(void) /* @0x4108a0 */
         }
         pSlot->pSubObj = sceneNodeAllocChild(NULL, NULL, NULL, NULL, NULL);
         pSlot->pSceneObj = sceneryObjAlloc((SceneNode *)pSlot->pSubObj, 0, 0, 0, 0,
-                                           0, 0, 0, (void *)(size_t)pSlot->nMeshId);
+                                           0, 0, 0, pSlot->nMeshId);
     }
 
     mStringFree(&mstrScenePath);

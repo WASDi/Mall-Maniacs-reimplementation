@@ -420,7 +420,10 @@ int configParseFile(ConfigEnv *pEnv, const char *pPsz) /* @0x435890 */
     int nResult;
 
     configEnvSetName(&pEnv->name, pPsz);
-    fp = fopen(pPsz, "rb");                 /* streamOpenInputFile (CRT) */
+    /* streamOpenInputFile (CRT): the original resolved script-relative
+     * names (nload <file>.ai, eload <file>.eo) against the game dir.
+     * Route through the file layer so the data dir + CI fallback apply. */
+    fp = fileOpenMode(pPsz, 0);
     if (fp == NULL) {
         return -1;
     }

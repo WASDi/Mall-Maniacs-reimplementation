@@ -37,8 +37,8 @@ int g_nCameraUpdateTick;
  * of those nodes track the character. */
 void cameraSetClassMeshes(CameraFollowBlock *pBlk, SceneNode *pMesh) /* @0x4023b0 */
 {
-    sceneObjSetClassMesh((int)(size_t)pBlk->pPosNode, pMesh, 0, 3);   /* @0x4023c0 */
-    sceneObjSetClassMesh((int)(size_t)pBlk->pAimNode, pMesh, 0, 3);   /* @0x4023d5 [EDI+0xc] */
+    sceneObjSetClassMesh(pBlk->pPosNode, pMesh, 0, 3);   /* @0x4023c0 */
+    sceneObjSetClassMesh(pBlk->pAimNode, pMesh, 0, 3);   /* @0x4023d5 [EDI+0xc] */
     pBlk->pFollowNode = pMesh;                                        /* @0x4023e6 */
 }
 

@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "compat_types.h"
 
 #include "player.h"
 #include "player_physics.h"
@@ -76,7 +76,7 @@ static const float g_fl9_588e_05 = 9.587673e-05f;   /* @0x44b6dc */
 void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
 {
     WorldNode *pWalk = pRec->pSubObjA;                     /* +0x224 @0x426ffc */
-    int nCharKey = (int)(size_t)pRec->pCharSceneNode;      /* +0x10 channel key */
+    intptr_t nCharKey = (intptr_t)pRec->pCharSceneNode;      /* +0x10 channel key */
     GxVec2 vRot;
     EventObject *pEo;
     ObjChildMesh *pMesh;
@@ -115,9 +115,9 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
                 continue;
             }
             if (bSquashed || rand() % 100 < 5) {                               /* @0x4271b8 */
-                void *pEmitter = malloc(0x1c);                                 /* operator_new @0x43dd42 */
+                void *pEmitter = malloc(sizeof(SndEmitter));                                 /* operator_new @0x43dd42 */
                 if (pEmitter != NULL) {
-                    sndPlaySfx3D(pEmitter, 1, 0x1a, 0xfde8, 0xff, (void *)(size_t)nCharKey, 0, 0, 0, 0, 0);
+                    sndPlaySfx3D(pEmitter, 1, 0x1a, 0xfde8, 0xff, (void *)nCharKey, 0, 0, 0, 0, 0);
                 }
             }
             gxVec2Set(&vIn, pEo->flPosX - (float)(int)pWalk->vPos.x,        /* x=+0x38 @0x42724c */
@@ -150,9 +150,9 @@ void playerUpdateWalkPhysics(PlayerRecord *pRec) /* @0x426fd0 */
                 continue;
             }
             if (bHurtSfx == 0) {                                               /* TEST BL,BL @0x427397 */
-                void *pEmitter = malloc(0x1c);                                 /* @0x42739d */
+                void *pEmitter = malloc(sizeof(SndEmitter));                                 /* @0x42739d */
                 if (pEmitter != NULL) {
-                    sndPlaySfx3D(pEmitter, 1, 7, 0xfde8, 0xff, (void *)(size_t)nCharKey, 0, 0, 0, 0, 0);
+                    sndPlaySfx3D(pEmitter, 1, 7, 0xfde8, 0xff, (void *)nCharKey, 0, 0, 0, 0, 0);
                 }
             }
             pRec->vVelPolar.x = 0.0f;                                          /* +0x21c @0x4273e6 */
@@ -247,7 +247,7 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
 {
     WorldNode *pPos = pRec->pSubObjB;                      /* +0x264 */
     WorldNode *pWalk = pRec->pSubObjA;                     /* +0x224 */
-    int nCartKey = (int)(size_t)pRec->pCartSceneObj;       /* +0x14 channel key */
+    intptr_t nCartKey = (intptr_t)pRec->pCartSceneObj;       /* +0x14 channel key */
     float afH[4];
     float afXw[4];                                         /* vPos.y (world x) slots */
     float afZw[4];                                         /* vPos.x (world z) slots */
@@ -416,9 +416,9 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
                 continue;
             }
             if (bHurtSfx == 0) {                                             /* @0x427d9c */
-                void *pEmitter = malloc(0x1c);                               /* @0x427da2 */
+                void *pEmitter = malloc(sizeof(SndEmitter));                               /* @0x427da2 */
                 if (pEmitter != NULL) {
-                    sndPlaySfx3D(pEmitter, 1, 7, 0xfde8, 0xff, (void *)(size_t)nCartKey, 0, 0, 0, 0, 0);
+                    sndPlaySfx3D(pEmitter, 1, 7, 0xfde8, 0xff, (void *)nCartKey, 0, 0, 0, 0, 0);
                 }
             }
             pRec->bStateFlags |= 0x10;                                       /* @0x427dfd */
@@ -496,7 +496,7 @@ void playerUpdateOnFoot(PlayerRecord *pRec) /* @0x427730 */
 void syncWalkNodeChannelsToMesh(PlayerRecord *pRec) /* @0x428990 */
 {
     WorldNode *pWalk = pRec->pSubObjA;                     /* +0x224 @0x428996 */
-    int nCharKey = (int)(size_t)pRec->pCharSceneNode;      /* +0x10 */
+    intptr_t nCharKey = (intptr_t)pRec->pCharSceneNode;      /* +0x10 */
     float flSpeed = pRec->flCurSpeed;                      /* +0x1f4 @0x42899c */
     float flBound = pRec->flAccFric;                       /* +0x1f0 @0x4289a2 */
     float flHeading;
@@ -538,7 +538,7 @@ void syncWalkNodeChannelsToMesh(PlayerRecord *pRec) /* @0x428990 */
 void syncPosNodeChannelsToMesh(PlayerRecord *pRec) /* @0x428840 */
 {
     WorldNode *pPos = pRec->pSubObjB;                      /* +0x264 @0x42884c */
-    int nCartKey = (int)(size_t)pRec->pCartSceneObj;       /* +0x14 */
+    intptr_t nCartKey = (intptr_t)pRec->pCartSceneObj;       /* +0x14 */
     float flBound = pRec->flCurRotAccFric;                 /* +0x240 @0x428846 */
     float flRest = pRec->flPosTurnAccum;                   /* +0x244 @0x428852 */
     int nZ;
@@ -599,8 +599,8 @@ void syncCartNodeChannelsToWalkPos(PlayerRecord *pRec) /* @0x40e040 */
     WorldNode *pCart = pRec->pSubObjC;                     /* +0x2a4 @0x40e047 */
     WorldNode *pWalk = pRec->pSubObjA;                     /* +0x224 */
     WorldNode *pPos = pRec->pSubObjB;                      /* +0x264 */
-    int nCharKey = (int)(size_t)pRec->pCharSceneNode;      /* +0x10 @0x40e05e */
-    int nCartKey = (int)(size_t)pRec->pCartSceneObj;       /* +0x14 */
+    intptr_t nCharKey = (intptr_t)pRec->pCharSceneNode;      /* +0x10 @0x40e05e */
+    intptr_t nCartKey = (intptr_t)pRec->pCartSceneObj;       /* +0x14 */
     int nZ;
     int nY;
     int nX;
@@ -663,8 +663,8 @@ void objWalkAnimSync(struct PlayerRecord *pSelf, struct PlayerRecord *pRec) /* @
 void syncCartNodeChannelsToMeshes(PlayerRecord *pRec) /* @0x428a70 */
 {
     WorldNode *pCart = pRec->pSubObjC;                     /* +0x2a4 @0x428a7c */
-    int nCharKey = (int)(size_t)pRec->pCharSceneNode;      /* +0x10 */
-    int nCartKey = (int)(size_t)pRec->pCartSceneObj;       /* +0x14 */
+    intptr_t nCharKey = (intptr_t)pRec->pCharSceneNode;      /* +0x10 */
+    intptr_t nCartKey = (intptr_t)pRec->pCartSceneObj;       /* +0x14 */
     float flTurn = pRec->flCartTurnAccum;                  /* +0x284 @0x428a82 */
     float flTurnB = pRec->flCartRotAccFric;                /* +0x280 @0x428a76 */
     int nZ;
@@ -735,8 +735,8 @@ void syncCartNodeChannelsToMeshes(PlayerRecord *pRec) /* @0x428a70 */
 void playerUpdateCartPhysics(PlayerRecord *pRec) /* @0x4280b0 */
 {
     WorldNode *pCart = pRec->pSubObjC;                     /* +0x2a4 */
-    int nCharKey = (int)(size_t)pRec->pCharSceneNode;      /* +0x10 */
-    int nCartKey = (int)(size_t)pRec->pCartSceneObj;       /* +0x14 */
+    intptr_t nCharKey = (intptr_t)pRec->pCharSceneNode;      /* +0x10 */
+    intptr_t nCartKey = (intptr_t)pRec->pCartSceneObj;       /* +0x14 */
     GxVec2 vDrift;
     GxVec2 vOut;
     EventObject *pEo;
@@ -943,8 +943,15 @@ void gameUpdate(void) /* @0x426ee0 */
     int i;
 
     g_nGameUpdateTick++;                                                  /* @0x45e5dc @0x426ee0 */
-    for (pItem = g_pThrownItemHead; pItem != NULL; pItem = pItem->pNext) { /* @0x426ef9 */
+    /* Pass 1 @0x426ef9..0x426f05: the original caches the next link
+     * (ESI = [ECX+0x04]) BEFORE calling itemThrowUpdate, because the
+     * cart-pickup path frees the current record (thrownItemFree +
+     * memFreeDirect @0x40fdb4). A for-loop reading pNext after the
+     * call would use-after-free and segfault on cart landings. */
+    for (pItem = g_pThrownItemHead; pItem != NULL;) {                     /* @0x426ef9 */
+        ThrownItem *pNext = pItem->pNext;                                 /* ESI @0x426ef9 */
         itemThrowUpdate(pItem);                                           /* @0x40f950 @0x426efc */
+        pItem = pNext;                                                    /* ECX=ESI @0x426f01 */
     }
     for (i = 0; i < g_nPlayerCount; i++) {                                /* @0x426f17 */
         PlayerRecord *pRec = &g_playerRecords[i];

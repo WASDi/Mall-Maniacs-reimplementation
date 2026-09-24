@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 
 #include "input.h"

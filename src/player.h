@@ -7,6 +7,7 @@
 #include "obj.h"
 
 struct PlayerRecord;
+struct QuestRecord; /* quest.h — pQuestMessage points at a QuestRecord */
 
 /* AiController is the 0x60-byte per-player controller view embedded at
  * PlayerRecord+0x314 (array base 0x456524). aiControllersInit @0x401040
@@ -43,7 +44,10 @@ typedef struct AiController {
     GxVec2 vStuckPos;                /* +0x58 last stuck-check position sample */
 } AiController;                      /* 0x60 */
 
+#if MANIAC_32BIT_RUNTIME_LAYOUT /* runtime struct: native pointers widen it on 64-bit */
 typedef char AiControllerSizeMustBe0x60[(sizeof(AiController) == 0x60) ? 1 : -1];
+#endif
+
 
 /* PlayerRecord is the 0x374-byte gameplay player record at
  * g_playerRecords @0x456210. The controller view lives at +0x314
@@ -92,7 +96,9 @@ typedef struct PlayerRecord {
     int abListTaken[10];         /* +0x1ac taken flags */
     int nQuestFlags;             /* +0x1d4 mode-1 quest flag (-1 while a quest is open) */
     int nQuestTargetId;          /* +0x1d8 mode-1 last rejected list id (targeting filter) */
-    void *pQuestMessage;         /* +0x1dc frog message block (+0x10 = text, +0x14 = stage) */
+    struct QuestRecord *pQuestMessage; /* +0x1dc quest record (quiz question);
+                                    * +0x10 pszQuestion / +0x14 bAnswer in the
+                                    * 32-bit original; struct access on 64-bit */
     int nQuestStage;             /* +0x1e0 mode-1 quest stage counter (vs pQuestMessage+0x14) */
     int nLastThrownItemId;       /* +0x1e4 id of the item this record threw last (mode-1/2 filter) */
     /* +0x1e8 walk physics block (16 dwords; refreshed from the shared block) */
@@ -175,7 +181,10 @@ typedef struct PlayerRecord {
     AiController ai;             /* +0x314 controller view (original base 0x456524) */
 } PlayerRecord;                   /* 0x374 */
 
+#if MANIAC_32BIT_RUNTIME_LAYOUT /* runtime struct: native pointers widen it on 64-bit */
 typedef char PlayerRecordSizeMustBe0x374[(sizeof(PlayerRecord) == 0x374) ? 1 : -1];
+#endif
+
 
 extern PlayerRecord g_playerRecords[8];  /* @0x456210 */
 
@@ -217,7 +226,10 @@ typedef struct ThrownItem {
     int nOwnerIdx;               /* +0x2c throwing player index */
 } ThrownItem;                    /* 0x30 */
 
+#if MANIAC_32BIT_RUNTIME_LAYOUT /* runtime struct: native pointers widen it on 64-bit */
 typedef char ThrownItemSizeMustBe0x30[(sizeof(ThrownItem) == 0x30) ? 1 : -1];
+#endif
+
 
 /* Per-subsystem headers — umbrella re-export so consumers that include
  * player.h get all player APIs without changing include lists. Guarded

@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include "gx.h"
@@ -9,6 +9,7 @@
 #include "util.h"
 #include "custom_helpers.h"
 #include "time.h"
+#include "platform_sdl2.h"
 
 /* =====================================================================
  * game.c — gameInit @0x409d90 and its leaf helpers.
@@ -37,7 +38,7 @@
  * ===================================================================== */
 
 extern HWND g_hWnd;                 /* maniac g_hMainWindow @0x459ce0 */
-extern HINSTANCE g_hAppInstance;    /* maniac g_hAppInstance @0x459cdc — exposed from maniac.c */
+extern HINSTANCE g_hAppInstance;    /* @0x459cdc (defined in platform_sdl2.c) */
 extern int g_nGfxMode;              /* @0x4580c4 1 Glide,2 Soft — defined in options.c */
 
 /* One-time guard mirroring g_bGameInitDone @0x4583c0 bit 0. */
@@ -51,13 +52,14 @@ static int g_bSommarSolFirstRun = 1;   /* @0x44f0ec (byte in original) */
 void *g_pMoveState;                 /* @0x455e60 */
 
 /* moveStateCtor @0x401000 — ctor for 0x60-byte movement-state object.
- * Zeros gxVec2 at +0x14,+0x20,+0x2c,+0x58. */
-int moveStateCtor(int pObj) /* @0x401000 */
+ * Zeros gxVec2 at +0x14,+0x20,+0x2c,+0x58.
+ * 64-bit port: takes void* (the original took the address as int). */
+void *moveStateCtor(void *pObj) /* @0x401000 */
 {
-    gxVec2SetAngleZero((void *)(pObj + 0x14));
-    gxVec2SetAngleZero((void *)(pObj + 0x20));
-    gxVec2SetAngleZero((void *)(pObj + 0x2c));
-    gxVec2SetAngleZero((void *)(pObj + 0x58));
+    gxVec2SetAngleZero((void *)((char *)pObj + 0x14));
+    gxVec2SetAngleZero((void *)((char *)pObj + 0x20));
+    gxVec2SetAngleZero((void *)((char *)pObj + 0x2c));
+    gxVec2SetAngleZero((void *)((char *)pObj + 0x58));
     return pObj;
 }
 
@@ -116,7 +118,7 @@ void gameInit(void) /* @0x409d90 */
          * ctor on a dummy to preserve the tracked call. */
         {
             char dummyMove[0x60] = {0};
-            moveStateCtor((int)(size_t)dummyMove);
+            moveStateCtor(dummyMove);
         }
         nopDebugStub();
     }
@@ -132,12 +134,24 @@ void gameInit(void) /* @0x409d90 */
     nopDebugStub();
 
     /* maniac.cfg (XOR 0x55) -> sommar.sol -> configParseFile ->
-     * configMasterLoad, exactly as disasm 0x409e88..0x409f65. */
+     * configMasterLoad, exactly as disasm 0x409e88..0x409f65.
+     * Asset reads resolve via the data dir; temp/config writes go to the
+     * user pref dir (never beside installed assets). */
     {
         extern int g_bSommarSolFirstRun;   /* @0x44f0ec (defined below) */
-        FILE *pOut = fopen("sommar.sol", "wb");            /* @0x44e6c4 / "wb" @0x44e6d0 */
+        char szCfgIn[2048], szSol[2048];
+        FILE *pOut;
+        platformAssetPath("maniac.cfg", szCfgIn, sizeof(szCfgIn));
+        {
+            const char *pref = platformPrefDir();
+            if (pref && pref[0])
+                snprintf(szSol, sizeof(szSol), "%s/sommar.sol", pref);
+            else
+                snprintf(szSol, sizeof(szSol), "sommar.sol");
+        }
+        pOut = fopen(szSol, "wb");            /* @0x44e6c4 / "wb" @0x44e6d0 */
         if (pOut != NULL) {
-            FILE *pIn = fopen("maniac.cfg", "rb");         /* @0x44f210 / "rb" @0x44e6c0 */
+            FILE *pIn = fopen(szCfgIn, "rb");         /* @0x44f210 / "rb" @0x44e6c0 */
             char *pBuf = NULL;
             unsigned int nSize = 0;
             if (pIn != NULL) {
@@ -165,11 +179,11 @@ void gameInit(void) /* @0x409d90 */
         } else {
             fatalError("Kunde inte l\xe4sa \"maniac.cfg\".");
         }
-        if (g_bSommarSolFirstRun && configParseFile(&g_configEnvMaster, "sommar.sol") < 0) {
-            fileDelete("sommar.sol");
+        if (g_bSommarSolFirstRun && configParseFile(&g_configEnvMaster, szSol) < 0) {
+            fileDelete(szSol);
             fatalError("Kunde inte l\xe4sa \"maniac.cfg\".");
         }
-        fileDelete("sommar.sol");
+        fileDelete(szSol);
         configMasterLoad();
         g_bGameActive = 0;                                  /* @0x4580f8 */
         appLog("[gameInit] config parsed (levels/objects/master)");
@@ -191,7 +205,7 @@ void gameInit(void) /* @0x409d90 */
         if (ok) {
             g_nGfxMode = 1;
         } else {
-            ok = gxLoadDriver("DRIVERS\\GXSOFT.DLL");
+            ok = gxLoadDriver(NULL);
             if (ok) g_nGfxMode = 2;
             else {
                 appLog("[gameInit] gxLoadDriver failed (both fallbacks)");
@@ -207,8 +221,8 @@ void gameInit(void) /* @0x409d90 */
         mode.width = 0x280;
         mode.height = 0x1e0;
         mode.bpp = 0x10;
-        mode.hInstance = (unsigned int)(size_t)g_hAppInstance;
-        mode.hwnd = (unsigned int)(size_t)g_hWnd;
+        mode.hInstance = NULL;
+        mode.hwnd = NULL;
         if (!gxInit(&mode)) {
             appLog("[gameInit] gxInit/pSetMode failed");
             return;
@@ -220,9 +234,11 @@ void gameInit(void) /* @0x409d90 */
      * moveStateCtor -> g_pMoveState @0x455e60. operator_new is CRT
      * (not tracked), so we use malloc. */
     {
+        /* 0x60-byte raw block (no pointers; ctor writes GxVec2 floats only),
+         * so the size is pointer-width independent. */
         void *p = malloc(0x60);
         if (p != NULL) {
-            g_pMoveState = (void *)(size_t)moveStateCtor((int)(size_t)p);
+            g_pMoveState = moveStateCtor(p);
         } else {
             g_pMoveState = NULL;
         }

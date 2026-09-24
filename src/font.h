@@ -1,7 +1,7 @@
 #ifndef FONT_H
 #define FONT_H
 
-#include <windows.h>
+#include "compat_types.h"
 
 /* Font / text rendering module — reimplementation of maniac font/text
  * functions @0x408f90-0x409940 (see docs/16-rebuild.md "Font / text
@@ -15,8 +15,8 @@
 typedef struct gxFont {
     unsigned short wHeight;            /* +0x00 "width" key */
     unsigned short wPad2;              /* +0x02 "heigth" (sic) key */
-    void          *pTexture;           /* +0x04 texture node (colorUv[0]) */
-    void          *pParam5;            /* +0x08 (colorUv[1]) */
+    int            nTexture;           /* +0x04 backend texture id (colorUv word 0) */
+    int            nParam5;            /* +0x08 (colorUv word 1) */
     unsigned short wGlobalSpace;       /* +0x0c "globalspace" key */
     unsigned char  pGlyphWidth[256];   /* +0x0e "widths" table + defaults */
     unsigned short pUvx[256];          /* +0x10e U texture coord per char */
@@ -46,14 +46,15 @@ char *fontParseSkipLine(char *p);
 char *fontParseSkipSpaces(char *p);
 
 /* Font load / text render @0x409070-0x409940 (default compiler convention). */
-gxFont *fontLoad(char *path, void *texture, int posX, int posY, void *param5);
-gxFont *fontParse(char *text, void *texture, int posX, int posY, void *param5);
+gxFont *fontLoad(char *path, int texture, int posX, int posY, int param5);
+gxFont *fontParse(char *text, int texture, int posX, int posY, int param5);
 int     textWidth(gxFont *font, char *text);
 int     textDraw(gxFont *font, unsigned int color, int x, int y, char *text);
 int     textDrawCentered(gxFont *font, unsigned int color, int x, int y, char *text);
 int     textDrawInt(void *font, unsigned int color, int x, int y, int value);
 int     textIntWidth(void *font, int value);
-void    textDrawWrappedCentered(void *pMsgBlock, int nX, int nY, int nMaxWidth); /* @0x4101d0 */
+struct QuestRecord; /* quest.h — full type used by textDrawWrappedCentered */
+void    textDrawWrappedCentered(struct QuestRecord *pMsg, int nX, int nY, int nMaxWidth); /* @0x4101d0 */
 
 /* In-game HUD fonts @0x458364..0x45836c, loaded by roundStartInit
  * @0x40a727..0x40a7f2 from the per-level HUD directory

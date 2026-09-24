@@ -1,2 +1,5 @@
 .junie
 obj/
+build/
+build-asan/
+rebuild.log

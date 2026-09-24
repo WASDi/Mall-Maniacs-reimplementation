@@ -1,7 +1,7 @@
 #ifndef CHARSELECT_H
 #define CHARSELECT_H
 
-#include <windows.h>
+#include "compat_types.h"
 #include "gx.h"
 #include "font.h"
 #include "scene.h"   /* SceneNode (g_pCharModelNode etc are scene nodes) + AnmFile via anim.h */
@@ -39,8 +39,8 @@ extern int   g_nCharModelSwapFlag; /* @0x45d494 swap flag */
 /* g_pSceneRoot is a macro over g_camFollowBlock (see scene.h). */
 extern void *g_pCharSelAnimData;  /* @0x45a6d0 anim-data block (fileReadRaw of anim\s_run.anm) */
 extern void *g_pThrowAnimData;    /* @0x45a6d4 anim-data block (fileReadRaw of anim\s_throw2.an) */
-extern void *g_anMenuCharTex[10];/* @0x45a660 per-char portrait textures */
-extern void *g_hMenuTexTom;      /* @0x45a688 QUESTION fallback tex */
+extern int g_anMenuCharTex[10];/* @0x45a660 per-char portrait textures */
+extern int g_hMenuTexTom;      /* @0x45a688 QUESTION fallback tex */
 
 /* Character tables (rebuilt from .rdata). Addresses noted where original
  * tables live: g_apCharNames @0x45013c, g_apCharSceneNames @0x450164,

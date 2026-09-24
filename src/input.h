@@ -1,7 +1,7 @@
 #ifndef INPUT_H
 #define INPUT_H
 
-#include <windows.h>
+#include "compat_types.h"
 
 /* Input subsystem — pollKeyboard @0x416a10 and dispatchKeyEvent @0x41ade0.
  * The original reads DirectInput here; the rebuild records the mapped key

@@ -9,30 +9,46 @@
 - `gxSoft.dll` is also loaded into Ghidra. Don't try to import it again.
 
 ## Goal
-Reimplement the Ghidra view of `maniac.exe` as source in `src/maniac.c` and
-per-subsystem files. The result must build as
-`/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe` and provide an offline
-GUI and single-player functionality.
+Cross-platform reimplementation of the Ghidra view of `maniac.exe` as portable
+C source in `src/`, building natively (64-bit) via CMake as `maniac_rebuild`
+with offline GUI and single-player functionality.
+
+- Authoritative plan: `cross_platform_plan.md` — stack (SDL2 + OpenGL 3.3 +
+  CMake), architectural seams, phases, and verification gates. Follow its phase
+  order; do not re-plan architecture in `docs/`.
+- Active development and verification target: **Linux x86-64**. Defer
+  Windows/macOS build/run claims until those targets are actually verified.
+- The Win32/MinGW/`GXSOFT.DLL` era (`maniac_rebuild.exe` under Wine) is
+  historical — see `docs/16-rebuild.md`. Do not extend it; record new status
+  in `docs/17-cross-platform.md`.
 
 ## Implementation
 - Do not reimplement system libraries, runtime code, import stubs, or compiler glue.
   Also do not reimplement features that exist in standard libraries, such as math, string, and other utils.
-  Network features and the in-game console are out of scope.
-- Build 32-bit Windows with `i686-w64-mingw32-gcc` and the needed original system
-  libraries (`KERNEL32`, `USER32`, `GDI32`, `WINMM`). Skip DirectInput, DirectSound,
-  and Winsock. Use `DRIVERS\GXSOFT.DLL` through its GX interface, not a GDI backend.
-- Check `docs/README.md` for documentation. Update `docs/16-rebuild.md` with current status (not "work performed").
+  Network features and the in-game console are out of scope (removed, not stubbed).
+- Do not move the architectural seams defined in `cross_platform_plan.md`
+  (graphics/sound/input/time boundaries, `src/` platform-file layout).
 - Give every unresolved dependency a documented contract and a safe temporary `TODO`
   stub in `src/stubs.c`/`src/stubs.h`.
 - Reproduce initialization and state-machine behavior subsystem by subsystem, while
   prioritizing dependencies of the next visible single-player feature.
-- Build with `make`, which writes to `/home/wasd/MallManiacsUnmodified/maniac_rebuild.exe`.
-  Read `XDOTOOL_NAVIGATION.md` for triggering keyboard events to navigate the in-game menu during verification.
+
+## Build and verification
+- Primary build: `cmake -S . -B build && cmake --build build` (output
+  `maniac_rebuild`), plus `ctest`. See `cross_platform_plan.md` for deps,
+  flags, source list, and per-phase verification gates.
+- Legacy `Makefile` (32-bit MinGW `maniac_rebuild.exe`) is retired. Do not use
+  it unless explicitly asked for a Wine comparison reference.
+- Check `docs/README.md` for documentation. `docs/16-rebuild.md` is frozen Win32 history.
+- Follow `XDOTOOL_NAVIGATION.md` to start the game and take screenshots for validation.
 
 ## Working practices
 - Use the Ghidra MCP bridge (`ghidra_*`) for decompilation, cross-references, naming,
   prototypes, comments, structs, and string searches. Pass `program=maniac.exe` when
   multiple programs are open.
+- Keep Ghidra as the reference for the original binary. Update it only when
+  investigation discovers original-binary facts (types, structures, names,
+  comments, behavior).
 - Save the Ghidra program periodically; do not commit unless asked.
 - To run ghidra scripts, follow `Ghidra_scripts.md`.
 - Inspect assembly closely enough for the reconstructed source to match the original. It should be logically equivalent, simplifications are accepted.

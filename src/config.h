@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <windows.h>
+#include "compat_types.h"
 #include "mstring.h"
 
 /* =====================================================================

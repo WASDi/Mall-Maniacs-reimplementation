@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +12,7 @@
 #include "sound.h"
 #include "custom_helpers.h"
 #include "util.h"
+#include "platform_sdl2.h"
 
 /* =====================================================================
  * Rekord / high-score table subsystem — reimplementation of
@@ -38,8 +39,8 @@ int g_nRecordsRow = 0;           /* @0x45d47c */
 int g_nScoreTableRow = 0;        /* @0x45d464 */
 int g_nScoreTableTick = 0;       /* @0x45d43c */
 float g_flHighScoreAnimTime = 0; /* @0x45a714 */
-void *g_hMenuTexLevel = NULL;    /* @0x45a6b8 */
-void *g_hMenuTexChar = NULL;     /* @0x45a6c0 */
+int g_hMenuTexLevel = 0;    /* @0x45a6b8 */
+int g_hMenuTexChar = 0;     /* @0x45a6c0 */
 
 /* Real high-score storage loaded from config.mm (XOR 0x55) like the
  * original's commandDispatch path. Two prefixes: fshi/vahi, level 0..4,
@@ -50,23 +51,28 @@ static int  g_recFace[2][5][5];
 static int  g_recDiff[2][5][5];
 static int  g_recLoaded = 0;
 
-/* stateHighScoreTable @0x41dfd0 */
-int stateHighScoreTable(int nType, int nKey, int nKeyType)
+/* recordEnsureLoaded — run the config.mm decode once (called from the
+ * record screen and from the commandDispatch record queries, which the
+ * results-screen HUD uses @0x412993/@0x412b26). Body is the inline load
+ * formerly at the top of stateHighScoreTable. */
+void recordEnsureLoaded(void)
 {
-    /* Inline real-record load (original did this via commandDispatch
-     * reading the already-loaded config tree; rebuild does the XOR 0x55
-     * config.mm decode here, once, without inventing a helper function). */
-    if (!g_recLoaded) {
-        g_recLoaded = 1;
-        for(int p=0;p<2;p++) for(int l=0;l<5;l++) for(int s=0;s<5;s++){
+    if (g_recLoaded) return;
+    g_recLoaded = 1;
+    {
+        int p, l, s;
+        for (p = 0; p < 2; p++) for (l = 0; l < 5; l++) for (s = 0; s < 5; s++) {
             g_recName[p][l][s][0]='\0';
             snprintf(g_recName[p][l][s], sizeof(g_recName[p][l][s]), "-");
             g_recTime[p][l][s]=0; g_recFace[p][l][s]=0; g_recDiff[p][l][s]=0;
         }
         g_nLevelCount = 4;
-        const char *candidates[] = {"config.mm", "/home/wasd/MallManiacsUnmodified/config.mm", NULL};
+        /* Read-only asset lookup via the data dir (exact case); the
+         * hardcoded install path is obsolete. */
+        char szCfgMm[2048];
         FILE *f=NULL; char *buf=NULL; long len=0;
-        for(int i=0;candidates[i];i++){ f=fopen(candidates[i],"rb"); if(f) break; }
+        platformAssetPath("config.mm", szCfgMm, sizeof(szCfgMm));
+        f=fileOpenMode(szCfgMm,0);
         if (f) {
             fseek(f,0,SEEK_END); len=ftell(f); fseek(f,0,SEEK_SET);
             buf=(char*)malloc(len+1);
@@ -99,7 +105,7 @@ int stateHighScoreTable(int nType, int nKey, int nKeyType)
                                     char field[16]={0}; size_t rlen=strlen(rest);
                                     if(rlen>1){ memcpy(field,rest,rlen-1); field[rlen-1]='\0'; }
                                     int p=isVahi?1:0;
-                                    if(strcmp(field,"name")==0) snprintf(g_recName[p][lvl][slot],32,"%s",val);
+                                    if(strcmp(field,"name")==0) snprintf(g_recName[p][lvl][slot],sizeof(g_recName[p][lvl][slot]),"%.31s",val);
                                     else if(strcmp(field,"time")==0) g_recTime[p][lvl][slot]=atoi(val);
                                     else if(strcmp(field,"face")==0) g_recFace[p][lvl][slot]=atoi(val);
                                     else if(strcmp(field,"diff")==0) g_recDiff[p][lvl][slot]=atoi(val);
@@ -116,6 +122,65 @@ int stateHighScoreTable(int nType, int nKey, int nKeyType)
             appLog("[record] loaded real fshi/vahi from config.mm (toplevel=%d)", g_nLevelCount);
         }
     }
+}
+
+/* recordGetTime — clamped table read backing the commandDispatch
+ * "get fshi<lvl>time<slot>" / "get vahi<lvl>time<slot>" queries used by
+ * the results-screen HUD (@0x412993). The original served these from its
+ * config tree; the rebuild serves the decoded config.mm table. */
+int recordGetTime(int isVahi, int lvl, int slot)
+{
+    int p;
+    recordEnsureLoaded();
+    p = isVahi ? 1 : 0;
+    if (lvl < 0) lvl = 0;
+    if (lvl > 4) lvl = 4;
+    if (slot < 0) slot = 0;
+    if (slot > 4) slot = 4;
+    return g_recTime[p][lvl][slot];
+}
+
+/* recordGetTopLevel / recordSetTopLevel — "toplevel" value backing the
+ * commandDispatch "get toplevel" / "set toplevel %d" queries used by the
+ * mode 2/3 results screen (@0x412b26/@0x412b4c). Stored as g_nLevelCount
+ * like the config.mm load above. */
+int recordGetTopLevel(void)
+{
+    recordEnsureLoaded();
+    return g_nLevelCount;
+}
+
+void recordSetTopLevel(int lvl)
+{
+    recordEnsureLoaded();
+    if (lvl < 0) lvl = 0;
+    if (lvl > 10) lvl = 10;
+    g_nLevelCount = lvl;
+}
+
+/* recordSubmitScore — store a beaten record from the commandDispatch
+ * "request fshiscore %d %d %d %d" / "request vahiscore %d %d %d %d"
+ * writes (time, slot, face, level) issued by the results-screen HUD
+ * (@0x412e72). In-memory only: persisting config.mm belongs to the
+ * deferred "save" path (TODO, needs the writable pref-dir copy since
+ * the data dir is a read-only asset source). */
+void recordSubmitScore(int isVahi, int time, int slot, int face, int lvl)
+{
+    int p;
+    recordEnsureLoaded();
+    p = isVahi ? 1 : 0;
+    if (lvl < 0) lvl = 0;
+    if (lvl > 4) lvl = 4;
+    if (slot < 0) slot = 0;
+    if (slot > 4) slot = 4;
+    g_recTime[p][lvl][slot] = time;
+    g_recFace[p][lvl][slot] = face;
+}
+
+/* stateHighScoreTable @0x41dfd0 */
+int stateHighScoreTable(int nType, int nKey, int nKeyType)
+{
+    recordEnsureLoaded();
 
     if (nType == 0) {
 
@@ -139,7 +204,7 @@ int stateHighScoreTable(int nType, int nKey, int nKeyType)
                     }
                     {
                         GxVert v0,v1,v2,v3; GxColorUv uv;
-                        uv.pTexture=g_hMenuTexGfx; uv.pParam5=NULL; uv.pad=0;
+                        uv.nTexture =g_hMenuTexGfx; uv.nParam5 = 0; uv.pad=0;
                         uv.U=0; uv.V=0; uv.V2=0; uv.gwU=0xff00; uv.gwU2=0xff00;
                         uv.hV=0x3200; uv.hV2=0x3200; uv.U2=0;
                         v0.x=(col*0x140+0x32)*0x100; v1.x=(col*0x140+0x131)*0x100;
@@ -165,7 +230,7 @@ int stateHighScoreTable(int nType, int nKey, int nKeyType)
                         int u = (face & 3) * 0x40;
                         int v = (face >> 2) * 0x40;
                         GxVert v0,v1,v2,v3; GxColorUv uv;
-                        uv.pTexture=g_hMenuTexChar; uv.pParam5=NULL; uv.pad=0;
+                        uv.nTexture =g_hMenuTexChar; uv.nParam5 = 0; uv.pad=0;
                         uv.U=(unsigned short)(u*0x100); uv.V=(unsigned short)(v*0x100);
                         uv.U2=uv.U; uv.V2=uv.V;
                         uv.gwU=(unsigned short)((u+0x3f)*0x100); uv.gwU2=uv.gwU;
@@ -179,7 +244,7 @@ int stateHighScoreTable(int nType, int nKey, int nKeyType)
                     {
                         int off = diff *0x1a;
                         GxVert v0,v1,v2,v3; GxColorUv uv;
-                        uv.pTexture=g_hMenuTexGfx; uv.pParam5=NULL; uv.pad=0;
+                        uv.nTexture =g_hMenuTexGfx; uv.nParam5 = 0; uv.pad=0;
                         uv.V=32000; uv.V2=32000; uv.hV=0x9600; uv.hV2=0x9600;
                         uv.U=(unsigned short)((off+0x65)*0x100); uv.U2=uv.U;
                         uv.gwU=(unsigned short)((off+0x7e)*0x100); uv.gwU2=uv.gwU;
@@ -226,7 +291,7 @@ int stateHighScoreTable(int nType, int nKey, int nKeyType)
 
         {
             GxVert v0,v1,v2,v3; GxColorUv uv;
-            uv.pTexture=g_hMenuTexLevel; uv.pParam5=NULL; uv.pad=0;
+            uv.nTexture =g_hMenuTexLevel; uv.nParam5 = 0; uv.pad=0;
             uv.U=0; uv.U2=0; uv.gwU=0xff00; uv.gwU2=0xff00;
             uv.V=(unsigned short)(g_nResultsLevel*0x3300);
             uv.V2=uv.V;

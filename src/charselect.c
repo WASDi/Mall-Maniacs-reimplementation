@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -57,8 +57,8 @@ AnmFile *g_pCharAnim = NULL;       /* @0x45a6d8 current anim */
 AnmFile *g_pCharAnimPrev = NULL;   /* @0x45a6dc previous anim */
 int   g_nCharModelSwapFlag = 0; /* @0x45d494 */
 /* g_pSceneRoot is the first field of g_camFollowBlock (scene.h). */
-void *g_anMenuCharTex[10] = {0};/* @0x45a660 per-char tex */
-void *g_hMenuTexTom = NULL;     /* @0x45a688 */
+int g_anMenuCharTex[10] = {0};/* @0x45a660 per-char tex */
+int g_hMenuTexTom = 0;     /* @0x45a688 */
 void *g_pCharSelAnimData = NULL;/* @0x45a6d0 anim-data pointer passed to anmLoad */
 void *g_pThrowAnimData = NULL;  /* @0x45a6d4 anim-data block (fileReadRaw of anim\s_throw2.an; also read by endScene @0x425076) */
 
@@ -78,7 +78,7 @@ const char *g_apCharNames[10] = { /* @0x45013c */
     "Kalle Kallsup",         /* 8 @0x45034c */
     "Kajsa Komet"            /* 9 @0x450340 */
 };
-const char *g_apCharSceneNames[10] = { /* @0x450164 (model ids, must match MESH/NAME names in characters.sen) */
+const char *g_apCharSceneNames[10] = { /* @0x450164 (model ids, must match MESH/NAME names in CHARACTERS.SEN) */
     "ROLAND",   /* 0 @0x450338 */
     "KAJSA",    /* 1 @0x450330 */
     "BERRY",    /* 2 @0x450328 */
@@ -267,13 +267,13 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
              * i.e. pParent=0, channel=0x352, channel2=0, channel3=0, channel4=0x591. */
             g_pCharModelNode = sceneNodeAllocChild(0, 0, (void *)0x352, 0, (void *)0x591);
             sceneObjSetPosOrient(g_pCharModelNode, 0, 0, 0, 0x2);  /* @0x4307d0 */
-            int id;
+            void *id;
             if (g_nCharSelIdx >= g_nLevelCount + 5)
                 id = scenNameToId("QUESTION");             /* @0x450aa0 fallback */
             else
                 id = scenNameToId(g_apCharSceneNames[g_nCharSelIdx]);
             SceneNode *pScen = sceneryObjAlloc(g_pCharModelNode, 0, 0, 0, 0, 0, 0, 0,
-                                               (void *)(uintptr_t)id);   /* @0x430200 */
+                                               id);   /* @0x430200 */
             /* anmLoad — original passes *0x45a6d0 as pData (the anim block from
              * the loaded .SEN), 0 as pMasterNode, and the sceneryObj as pObj. */
             g_pCharAnim = anmLoad(g_pCharSelAnimData, 0, pScen);     /* @0x433a90 */
@@ -398,7 +398,7 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
                 int leftBase = (int)((double)(0x104 - w/2) + s5);   /* FILD 0x104-w/2, FADDP */
                 int rightBase = (int)((double)(w/2 + 0x150) - s5);  /* FILD w/2+0x150, FSUBP (PTRADD w/2+0x54*4) */
                 GxVert v0,v1,v2,v3; GxColorUv uv;
-                uv.pTexture = g_hMenuTexGfx; uv.pParam5=NULL; uv.pad=0;
+                uv.nTexture = g_hMenuTexGfx; uv.nParam5 = 0; uv.pad=0;
                 uv.U=0x5800; uv.V=0x3300; uv.gwU=0x8300; uv.V2=0x3300; uv.gwU2=0x8300; uv.hV=0x5e00; uv.U2=0x5800; uv.hV2=0x5e00;
                 v0.x = leftBase <<8; v1.x = (leftBase + 0x2b) <<8; v2.x=v1.x; v3.x=v0.x;
                 v0.y=0x500; v1.y=0x500; v2.y=0x3000; v3.y=0x3000;
@@ -413,13 +413,13 @@ int stateCharacterSelect(int nType, int nKey, int nKeyType) /* @0x41efa0 */
         /* Portrait quad (original 0xa00,0x3c00 - 0x10900,0x13b00, UV 0..0xff00 or char tex). */
         if (g_hMenuTexGfx) {
             GxVert v0,v1,v2,v3; GxColorUv uv;
-            void *tex = NULL;
+            int tex = 0;
             if (g_nCharSelIdx < g_nLevelCount + 5 && g_nCharSelIdx >=0 && g_nCharSelIdx <10 && g_anMenuCharTex[g_nCharSelIdx])
                 tex = g_anMenuCharTex[g_nCharSelIdx];
             else
                 tex = g_hMenuTexTom ? g_hMenuTexTom : g_hMenuTexGfx;
-            if (tex == NULL) tex = g_hMenuTexGfx;
-            uv.pTexture = tex; uv.pParam5=NULL; uv.pad=0;
+            if (tex == 0) tex = g_hMenuTexGfx;
+            uv.nTexture = tex; uv.nParam5 = 0; uv.pad=0;
             uv.U=0; uv.V=0; uv.gwU=0xff00; uv.V2=0; uv.gwU2=0xff00; uv.hV=0xff00; uv.U2=0; uv.hV2=0xff00;
             v0.x=0xa00; v1.x=0x10900; v2.x=0x10900; v3.x=0xa00;
             v0.y=0x3c00; v1.y=0x3c00; v2.y=0x13b00; v3.y=0x13b00;

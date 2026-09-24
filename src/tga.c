@@ -1,5 +1,6 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <string.h>
+#include <stdint.h>
 #include "pool.h"
 #include "util.h"
 
@@ -47,7 +48,7 @@ unsigned short *tgaLoad16(LPCSTR pszFilename) /* @0x415df0 */
         do {
             int col = 0;
             int nextCol;
-            unsigned short *pDestRow = (unsigned short *)(rowOffset + (int)pDestPixels);
+            unsigned short *pDestRow = (unsigned short *)((uintptr_t)pDestPixels + (uintptr_t)rowOffset);
             do {
                 nextCol = col + 2;
                 /* Source = pFileData + pixelDataOffset + (col - rowOffset) + 0x4ad80 */
@@ -66,9 +67,9 @@ unsigned short *tgaLoad16(LPCSTR pszFilename) /* @0x415df0 */
         int remaining = 0x25800;
         unsigned short *pDst = pDestPixels;
         /* EDI = pFileData + pixelDataOffset, EAX = pDestPixels */
-        int baseDelta = pixelDataOffset - (int)pDestPixels;
+        intptr_t baseDelta = (intptr_t)pixelDataOffset - (intptr_t)pDestPixels;
         do {
-            *pDst = *(unsigned short *)(pFileData + baseDelta + (int)pDst);
+            *pDst = *(unsigned short *)(pFileData + baseDelta + (intptr_t)pDst);
             pDst++;
             remaining--;
         } while (remaining != 0);
@@ -142,7 +143,7 @@ short *tgaLoad16Pal(LPCSTR pszFilename) /* @0x415ec0 */
         do {
             int col = 0;
             int nextCol;
-            unsigned short *pDestRow = (unsigned short *)(rowOffset + (int)pIndexedPixels);
+            unsigned short *pDestRow = (unsigned short *)((uintptr_t)pIndexedPixels + (uintptr_t)rowOffset);
             do {
                 nextCol = col + 2;
                 *pDestRow = *(unsigned short *)(pFileData + (col - rowOffset) + 0x4ad80 + pixelDataOffset);
@@ -154,9 +155,9 @@ short *tgaLoad16Pal(LPCSTR pszFilename) /* @0x415ec0 */
     } else {
         int remaining = 0x25800;
         unsigned short *pDst = pIndexedPixels;
-        int baseDelta = pixelDataOffset - (int)pIndexedPixels;
+        intptr_t baseDelta = (intptr_t)pixelDataOffset - (intptr_t)pIndexedPixels;
         do {
-            *pDst = *(unsigned short *)(pFileData + baseDelta + (int)pDst);
+            *pDst = *(unsigned short *)(pFileData + baseDelta + (intptr_t)pDst);
             pDst++;
             remaining--;
         } while (remaining != 0);
@@ -167,7 +168,7 @@ short *tgaLoad16Pal(LPCSTR pszFilename) /* @0x415ec0 */
         int idx = 0;
         short *pOut = pFinalPixels;
         do {
-            unsigned int palIndex = (unsigned int)*(unsigned char *)(idx + (int)pIndexedPixels) * 3;
+            unsigned int palIndex = (unsigned int)*((unsigned char *)pIndexedPixels + idx) * 3;
             idx++;
             /*  pal[+2]>>3 | (pal[0]&0xf8)<<5 | (pal[1]&0x1ffc)<<3  — assembly 1600e-16031 */
             *pOut = (short)(paletteTemp[palIndex + 2] >> 3) +

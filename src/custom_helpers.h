@@ -1,7 +1,7 @@
 #ifndef CUSTOM_HELPERS_H
 #define CUSTOM_HELPERS_H
 
-#include <windows.h>
+#include "compat_types.h"
 #include <stddef.h>
 
 #include "menu.h"

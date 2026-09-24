@@ -1,7 +1,7 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <stdarg.h>
 
@@ -11,7 +11,7 @@
  * @0x43e5a0 = fseek, fileTell @0x43e41d = ftell, fileClose @0x43e289 =
  * fclose). */
 
-int  fileOpenMode(LPCSTR path, int mode); /* @0x408cd0 mode 1 -> "wb" else "rb"; -1 on fail */
+FILE *fileOpenMode(LPCSTR path, int mode); /* @0x408cd0 mode 1 -> "wb" else "rb"; NULL on fail (64-bit: FILE*, not int) */
 void fileCloseStream(FILE *fp);                /* @0x408d00 */
 void fileReadN(FILE *fp, char *buf, unsigned int count); /* @0x408d10 */
 void fileSeekTell(FILE *fp, int offset, int mode);       /* @0x408d30 mode 0/1/other -> SET/CUR/END */
@@ -36,5 +36,10 @@ int  fmtAtoi(const char *pszText);
 
 /* fatalError @0x414570 — scene/sound teardown + message box + exit. */
 void fatalError(const char *pFmt, ...);
+
+/* Directory enumeration abstraction (Phase 5): platform-specific
+ * implementations behind one contract. Returns 1 when the directory
+ * could be opened. */
+int utilScanDir(const char *dir, int (*cb)(const char *name, void *ctx), void *ctx);
 
 #endif /* UTIL_H */

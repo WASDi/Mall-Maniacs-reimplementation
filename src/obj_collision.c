@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -109,7 +109,7 @@ void objShotAdd(WorldNode *pNode, int *pSrc, float flV0x, float flV0y,
 {
     ShotObj *pShot;
 
-    pShot = malloc(0x44);                              /* operator_new @0x43dd42 @0x4054fb */
+    pShot = malloc(sizeof(ShotObj));                              /* operator_new @0x43dd42 @0x4054fb */
     if (pShot != NULL) {                               /* @0x405507 */
         objShotCtor(pShot, pSrc, flV0x, flV0y, flV2x, flV2y, flV1x, flV1y,
                     flV4x, flV4y, flV5x, flV5y, flSpeed, flV3x, flV3y,

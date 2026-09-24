@@ -1,24 +1,53 @@
-#include <windows.h>
+/* test_input.c — SDL2 port: exercises the untouched pollKeyboard
+ * @0x416a10 debounce layer directly. The SDL scancode -> channel mapping
+ * lives in platformPumpEvents (needs a display); here the held-state
+ * bytes are driven directly, as the old WindowProc test did through
+ * window messages. */
 
-#include "../src/maniac.c"
+#include <string.h>
 
-static int testState(int nType, int nKey, int nKeyType)
+#include "../src/input.h"
+
+static int gotKey;
+static int gotType;
+static int nCalls;
+
+static int capture(int nKey, int nKeyType)
 {
-    (void)nType;
-    (void)nKey;
-    (void)nKeyType;
+    gotKey = nKey;
+    gotType = nKeyType;
+    nCalls++;
     return 0;
 }
 
 int main(void)
 {
-    g_pStateFunc = testState;
-    g_pendingKey = 0;
+    memset(g_abInputKeyHeld, 0, sizeof(g_abInputKeyHeld));
 
-    WindowProc(NULL, WM_KEYDOWN, VK_TAB, 0);
-    if (g_pendingKey != 0) return 1;
+    /* Space held dispatches (4, 2) once, then debounces for 200 ms. */
+    g_abInputKeyHeld[4] = (char)0x80;
+    if (nCalls != 0) return 1;
+    pollKeyboard(capture, 1000);
+    if (nCalls != 1 || gotKey != 4 || gotType != 2) return 2;
+    pollKeyboard(capture, 1100);
+    if (nCalls != 1) return 3;
+    pollKeyboard(capture, 1300);
+    if (nCalls != 2 || gotKey != 4) return 4;
 
-    WindowProc(NULL, WM_KEYDOWN, VK_SPACE, 0);
-    if (g_pendingKey != 1 || g_pendingKeyId != 4) return 2;
+    /* Release clears the debounce tick with no dispatch. */
+    g_abInputKeyHeld[4] = 0;
+    pollKeyboard(capture, 1400);
+    if (nCalls != 2) return 5;
+
+    /* Enter dispatches once per press, no repeat while held. */
+    g_abInputKeyHeld[6] = (char)0x80;
+    pollKeyboard(capture, 1500);
+    if (nCalls != 3 || gotKey != 6) return 6;
+    pollKeyboard(capture, 2000);
+    if (nCalls != 3) return 7;
+    g_abInputKeyHeld[6] = 0;
+    pollKeyboard(capture, 2100);
+    if (nCalls != 3) return 8;
+
     return 0;
 }

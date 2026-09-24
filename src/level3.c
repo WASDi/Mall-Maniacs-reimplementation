@@ -66,7 +66,10 @@ static AnmFile *g_pL3Throw2Anim;        /* @0x459ef4 anim\s_throw2.anm */
 static SceneNode *g_pL3KassoerskaObj;   /* @0x459ef8 KASSOERSKA cashier scenery object */
 static AnmFile *g_pL3CashSitAnim;       /* @0x459efc anim\cash_sit.anm (cashier idle) */
 static AnmFile *g_pL3WinnerAnim;        /* @0x459f00 anim\s_winner.anm (results screen) */
-static int g_anL3SkyltIds[L3_SKYLT_COUNT]; /* @0x459f04 scenNameToIdEx("SKYLT%d") node handles */
+/* 64-bit port (Phase 1.3): scenNameToIdEx returns a native scene-node
+ * pointer (truncated int in the 32-bit original), so the handles use
+ * void* to preserve full pointer bits on 64-bit hosts. */
+static void *g_anL3SkyltIds[L3_SKYLT_COUNT]; /* @0x459f04 scenNameToIdEx("SKYLT%d") node handles */
 static int g_nL3TrailTick;              /* @0x459f20 cashier blink clock */
 
 /* levelEventDirector_L3_Init @0x4186c0 — round-start asset setup. Allocates
@@ -85,7 +88,7 @@ void levelEventDirector_L3_Init(void) /* @0x4186c0 */
                                                           (void *)0x7b0c, (void *)0x1f40,
                                                           (void *)0xffff793c);
     sceneObjSetPosOrient(g_pL3KassoerskaObj, 0, 32000, 0, 2);               /* @0x4307d0 @0x418702 */
-    pName = (void *)(uintptr_t)scenNameToId("KASSOERSKA");                  /* @0x431ed0 @0x41870c */
+    pName = scenNameToId("KASSOERSKA");                  /* @0x431ed0 @0x41870c */
     g_pL3KassoerskaObj = (SceneNode *)sceneryObjAlloc(g_pL3KassoerskaObj,   /* @0x430200 @0x41871f */
                                                       0, 0, 0, 0, 0, 0, 0, pName);
     g_pL3CashSitAnim = anmLoadFile("anim\\cash_sit.anm", NULL,              /* @0x433a50 @0x418733 */
@@ -96,10 +99,10 @@ void levelEventDirector_L3_Init(void) /* @0x4186c0 */
                                                       (void *)0xffff66e0, (void *)0xfa0,
                                                       (void *)0xffffa628);
     sceneObjSetPosOrient(g_pL3McdmanObj, 0, 16000, 0, 2);                   /* @0x4307d0 @0x418779 */
-    pName = (void *)(uintptr_t)scenNameToId("MCDMAN");                      /* @0x431ed0 @0x418786 */
+    pName = scenNameToId("MCDMAN");                      /* @0x431ed0 @0x418786 */
     g_pL3McdmanObj = (SceneNode *)sceneryObjAlloc(g_pL3McdmanObj,           /* @0x430200 @0x41879a */
                                                   0, 0, 0, 0, 0, 0, 0, pName);
-    pName = (void *)(uintptr_t)scenNameToId("BURGER");                      /* @0x431ed0 @0x4187a9 */
+    pName = scenNameToId("BURGER");                      /* @0x431ed0 @0x4187a9 */
     g_pL3BurgerObj = (SceneNode *)sceneryObjAlloc(NULL, 0, 0, 0, 0, 0, 0, 0, /* @0x430200 @0x4187b7 */
                                                   pName);
     sceneNodeSetHiddenFlag(g_pL3BurgerObj, 2);                              /* @0x4305c0 @0x4187c7 */
@@ -122,22 +125,22 @@ void levelEventDirector_L3_Init(void) /* @0x4186c0 */
         fmtSprintf(szBuf, "SKYLT%d", i);                                    /* @0x43e767 @0x418882 */
         g_anL3SkyltIds[i] = scenNameToIdEx(szBuf);                          /* @0x431e20 @0x41888c */
     }
-    pEmitter = (SndEmitter *)malloc(0x1c);                                  /* operator_new @0x43dd42 @0x4188a4 */
+    pEmitter = (SndEmitter *)malloc(sizeof(SndEmitter));                                  /* operator_new @0x43dd42 @0x4188a4 */
     if (pEmitter != NULL) {
         sndPlaySfx3D(pEmitter, 1, 0x1b, 65000, 0xff, NULL, 0,               /* @0x42bcd0 @0x4188db */
                      8200, 8000, -39000, 0x11);
     }
-    pEmitter = (SndEmitter *)malloc(0x1c);                                  /* operator_new @0x43dd42 @0x4188e9 */
+    pEmitter = (SndEmitter *)malloc(sizeof(SndEmitter));                                  /* operator_new @0x43dd42 @0x4188e9 */
     if (pEmitter != NULL) {
         sndPlaySfx3D(pEmitter, 1, 0x1b, 65000, 0xff, NULL, 0,               /* @0x42bcd0 @0x418924 */
                      -25500, 4000, -29000, 0x11);
     }
-    pEmitter = (SndEmitter *)malloc(0x1c);                                  /* operator_new @0x43dd42 @0x41892f */
+    pEmitter = (SndEmitter *)malloc(sizeof(SndEmitter));                                  /* operator_new @0x43dd42 @0x41892f */
     if (pEmitter != NULL) {
         sndPlaySfx3D(pEmitter, 1, 0x19, 65000, 0xff, NULL, 0,               /* @0x42bcd0 @0x41896a */
                      30500, -1000, -29000, 0x11);
     }
-    pEmitter = (SndEmitter *)malloc(0x1c);                                  /* operator_new @0x43dd42 @0x418975 */
+    pEmitter = (SndEmitter *)malloc(sizeof(SndEmitter));                                  /* operator_new @0x43dd42 @0x418975 */
     if (pEmitter != NULL) {
         sndPlaySfx3D(pEmitter, 1, 0x1b, 65000, 0xff, NULL, 0,               /* @0x42bcd0 @0x4189b0 */
                      3500, -1000, -17000, 0x11);
@@ -169,8 +172,8 @@ void levelEventDirector_L3(void) /* @0x418a30 */
     int i;
 
     for (i = 0; i < L3_SKYLT_COUNT; i++) {                                 /* @0x418a4d..0x418a79 */
-        if (g_anL3SkyltIds[i] != 0) {
-            sceneObjSetPosOrient((SceneNode *)(uintptr_t)g_anL3SkyltIds[i], /* @0x4307d0 @0x418a67 */
+        if (g_anL3SkyltIds[i] != NULL) {
+            sceneObjSetPosOrient((SceneNode *)g_anL3SkyltIds[i], /* @0x4307d0 @0x418a67 */
                                  0, (short)((i * 5 + 0x28) * 10), 0, 5);
         }
     }
@@ -220,7 +223,7 @@ void levelEventDirector_L3(void) /* @0x418a30 */
         case 5:
             eventAnimReset(g_pL3Throw1Anim);                               /* @0x434270 @0x418be4 */
             eventAnimStep(g_pL3Throw1Anim, 1);                             /* @0x434090 @0x418bf1 */
-            sceneObjSetClassMesh((int)g_pL3BurgerObj, g_pL3McdmanObj, 8, 3); /* @0x430db0 @0x418c07 */
+            sceneObjSetClassMesh(g_pL3BurgerObj, g_pL3McdmanObj, 8, 3); /* @0x430db0 @0x418c07 */
             sceneObjSetPos(g_pL3BurgerObj, 0, 0x78, 0, 2);                 /* @0x430660 @0x418c19 */
             sceneObjSetPosOrient(g_pL3BurgerObj, 0, 0, -16000, 2);         /* @0x4307d0 @0x418c2d */
             sceneObjResetFlags(g_pL3BurgerObj, 2);                         /* @0x430620 @0x418c3e */
@@ -239,7 +242,7 @@ void levelEventDirector_L3(void) /* @0x418a30 */
         case 7:
             eventAnimReset(g_pL3Throw2Anim);                               /* @0x434270 @0x418cbc */
             eventAnimStep(g_pL3Throw2Anim, 1);                             /* @0x434090 @0x418cc8 */
-            sceneObjSetClassMesh((int)g_pL3BurgerObj, NULL, 0, 3);         /* @0x430db0 @0x418cd8 */
+            sceneObjSetClassMesh(g_pL3BurgerObj, NULL, 0, 3);         /* @0x430db0 @0x418cd8 */
             sceneObjSetPos(g_pL3BurgerObj, -39000, 3010, -23200, 2);       /* @0x430660 @0x418cf5 */
             sceneObjSetPosOrient(g_pL3BurgerObj, 0, 0, 0, 2);              /* @0x4307d0 @0x418d05 */
             g_nL3MoveStep = 0;                                             /* @0x418d0d */
@@ -272,14 +275,14 @@ void levelEventDirector_L3(void) /* @0x418a30 */
             g_nL3EventActive = 1;                                          /* @0x418e04 */
             /* mode 2 stores the raw int channel coords into the buffer */
             sceneNodeGetPosWorld(g_pL3BurgerObj, (float *)g_anL3SpawnPos, 2); /* @0x430e80 @0x418e0a */
-            pNew = (EventObject *)malloc(0x50);                            /* operator_new @0x43dd42 @0x418e11 */
+            pNew = (EventObject *)malloc(sizeof(EventObject));                            /* operator_new @0x43dd42 @0x418e11 */
             if (pNew != NULL) {                                            /* @0x418e1d */
                 /* ctor args are the {flX=worldZ, flY=worldX, flHeight=worldY}
                  * ints of the BURGER pos (FILD integer loads @0x418e25..0x418e3f) */
                 sceneObjCtor3(pNew, 0x1f, (float)g_anL3SpawnPos[2],        /* @0x4146a0 @0x418e47 */
                               (float)g_anL3SpawnPos[0], (float)g_anL3SpawnPos[1]);
                 pNew->nValue0 = g_anL3SpawnPos[1];                        /* +0x10 @0x418e57 */
-                pNew->nValue1 = (int)(uintptr_t)g_pL3BurgerObj;           /* +0x14 @0x418e68 */
+                pNew->nValue1 = (intptr_t)g_pL3BurgerObj;           /* +0x14 @0x418e68 */
                 objHashRegister(pNew);                                     /* @0x4148f0 @0x418e6b */
             }
             break;                                                         /* @0x418e73 (tick++ -> 1) */

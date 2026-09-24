@@ -1,6 +1,8 @@
 #ifndef PLAYER_AI_H
 #define PLAYER_AI_H
 
+#include "compat_types.h"
+
 /* player_ai.h — AI controller view + dispatch (maniac.exe 0x401xxx). */
 
 struct AiController;
@@ -85,7 +87,7 @@ void itemThrowUpdate(ThrownItem *pItem);                            /* @0x40f950
 void itemMeshFollowUpdate(ThrownItem *pItem);                       /* @0x40fde0 */
 
 /* Console "action <cmd>" handler (commandDispatch table @0x44b308). */
-int actionCmd(int nContext, LPCSTR pszArgs);          /* @0x4067c0 */
+int actionCmd(intptr_t nContext, LPCSTR pszArgs);          /* @0x4067c0 */
 
 /* AI movement / pickup cluster (0x40e180..0x40f760) */
 int syncAiAnimToSceneObj(struct AiController *pCtrl);               /* @0x4015a0 */

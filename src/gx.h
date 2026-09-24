@@ -1,7 +1,7 @@
 #ifndef GX_H
 #define GX_H
 
-#include <windows.h>
+#include "compat_types.h"
 
 /* GX driver interface (gxSoft.dll). Layout matches the table filled by
  * gxDLLInit @0x10001000 in gxSoft.dll. Original struct: GxDriverApi @0x45eb40
@@ -13,9 +13,9 @@ typedef struct GxMode {
     unsigned short height;    /* +0x02 = 0x1e0 (480) */
     unsigned char  bpp;       /* +0x04 = 16 (driver forces to 8) */
     unsigned char  pad[3];
-    unsigned int   hInstance; /* +0x08 */
-    unsigned int   hwnd;      /* +0x0c */
-} GxMode;                     /* 16 bytes */
+    void *hInstance; /* +0x08 ignored field on the SDL/GL target */
+    void *hwnd;      /* +0x0c ignored field on the SDL/GL target */
+} GxMode;                     /* pointer-sized on 64-bit */
 
 typedef struct GxDriverApi {
     void *pField_0;                        /* +0x00 (zero) */
@@ -49,11 +49,15 @@ typedef struct GxDriverApi {
     int  (*pBlitSurface)(int, int, int, void *, int, int, int, int, int);
                                            /* +0x64 -> gxBlitSurface @0x10002950 */
     void (*pSetOrigin)(int);               /* +0x68 -> gxSetOrigin @0x10001f90 */
-    void (*pDrawTriangle)(void *, int);    /* +0x6c -> gxDrawTriangle @0x10002000 */
-    void (*pDrawLine)(void *, void *, int);/* +0x70 -> gxDrawLine @0x10002060 */
-    void (*pDrawTriUV)(void *, void *, void *, int, void *);
+    /* 64-bit port (Phase 1.3): the color slot carries a native COLS-record
+     * pointer (truncated int in the 32-bit original), so it uses void*.
+     * The backend ignores it for triUV/quad (texture comes from the uv
+     * record) and triangle/line stay no-ops; behavior is unchanged. */
+    void (*pDrawTriangle)(void *, void *);    /* +0x6c -> gxDrawTriangle @0x10002000 */
+    void (*pDrawLine)(void *, void *, void *);/* +0x70 -> gxDrawLine @0x10002060 */
+    void (*pDrawTriUV)(void *, void *, void *, void *, void *);
                                            /* +0x74 -> gxDrawTriUV @0x100021f0 */
-    void (*pDrawQuad)(void *, void *, void *, void *, int, void *);
+    void (*pDrawQuad)(void *, void *, void *, void *, void *, void *);
                                            /* +0x78 -> gxDrawQuad @0x10002540 */
     int  nSoftwareMode;                    /* +0x7c (driver forces poly coords to int) */
 } GxDriverApi;                             /* 0x80 bytes driver-owned */
@@ -72,13 +76,20 @@ extern GxDriver g_driver;
 
 /* Reimplementation of maniac gxInit @0x4332f0: pSetMode dispatch. */
 int  gxInit(GxMode *mode);
-/* Reimplementation of maniac gxLoadDriver @0x432ea0; the known GXSOFT path
- * is used instead of the deferred registry-selection branch. */
+/* Reimplementation of maniac gxLoadDriver @0x432ea0; installs the built-in
+ * GL backend instead of loading a DLL (GXSOFT path retired). */
 int  gxLoadDriver(char *driverName);
 /* Reimplementation of maniac gxUnloadDriver @0x433280 (narrowed: no registry). */
 int  gxUnloadDriver(void);
-/* Reimplementation of maniac presentFrame @0x410310. */
-void presentFrame(int texture);
+/* Scene texture search dir for bare TNAM names (see gx.c). */
+void gxSetTextureDir(const char *dir);
+const char *gxGetTextureDir(void);
+
+/* Reimplementation of maniac presentFrame @0x410310.
+ * 64-bit port: takes the CPU RGB555 pixel pointer directly (the original
+ * carried it as an int, which truncates on 64-bit). All callers pass
+ * tgaLoad16 buffers; the GL backend uploads them to a streaming texture. */
+void presentFrame(void *pixels);
 /* Reimplementation of maniac gxLoadTpgFile @0x416060 (tpg -> gxLoadTexture). */
 int gxLoadTpgFile(LPCSTR path);
 
@@ -95,9 +106,12 @@ typedef struct GxVert {
     unsigned char a; /* +0x0f */
 } GxVert;    /* 0x10 bytes */
 
+/* 64-bit port: the first two words carry small-int backend texture ids
+ * (never native pointers), so they stay 32-bit and the record keeps its
+ * original 0x1c size/strides on every host (see the fling-UV grid). */
 typedef struct GxColorUv {
-    void          *pTexture;   /* +0x00 texture node (record word 0) */
-    void          *pParam5;    /* +0x04 */
+    int            nTexture;   /* +0x00 backend texture id (record word 0) */
+    int            nParam5;    /* +0x04 */
     int            pad;        /* +0x08 */
     unsigned short U;          /* +0x0c */
     unsigned short V;          /* +0x0e */
@@ -107,7 +121,8 @@ typedef struct GxColorUv {
     unsigned short hV;         /* +0x16 */
     unsigned short U2;         /* +0x18 */
     unsigned short hV2;        /* +0x1a */
-} GxColorUv;                   /* 0x1c */
+ } GxColorUv;                   /* 0x1c */
+typedef char GxColorUvSizeMustBe0x1c[(sizeof(GxColorUv) == 0x1c) ? 1 : -1];
 
 /* 2D vector used by the math helpers and the EventObject zone test
  * (objContainsPoint @0x414bb0 builds one via gxVec2SetAngleZero). */
@@ -142,12 +157,12 @@ void gxDrawPolygon(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3, int flags,
 int  gxBlitSurface(int a, int b, int c, void *tex, int x, int y,
                    int w, int h, int h2);  /* @0x433580 */
 void gxSetOrigin(int packedOrigin);        /* @0x4335d0 */
-void gxDrawTriangle(void *v0, int color);  /* @0x4335f0 */
-void gxDrawLine(void *v0, void *v1, int color); /* @0x433610 */
-void gxDrawTriUV(void *v0, void *v1, void *v2, int color, void *uv); /* @0x433640 */
-void gxDrawQuad(void *v0, void *v1, void *v2, void *v3, int color,
+void gxDrawTriangle(void *v0, void *color);  /* @0x4335f0 */
+void gxDrawLine(void *v0, void *v1, void *color); /* @0x433610 */
+void gxDrawTriUV(void *v0, void *v1, void *v2, void *color, void *uv); /* @0x433640 */
+void gxDrawQuad(void *v0, void *v1, void *v2, void *v3, void *color,
                  void *uv);                 /* @0x433670 */
-void gxDrawQuadColor(void *tex,int x0,int y0,int x1,int y1,int u0,int v0,int u1,int v1); /* @0x414470 */
+void gxDrawQuadColor(int tex,int x0,int y0,int x1,int y1,int u0,int v0,int u1,int v1); /* @0x414470 */
 
 /* mathSegIntersect @0x406130 — line/line intersection (see gx.c). */
 int  mathSegIntersect(float flAx, float flAy, float flBx, float flBy,

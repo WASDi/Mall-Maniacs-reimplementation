@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -114,14 +114,17 @@ void objDtor(WorldNode *pNode) /* @0x402ab0 */
     }
     pSub = pNode->pChildMeshHead;                    /* +0x08 @0x402af4 */
     if (pSub != NULL) {
-        if (*(void **)((char *)pSub + 0x48) != NULL) { /* @0x402afb */
+        /* 64-bit port: +0x48 is ObjChildMesh.pNext (32-bit layout);
+         * use struct access (80 on 64-bit, not 72). */
+        if (((ObjChildMesh *)pSub)->pNext != NULL) { /* @0x402afb */
             objTurretListFree(1);                    /* @0x402b40 @0x402b04 */
         }
         memFreeDirect(pSub);                         /* @0x402b0a */
     }
     pSub = pNode->pTurretHead;                       /* +0x0c @0x402b12 */
     if (pSub != NULL) {
-        if (*(void **)((char *)pSub + 0x18) != NULL) { /* @0x402b1a */
+        /* +0x18 is ObjTurret.pNext on both layouts (24); struct access. */
+        if (((ObjTurret *)pSub)->pNext != NULL) { /* @0x402b1a */
             objTurretListFree2(1);                   /* @0x402b70 @0x402b23 */
         }
         memFreeDirect(pSub);                         /* @0x402b29 */
@@ -205,7 +208,7 @@ void objSetAngle(WorldNode *pNode, float flAngle) /* @0x404f70 */
 /* objPolarPosLookup @0x405140 — find pNode's turret entry whose nTypeId
  * matches nTypeId and return (int) of the world x component of
  * fromPolar({vPolar.x, flScaleA + vPolar.y}) + vPos (the +0x24 slot). */
-int objPolarPosLookup(WorldNode *pNode, int nTypeId) /* @0x405140 */
+int objPolarPosLookup(WorldNode *pNode, intptr_t nTypeId) /* @0x405140 */
 {
     ObjTurret *pTurret;
     GxVec2 vIn;
@@ -229,7 +232,7 @@ int objPolarPosLookup(WorldNode *pNode, int nTypeId) /* @0x405140 */
 
 /* objPolarPosLookup2 @0x4051c0 — same as objPolarPosLookup but returns the
  * world z component (the +0x20 slot of the sum). */
-int objPolarPosLookup2(WorldNode *pNode, int nTypeId) /* @0x4051c0 */
+int objPolarPosLookup2(WorldNode *pNode, intptr_t nTypeId) /* @0x4051c0 */
 {
     ObjTurret *pTurret;
     GxVec2 vIn;
@@ -254,7 +257,7 @@ int objPolarPosLookup2(WorldNode *pNode, int nTypeId) /* @0x4051c0 */
 /* objListFindFloat @0x405240 — find pNode's turret entry whose nTypeId
  * matches nTypeId and return its absolute heading scaled to the 15-bit
  * binary-angle unit: (int)((flScaleA + flAngle) * (65536/π) * 0.5). */
-int objListFindFloat(WorldNode *pNode, int nTypeId) /* @0x405240 */
+int objListFindFloat(WorldNode *pNode, intptr_t nTypeId) /* @0x405240 */
 {
     static const float g_flRadToBin = 20860.455078125f; /* @0x44b2f0 (65536/π) */
     static const double g_dblHalf = 0.5;                /* @0x44b2e8 */
@@ -281,7 +284,7 @@ float objDistToPoint(WorldNode *pNode, float flA, float flB) /* @0x405050 */
 
 /* nodeChannelAvgFloat @0x4050c0 — average flHeight over pNode's child-mesh
  * entries whose nChannelKey matches nChannelKey; 0.0f when there is none. */
-float nodeChannelAvgFloat(WorldNode *pNode, int nChannelKey) /* @0x4050c0 */
+float nodeChannelAvgFloat(WorldNode *pNode, intptr_t nChannelKey) /* @0x4050c0 */
 {
     ObjChildMesh *pMesh;
     float flSum = 0.0f;    /* @0x4050c3 */
@@ -303,7 +306,7 @@ float nodeChannelAvgFloat(WorldNode *pNode, int nChannelKey) /* @0x4050c0 */
 /* objFindTurret @0x405120 — return the first child-mesh entry of pNode
  * whose nChannelKey matches nChannelKey (despite the name this walks the
  * +0x08 ObjChildMesh list, not the turret list), or NULL. */
-ObjChildMesh *objFindTurret(WorldNode *pNode, int nChannelKey) /* @0x405120 */
+ObjChildMesh *objFindTurret(WorldNode *pNode, intptr_t nChannelKey) /* @0x405120 */
 {
     ObjChildMesh *pMesh;
 
@@ -325,7 +328,7 @@ ObjChildMesh *objFindTurret(WorldNode *pNode, int nChannelKey) /* @0x405120 */
  * head-insert into pNode's +0x0c turret list. nTypeId is the caller's id
  * (levelObjectsCartsCameraInit passes the record's scene node). */
 void objTurretAdd(WorldNode *pNode, int nPosX, int nPosY, int nPosZ,
-                  short nAngle, int nTypeId) /* @0x405280 */
+                  short nAngle, intptr_t nTypeId) /* @0x405280 */
 {
     ObjTurret *pTurret = (ObjTurret *)malloc(sizeof(ObjTurret)); /* operator_new @0x43dd42 */
     GxVec2 vIn;
@@ -346,7 +349,7 @@ void objTurretAdd(WorldNode *pNode, int nPosX, int nPosY, int nPosZ,
 
 /* objTurretSetValue @0x405370 — walk pNode's child-mesh list and write
  * nValue1/nValue2 into every entry whose nChannelKey matches nKey. */
-void objTurretSetValue(WorldNode *pNode, int nKey, int nValue1, int nValue2) /* @0x405370 */
+void objTurretSetValue(WorldNode *pNode, intptr_t nKey, int nValue1, int nValue2) /* @0x405370 */
 {
     ObjChildMesh *pMesh;
 
@@ -365,7 +368,7 @@ void objTurretSetValue(WorldNode *pNode, int nKey, int nValue1, int nValue2) /* 
  * into pNode's +0x08 list. Finally the world coords are fromPolar of the
  * entry's polar position rotated by pNode->flScaleA, stored twice. */
 void nodeAddChildMesh(WorldNode *pNode, int nX, int nY, int nKeyZ,
-                      float flExtentA, float flExtentB, int nChannelKey,
+                      float flExtentA, float flExtentB, intptr_t nChannelKey,
                       float flExtentC, int nMeshId) /* @0x4053a0 */
 {
     ObjChildMesh *pMesh = (ObjChildMesh *)malloc(sizeof(ObjChildMesh)); /* @0x43dd42 */
@@ -506,7 +509,7 @@ void objUpdatePhysics(void) /* @0x405680 */
                     ((pShot->v4.y - pShot->v0.y) * pShot->v5.y +
                      (pShot->v4.x - pShot->v0.x) * pShot->v5.x) *
                     pShot->flScale * g_fl1_2e6;                      /* @0x44b2f4 @0x4058f4 */
-                pEmitter = malloc(0x1c);                             /* operator_new @0x43dd42 @0x4058fd */
+                pEmitter = malloc(sizeof(SndEmitter));                             /* operator_new @0x43dd42 @0x4058fd */
                 if (pEmitter != NULL) {                              /* @0x40590d */
                     nZ = (int)pNode->vPos.x;                         /* ftol +0x20 @0x40591a */
                     nX = (int)pNode->vPos.y;                         /* ftol +0x24 @0x405924 */
@@ -533,7 +536,7 @@ void objUpdatePhysics(void) /* @0x405680 */
                     ((pBest->v4.y - pBest->v0.y) * pBest->v5.y +
                      (pBest->v4.x - pBest->v0.x) * pBest->v5.x) *
                     pBest->flScale * g_fl1_2e6;                      /* @0x405ca5 */
-                pEmitter = malloc(0x1c);                             /* @0x405cae */
+                pEmitter = malloc(sizeof(SndEmitter));                             /* @0x405cae */
                 if (pEmitter != NULL) {                              /* @0x405cbc */
                     nZ = (int)pNode->vPos.x;                         /* ftol +0x20 @0x405ccd */
                     nX = (int)pNode->vPos.y;                         /* ftol +0x24 @0x405cd8 */
@@ -591,7 +594,7 @@ void objUpdateFire(void) /* @0x405e10 */
                 ((pShot->v4.y - pShot->v2.y) * pShot->v5.y +
                  (pShot->v4.x - pShot->v2.x) * pShot->v5.x) *
                 pShot->flScale * g_fl1_5e6;                        /* @0x44b300 @0x405ec0 */
-            pEmitter = malloc(0x1c);                               /* @0x405ec9 */
+            pEmitter = malloc(sizeof(SndEmitter));                               /* @0x405ec9 */
             if (pEmitter != NULL) {                                /* @0x405ed7 */
                 nZ = (int)pNode->vPos.x;                           /* ftol +0x20 @0x405ee8 */
                 nX = (int)pNode->vPos.y;                           /* ftol +0x24 @0x405ef3 */
@@ -602,7 +605,10 @@ void objUpdateFire(void) /* @0x405e10 */
             if (pNode->pParent != NULL) {                          /* +0x44 @0x405f17 */
                 pRec = NULL;
                 if (pShot->pAnimTarget != NULL) {                  /* +0x08 @0x405f2d */
-                    pRec = *(struct PlayerRecord **)((char *)pShot->pAnimTarget + 0x44); /* @0x405f30 */
+                    /* 64-bit port: +0x44 is WorldNode.pParent (32-bit layout);
+                     * use struct access (pParent sits at 88 on 64-bit, not 68).
+                     * pParent holds &pRec->mstrCharacterName == (PlayerRecord*)pRec. */
+                    pRec = (struct PlayerRecord *)((WorldNode *)pShot->pAnimTarget)->pParent; /* @0x405f30 */
                 }
                 if (pRec != NULL) {                                /* @0x405f33 */
                     objWalkAnimSync((struct PlayerRecord *)pNode->pParent, pRec); /* @0x409b10 @0x40601c */
@@ -624,7 +630,7 @@ void objUpdateFire(void) /* @0x405e10 */
                 ((pBest->v4.x - pBest->v2.x) * pBest->v5.x +
                  (pBest->v4.y - pBest->v2.y) * pBest->v5.y) *
                 pBest->flScale * g_fl1_5e6;                        /* @0x405fac */
-            pEmitter = malloc(0x1c);                               /* @0x405fb5 */
+            pEmitter = malloc(sizeof(SndEmitter));                               /* @0x405fb5 */
             if (pEmitter != NULL) {                                /* @0x405fc3 */
                 nZ = (int)pNode->vPos.x;                           /* @0x405fd4 */
                 nX = (int)pNode->vPos.y;                           /* @0x405fdf */
@@ -636,7 +642,8 @@ void objUpdateFire(void) /* @0x405e10 */
                 pRec = NULL;
                 pShot = (ShotObj *)pNode->pShotList;               /* head @0x406012 */
                 if (pShot->pAnimTarget != NULL) {                  /* +0x08 @0x406012 */
-                    pRec = *(struct PlayerRecord **)((char *)pShot->pAnimTarget + 0x44); /* @0x406015 */
+                    /* 64-bit port: see above — WorldNode.pParent via struct. */
+                    pRec = (struct PlayerRecord *)((WorldNode *)pShot->pAnimTarget)->pParent; /* @0x406015 */
                 }
                 if (pRec != NULL) {                                /* @0x40601a */
                     objWalkAnimSync((struct PlayerRecord *)pNode->pParent, pRec); /* @0x409b10 @0x40601d */

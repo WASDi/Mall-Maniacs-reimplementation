@@ -1,7 +1,9 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <ctype.h>
 #include <math.h>
 #include <stddef.h>
 #include "scene.h"
@@ -29,17 +31,19 @@ float g_sceneCameraBasis_7 = 0.0f;
 /* ===================================================================
  * scenNameToId @0x431ed0  (returns mesh-data pointer from g_pMeshTable)
  * =================================================================== */
-int scenNameToId(LPCSTR pszName)
+/* 64-bit port: returns the native mesh pointer (the original returned it
+ * as int, which truncates on 64-bit). */
+void *scenNameToId(LPCSTR pszName)
 {
     char up[256];
     int i;
     for (i = 0; i < 255 && pszName[i]; i++) up[i] = (char)toupper((unsigned char)pszName[i]);
     up[i] = 0;
     for (i = 0; i < g_nMeshTableCount; i++) {
-        char *name = ((char **)g_pMeshTable)[i * 2];
-        void *data = ((void **)g_pMeshTable)[i * 2 + 1];
+        char *name = g_pMeshTable[i].name;
+        void *data = g_pMeshTable[i].data;
         if (!data) return 0;
-        if (name && stricmp(name, up) == 0) return (int)data;
+        if (name && strcasecmp(name, up) == 0) return data;
     }
     return 0;
 }
@@ -56,32 +60,32 @@ int scenNameToId(LPCSTR pszName)
  * pszFilter!=0: entries whose name does not start with '_' and contains
  * pszFilter (strFindSubstring @0x43e7e0, rebuild: strstr) are packed
  * contiguously; returns the number stored, capped at nMax. */
-int sceneCollectMeshHandles(int *pOut, int nMax, const char *pszFilter) /* @0x42b360 */
+int sceneCollectMeshHandles(SceneNode **pOut, int nMax, const char *pszFilter) /* @0x42b360 */
 {
     int i = 0;
 
     if (pszFilter == NULL) {
         if (nMax <= 0) return 0;
         for (i = 0; i < nMax; i++) {
-            int nId = g_pScenObjTable[i].nId;
-            if (nId == 0) break;
+            void *pId = g_pScenObjTable[i].pId;
+            if (pId == 0) break;
             if (g_pScenObjTable[i].pszName[0] != '_') {
-                pOut[i] = nId;
+                pOut[i] = (SceneNode *)pId;
             }
         }
         return i;
     } else {
         int n = 0;
-        if (g_pScenObjTable[0].nId == 0) return 0;
+        if (g_pScenObjTable[0].pId == 0) return 0;
         do {
             const char *pszName = g_pScenObjTable[i].pszName;
             if (n >= nMax) return n;
             if (pszName[0] != '_' && strstr(pszName, pszFilter) != NULL) {
-                pOut[n] = g_pScenObjTable[i].nId;
+                pOut[n] = (SceneNode *)g_pScenObjTable[i].pId;
                 n++;
             }
             i++;
-        } while (g_pScenObjTable[i].nId != 0);
+        } while (g_pScenObjTable[i].pId != 0);
         return n;
     }
 }
@@ -100,8 +104,8 @@ int sceneFindByName(SceneNode **pOut, int nMax, const char *pszFilter) /* @0x431
 
     if (pszFilter == NULL) {
         int n = 0;
-        while (g_pScenObjTable[i].nId != 0) {
-            pOut[n] = (SceneNode *)(uintptr_t)g_pScenObjTable[i].nId;
+        while (g_pScenObjTable[i].pId != 0) {
+            pOut[n] = (SceneNode *)g_pScenObjTable[i].pId;
             n++;
             i++;
             if (n >= nMax) return n;
@@ -109,15 +113,15 @@ int sceneFindByName(SceneNode **pOut, int nMax, const char *pszFilter) /* @0x431
         return n;
     } else {
         int n = 0;
-        if (g_pScenObjTable[0].nId == 0) return 0;
+        if (g_pScenObjTable[0].pId == 0) return 0;
         do {
             if (n >= nMax) return n;
             if (strstr(g_pScenObjTable[i].pszName, pszFilter) != NULL) {
-                pOut[n] = (SceneNode *)(uintptr_t)g_pScenObjTable[i].nId;
+                pOut[n] = (SceneNode *)g_pScenObjTable[i].pId;
                 n++;
             }
             i++;
-        } while (g_pScenObjTable[i].nId != 0);
+        } while (g_pScenObjTable[i].pId != 0);
         return n;
     }
 }
@@ -127,16 +131,18 @@ int sceneFindByName(SceneNode **pOut, int nMax, const char *pszFilter) /* @0x431
  * name table case-sensitively, returning the entry's id (the node handle)
  * or 0 when the name is absent. Inline upper-casing to avoid an extra
  * tracked call (scenNameToId) which would show as unexpected. */
-int scenNameToIdEx(LPCSTR pszName) /* @0x431e20 */
+/* 64-bit port: returns the native scene-node pointer (the original
+ * returned it as int). */
+void *scenNameToIdEx(LPCSTR pszName) /* @0x431e20 */
 {
     char up[256];
     int i;
     if (!pszName) return 0;
     for (i = 0; i < 255 && pszName[i]; i++) up[i] = (char)toupper((unsigned char)pszName[i]);
     up[i] = 0;
-    for (i = 0; g_pScenObjTable[i].nId != 0; i++) {
+    for (i = 0; g_pScenObjTable[i].pId != 0; i++) {
         if (strcmp(g_pScenObjTable[i].pszName, up) == 0) {
-            return g_pScenObjTable[i].nId;
+            return g_pScenObjTable[i].pId;
         }
     }
     return 0;
@@ -205,10 +211,10 @@ void sceneMeshBBox(SceneNode *pNode, int *pOutBBox) /* @0x42ba40 */
  * detailName+2. Afterwards every column's header mesh gets an AABB
  * (sceneMeshBBox) in the 0x14-byte row buffer (+0xc/+0x10 zeroed) and
  * pColScales[j] = (j+1) * nCellSize^2 (squared detail thresholds). */
-void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
+void *sceneDetailGridCtor(SceneDetailGrid *pGrid, SceneNode *pRootNode, int nCols,
                           int nRows, int nCellSize) /* @0x42ad00 */
 {
-    pGrid->nRootNode = nRootNode;              /* 0x42ad24 */
+    pGrid->pRootNode = pRootNode;              /* 0x42ad24 */
     pGrid->nFailed = 0;
     pGrid->nCols = nCols;                      /* 0x42ad2b */
     pGrid->nRows = nRows;
@@ -217,15 +223,15 @@ void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
     if (nCols <= 1 || nRows <= 1) {
         goto fail;                             /* 0x42afe5 */
     }
-    pGrid->pCells = (int *)memPoolAllocZero(0, (size_t)nCols * nRows * 4);   /* 0x42ad5e */
+    pGrid->pCells = (SceneNode **)memPoolAllocZero(0, (size_t)nCols * nRows * sizeof(SceneNode *));   /* 0x42ad5e */
     pGrid->pRowBuf = memPoolAlloc(0, (size_t)pGrid->nRows * 0x14);           /* 0x42ad75 */
     pGrid->pColScales = (float *)memPoolAlloc(0, (size_t)pGrid->nCols * 4);  /* 0x42ad86 */
     if (pGrid->pCells == NULL || pGrid->pRowBuf == NULL || pGrid->pColScales == NULL) {
         goto fail;
     }
-    if (g_pScenObjTable[0].nId != 0) {         /* 0x42ada1 */
+    if (g_pScenObjTable[0].pId != 0) {         /* 0x42ada1 */
         int nEntry;
-        for (nEntry = 0; g_pScenObjTable[nEntry].nId != 0; nEntry++) {   /* 0x42adb5.. */
+        for (nEntry = 0; g_pScenObjTable[nEntry].pId != 0; nEntry++) {   /* 0x42adb5.. */
             ScenNameEntry *e = &g_pScenObjTable[nEntry];
             if (pGrid->nRows <= pGrid->nColsFilled) {
                 goto fail;                     /* 0x42adc3 */
@@ -233,8 +239,8 @@ void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
             if (e->pszName[0] != '_') {
                 int nFilled = 0;
                 int nDetail;
-                pGrid->pCells[pGrid->nColsFilled] = e->nId;   /* 0x42ae7e */
-                for (nDetail = 0; g_pScenObjTable[nDetail].nId != 0; nDetail++) { /* 0x42ae9c */
+                pGrid->pCells[pGrid->nColsFilled] = (SceneNode *)e->pId;   /* 0x42ae7e */
+                for (nDetail = 0; g_pScenObjTable[nDetail].pId != 0; nDetail++) { /* 0x42ae9c */
                     ScenNameEntry *d = &g_pScenObjTable[nDetail];
                     if (d->pszName[0] == '_' &&
                         strcmp(e->pszName, d->pszName + 2) == 0) {   /* word-wise cmp 0x42ae1f */
@@ -246,13 +252,13 @@ void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
                         if (nLevel < 1 || pGrid->nCols <= nLevel) {
                             goto fail;                /* 0x42ae68 */
                         }
-                        sceneNodeSetHiddenFlag((SceneNode *)(uintptr_t)d->nId, 1);   /* @0x4305c0 */
+                        sceneNodeSetHiddenFlag((SceneNode *)d->pId, 1);   /* @0x4305c0 */
                         if (pGrid->pCells[pGrid->nRows * nLevel + pGrid->nColsFilled] == 0) {
                             nFilled++;                /* 0x42aea8 */
                         } else {
                             nopDebugStub();           /* 0x42aeae */
                         }
-                        pGrid->pCells[pGrid->nRows * nLevel + pGrid->nColsFilled] = d->nId;
+                        pGrid->pCells[pGrid->nRows * nLevel + pGrid->nColsFilled] = (SceneNode *)d->pId;
                     }
                 }
                 if (nFilled != pGrid->nCols - 1) {      /* 0x42aee5 */
@@ -273,7 +279,7 @@ void *sceneDetailGridCtor(SceneDetailGrid *pGrid, int nRootNode, int nCols,
         int i;
         for (i = 0; i < pGrid->nColsFilled; i++) {
             int *pRow = (int *)((char *)pGrid->pRowBuf + (size_t)i * 0x14);
-            sceneMeshBBox((SceneNode *)(size_t)pGrid->pCells[i], pRow);
+            sceneMeshBBox(pGrid->pCells[i], pRow);
             pRow[3] = 0;   /* +0x0c */
             pRow[4] = 0;   /* +0x10 */
         }
@@ -344,7 +350,7 @@ void *sceneMorphInterp(SceneNode *pNode, SceneObjRenderInfo *pRender, void *pOut
  * polygon shears its texture. */
 
 /* meshDrawTriClip @0x42d070 */
-void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
+void meshDrawTriClip(byte *pIdxList, byte *pVerts, byte *pNormals, void *pUV,
                      void *pColor, int nUnk, int bInterpColor, int bInterpUV)
 {
     GxVert clipped[8];
@@ -445,7 +451,7 @@ void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
          * gx texture-record slot — the names here follow the original's
          * (misleading) Ghidra labels, the call order must not swap them. */
         gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2],
-                    (int)(bBuildColor ? (void *)colorRec : pUV),
+                    bBuildColor ? (void *)colorRec : pUV,
                     bBuildTex ? (void *)texRec : pColor);
     } else if (count >= 4) {
         if (bBuildColor) {
@@ -455,13 +461,13 @@ void meshDrawTriClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
             texRec[14] = uvU[3]; texRec[15] = uvV[3];
         }
         gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3],
-                   (int)(bBuildColor ? (void *)colorRec : pUV),
+                   bBuildColor ? (void *)colorRec : pUV,
                    bBuildTex ? (void *)texRec : pColor);
     }
 }
 
 /* meshDrawQuadClip @0x42daf0 */
-void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
+void meshDrawQuadClip(byte *pIdxList, byte *pVerts, byte *pNormals, void *pUV,
                       void *pColor, int nUnk, int bInterpColor, int bInterpUV)
 {
     GxVert clipped[8];
@@ -559,11 +565,11 @@ void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
     if (count == 3) {
         /* Same slot order as meshDrawTriClip @0x42dabf (see note there). */
         gxDrawTriUV(&clipped[0], &clipped[1], &clipped[2],
-                    (int)(bBuildColor ? (void *)colorRec : pUV),
+                    bBuildColor ? (void *)colorRec : pUV,
                     bBuildTex ? (void *)texRec : pColor);
     } else {
         gxDrawQuad(&clipped[0], &clipped[1], &clipped[2], &clipped[3],
-                   (int)(bBuildColor ? (void *)colorRec : pUV),
+                   bBuildColor ? (void *)colorRec : pUV,
                    bBuildTex ? (void *)texRec : pColor);
         if (count >= 5) {
             /* Quads crossed by one plane can yield a pentagon (3 in + 2 clip);
@@ -577,7 +583,7 @@ void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
                 texRec[12] = uvU[4]; texRec[13] = uvV[4];
             }
             gxDrawTriUV(&clipped[0], &clipped[3], &clipped[4],
-                        (int)(bBuildColor ? (void *)colorRec : pUV),
+                        bBuildColor ? (void *)colorRec : pUV,
                         bBuildTex ? (void *)texRec : pColor);
         }
     }
@@ -588,8 +594,9 @@ void meshDrawQuadClip(byte *pIdxList, int pVerts, int pNormals, void *pUV,
  * bTex = (flags>>3)&1, bColor=(flags>>2)&1, bStride = low byte of [3].
  * pTexColors = td->pC (COLS, 4-byte entries, stride *4 for color)
  * pPalColors = td->pTex (MAPI, 16-byte entries, stride *0x10 for UV)
- * gxSetOrigin uses flags; kind 1=point,2=line,3=tri,4=quad. */
-void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, int pPalColors)
+ * gxSetOrigin uses flags; kind 1=point,2=line,3=tri,4=quad.
+ * 64-bit port: buffer addresses are native pointers (were 32-bit ints). */
+void meshDrawPoly(ushort *pPolyData, byte *pNormals, byte *pVerts, byte *pTexColors, byte *pPalColors)
 {
     byte bStride = (byte)pPolyData[3];
     ushort u2 = pPolyData[1];
@@ -613,7 +620,7 @@ void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, i
             if ((bTex & 1) != 0) pColorPtr = (ushort *)(pTexColors + (uint)pIdxList[1] * 4);
             else pColorPtr = NULL;
             int offset = (byte)*pIdxList * 0x10;
-            if (*(int *)(pNormals + offset + 8) > 1) gxDrawTriangle((void *)(pVerts + offset), (int)pColorPtr);
+            if (*(int *)(pNormals + offset + 8) > 1) gxDrawTriangle((void *)(pVerts + offset), (void *)pColorPtr);
             pIdxList = pIdxList + bStride;
             nCount--;
         } while (nCount != 0);
@@ -623,9 +630,9 @@ void meshDrawPoly(ushort *pPolyData, int pNormals, int pVerts, int pTexColors, i
         do {
             if ((bTex & 1) != 0) pColorPtr = (ushort *)(pTexColors + (uint)pIdxList[1] * 4);
             else pColorPtr = NULL;
-            void *pv0 = (void *)((uint)(byte)*pIdxList * 0x10 + pVerts);
-            void *pv1 = (void *)((uint)*(byte *)((int)pIdxList + 1) * 0x10 + pVerts);
-            if ((1 < *(int *)((int)pv0 + 8)) && (1 < *(int *)((int)pv1 + 8))) gxDrawLine(pv0, pv1, (int)pColorPtr);
+            void *pv0 = (void *)(pVerts + (uint)(byte)*pIdxList * 0x10);
+            void *pv1 = (void *)(pVerts + (uint)*(byte *)((byte *)pIdxList + 1) * 0x10);
+            if ((1 < *(int *)((byte *)pv0 + 8)) && (1 < *(int *)((byte *)pv1 + 8))) gxDrawLine(pv0, pv1, (void *)pColorPtr);
             pIdxList = pIdxList + bStride;
             nCount--;
         } while (nCount != 0);
@@ -659,7 +666,7 @@ tri_clip:
                     meshDrawTriClip((byte *)pIdxList, pVerts, pNormals, pColorPtr, pvVar11, (int)nUnk, (int)bColor, (int)local8);
                 } else {
                     /* Original calls unconditionally (@0x42eb5d). */
-                    gxDrawTriUV((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (int)pColorPtr, pvVar11);
+                    gxDrawTriUV((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (void *)pColorPtr, pvVar11);
                 }
             }
             pIdxList = pIdxList + bStride;
@@ -692,7 +699,7 @@ quad_draw:
 quad_clip:
                     meshDrawQuadClip((byte *)pIdxList, pVerts, pNormals, pColorPtr, pvVar11, (int)nUnk, (int)bColor, (int)local8);
                 } else {
-                    gxDrawQuad((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (void *)(pVerts + o3), (int)pColorPtr, pvVar11);
+                    gxDrawQuad((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (void *)(pVerts + o3), (void *)pColorPtr, pvVar11);
                 }
             }
             pIdxList = pIdxList + bStride;
@@ -702,14 +709,15 @@ quad_clip:
 }
 
 /* ===================================================================
- * gxSortPushKey @0x42ecf0
+ * gxSortPushKey @0x42ecf0 — 5-slot entry {mesh, verts, normals, tex, pal}.
+ * 64-bit port: slots are native uintptr_t (0x28 stride, was 5x4).
  * =================================================================== */
-void gxSortPushKey(void *pMesh, void *pVerts, void *pNormals, int pTex, int pPalette)
+void gxSortPushKey(void *pMesh, void *pVerts, void *pNormals, void *pTex, void *pPalette)
 {
-    int *p = (int *)g_pSortBufCur;
-    p[0] = (int)pMesh; p[1] = (int)pVerts; p[2] = (int)pNormals;
-    p[3] = pTex; p[4] = pPalette;
-    g_pSortBufCur = (void *)((int)g_pSortBufCur + 0x14);
+    uintptr_t *p = (uintptr_t *)g_pSortBufCur;
+    p[0] = (uintptr_t)pMesh; p[1] = (uintptr_t)pVerts; p[2] = (uintptr_t)pNormals;
+    p[3] = (uintptr_t)pTex; p[4] = (uintptr_t)pPalette;
+    g_pSortBufCur = (void *)((uintptr_t)g_pSortBufCur + 5 * sizeof(uintptr_t));
 }
 
 /* ===================================================================
@@ -846,6 +854,8 @@ int sceneNodeRender(SceneNode *pNode) /* @0x42f8c0 */
         void *vbuf = sceneMorphInterp(node, ri, g_pMeshPool);
         void *pVerts = g_pNodePoolCur;
         void *pNormals = g_pNodePool2Cur;
+        void *pVerts_00;
+        void *pNormals_00;
         short *src = (short *)vbuf;
 
         /* first vertex block: nGroups at +0x1c, groups at +0x20 */
@@ -886,25 +896,80 @@ int sceneNodeRender(SceneNode *pNode) /* @0x42f8c0 */
                     /* pNormals pool (g_pNodePool2Cur) = projected screen coordinates (rendered) */
                     int *dstN = (int *)g_pNodePool2Cur;
                     dstN[0] = screenX; dstN[1] = screenY; dstN[2] = depth;
-                    *(byte *)((int)dstN + 0xc) = *(byte *)(vbuf + 6);
-                    *(byte *)((int)dstN + 0xd) = *(byte *)(vbuf + 7);
-                    *(byte *)((int)dstN + 0xe) = *(byte *)(vbuf + 6);
-                    g_pNodePoolCur = (void *)((int)g_pNodePoolCur + 0x10);
-                    g_pNodePool2Cur = (void *)((int)g_pNodePool2Cur + 0x10);
+                    *(byte *)((byte *)dstN + 0xc) = *(byte *)(vbuf + 6);
+                    *(byte *)((byte *)dstN + 0xd) = *(byte *)(vbuf + 7);
+                    *(byte *)((byte *)dstN + 0xe) = *(byte *)(vbuf + 6);
+                    g_pNodePoolCur = (void *)((byte *)g_pNodePoolCur + 0x10);
+                    g_pNodePool2Cur = (void *)((byte *)g_pNodePool2Cur + 0x10);
                     src += 4;
                 }
             }
         }
 
-        /* second vertex block for normals (disasm 0x42fc74..0x42fe5e) */
+        /* polyB vertex block (disasm 0x42fc86..0x42fe50): per prim i the
+         * vertex count is the reserved word of pPolyA[nPolyA+i]; the
+         * vertices stream continuously from pPolyB as 8-byte records
+         * (3 sign-extended shorts + payload bytes at +6/+7). Transform uses
+         * the global matrix — the view matrix (g_camMat, @0x45e894, written
+         * by sceneCameraBasisCalc) or identity (@0x450f84, never written)
+         * when the prim's first word & 0xff00 != 0x8200 — plus the int
+         * translation at matrix + (wFlags<<4) (FIADD of 32-bit ints,
+         * replicated exactly). Projection/storage/pool advance match the
+         * groups loop. nPolyB is 0 in all shipped scenes. */
         {
-            void *pVerts2 = g_pNodePoolCur;
-            void *pNormals2 = g_pNodePool2Cur;
             int nPolyB = ri->nPolyB;
+            byte *pStream = (byte *)ri->pPolyB;
+            pVerts_00 = g_pNodePoolCur;
+            pNormals_00 = g_pNodePool2Cur;
             if (nPolyB > 0) {
+                static const float kIdentMat[9] = {1,0,0, 0,1,0, 0,0,1};
                 for (int i = 0; i < nPolyB; i++) {
-                    /* disasm reads ushort counts etc and transforms similar way */
-                    /* simplified: skip detailed normal transform, advance cursors */
+                    SceneMeshPrim *primB = ((SceneMeshPrim **)ri->pPolyA)[ri->nPolyA + i];
+                    unsigned count;
+                    unsigned w0;
+                    const float *mat;
+                    const byte *trBase;
+                    int tx, ty, tz;
+                    unsigned vi;
+                    if (!primB) continue;
+                    count = (unsigned)primB->bReserved04 | ((unsigned)primB->bReserved05 << 8);
+                    w0 = (unsigned)primB->bFans | ((unsigned)primB->bType << 8);
+                    mat = ((w0 & 0xff00u) == 0x8200u) ? g_camMat : kIdentMat;
+                    /* BP partial-register note: disasm zeroes EBP per prim
+                     * (XOR EBP,EBP @0x42fca7) then MOV BP,wFlags; SHL EBP,4 —
+                     * modeled here as a clean 16-bit shift. */
+                    trBase = (const byte *)mat + (((unsigned)primB->wFlags & 0xffffu) << 4);
+                    memcpy(&tx, trBase + 0, 4);
+                    memcpy(&ty, trBase + 4, 4);
+                    memcpy(&tz, trBase + 8, 4);
+                    for (vi = 0; vi < count; vi++) {
+                        short sxyz[3];
+                        float fx, fy, fz, wx, wy, wz, az, denom, scale;
+                        int screenX, screenY, depth;
+                        int *dstV, *dstN;
+                        memcpy(sxyz, pStream, 6);
+                        fx = (float)sxyz[0]; fy = (float)sxyz[1]; fz = (float)sxyz[2];
+                        wx = fx * mat[0] + fy * mat[1] + fz * mat[2] + (float)tx;
+                        wy = fx * mat[3] + fy * mat[4] + fz * mat[5] + (float)ty;
+                        wz = fx * mat[6] + fy * mat[7] + fz * mat[8] + (float)tz;
+                        az = g_flSceneAspect + wz;
+                        if (az <= 0.0f) az = 0.001f;
+                        denom = az * g_nSceneWidth;
+                        scale = (denom != 0.0f) ? (float)g_nSceneHalfWidth / denom : 0.0f;
+                        screenX = (int)(scale * wx + (float)g_centerX);
+                        screenY = (int)(g_flSceneYScale * scale * wy + (float)g_centerY);
+                        depth = (int)(az * 16.0f);
+                        dstV = (int *)g_pNodePoolCur;
+                        dstV[0] = (int)wx; dstV[1] = (int)wy; dstV[2] = (int)wz;
+                        dstN = (int *)g_pNodePool2Cur;
+                        dstN[0] = screenX; dstN[1] = screenY; dstN[2] = depth;
+                        *(byte *)((byte *)dstN + 0xc) = *(pStream + 6);
+                        *(byte *)((byte *)dstN + 0xd) = *(pStream + 7);
+                        *(byte *)((byte *)dstN + 0xe) = *(pStream + 6);
+                        g_pNodePoolCur = (void *)((byte *)g_pNodePoolCur + 0x10);
+                        g_pNodePool2Cur = (void *)((byte *)g_pNodePool2Cur + 0x10);
+                        pStream += 8;
+                    }
                 }
             }
             /* draw polys — faithful to 0x42f8c0: pTex=COLS (*pTex 4B), pPal=MAPI (*pTex 16B), guard only small */
@@ -913,27 +978,35 @@ int sceneNodeRender(SceneNode *pNode) /* @0x42f8c0 */
             if (nPolyA > 0) {
                 for (int i = 0; i < nPolyA; i++) {
                     ushort *poly = ((ushort **)pPolyA)[i];
-                    int pTex = (int)(uintptr_t)td->pC;
-                    int pPal = (int)(uintptr_t)td->pTex;
+                    byte *pTex = (byte *)td->pC;
+                    byte *pPal = (byte *)td->pTex;
                     if (!poly) continue;
 
-                    if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)(uintptr_t)pVerts, (int)(uintptr_t)pNormals, pTex, pPal);
+                    if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (byte *)pVerts, (byte *)pNormals, pTex, pPal);
                     else gxSortPushKey(poly, pVerts, pNormals, pTex, pPal);
                 }
             }
-            nPolyB = ri->nPolyB;
-            void *pPolyB = ri->pPolyB;
+            /* polyB fan draw (disasm 0x42fe5e..0x42ff20): prims are the
+             * pPolyA tail (pPolyA[nPolyA+i]); each fan stream starts at
+             * prim+6 (&bFanIdxCount); per fan, draw/sort with the
+             * post-groups pools, then advance by
+             * *(ushort*)(pdata+6) * *pdata * 2 + 8 (unaligned-safe). */
             if (nPolyB > 0) {
-                byte *base = (byte *)pPolyB;
                 for (int i = 0; i < nPolyB; i++) {
-                    byte n = *base; base += 6;
-                    for (int k = 0; k < (n & 0xff); k++) {
-                        ushort *poly = (ushort *)base;
-                        int pTex2 = (int)(uintptr_t)td->pC;
-                        int pPal2 = (int)(uintptr_t)td->pTex;
-                        if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (int)(uintptr_t)pVerts2, (int)(uintptr_t)pNormals2, pTex2, pPal2);
-                        else gxSortPushKey(poly, pVerts2, pNormals2, pTex2, pPal2);
-                        base += (poly[3] & 0xff) * (poly[0] & 0xff) + 4; /* stride */
+                    SceneMeshPrim *prim = ((SceneMeshPrim **)pPolyA)[nPolyA + i];
+                    byte *pdata;
+                    unsigned f;
+                    if (!prim) continue;
+                    pdata = (byte *)prim + 6;
+                    for (f = 0; f < prim->bFans; f++) {
+                        ushort *poly = (ushort *)pdata;
+                        unsigned short strideW;
+                        byte *pTex2 = (byte *)td->pC;
+                        byte *pPal2 = (byte *)td->pTex;
+                        if ((poly[1] & 0x20) == 0) meshDrawPoly(poly, (byte *)pVerts_00, (byte *)pNormals_00, pTex2, pPal2);
+                        else gxSortPushKey(pdata, pVerts_00, pNormals_00, pTex2, pPal2);
+                        memcpy(&strideW, pdata + 6, 2);
+                        pdata += (unsigned)strideW * (unsigned)(*pdata) * 2u + 8u;
                     }
                 }
             }
@@ -1027,12 +1100,14 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
         sceneNodeRender(p);
     }
     if (g_pSortBuffer < g_pSortBufCur) {
-        int *pi = (int *)((int)g_pSortBuffer + 0xc);
-        int *end = (int *)g_pSortBufCur;
-        while (pi + 2 < end) {
-            int pTexS = *pi; int pPalS = pi[1];
-            if ((unsigned)pTexS >= 0x10000U && (unsigned)pPalS >= 0x10000U) {
-                meshDrawPoly((ushort *)pi[-3], pi[-2], pi[-1], *pi, pi[1]);
+        /* Entry layout: {mesh, verts, normals, tex, pal} native slots;
+         * tex/pal start at slot 3 (byte offset 3*sizeof(uintptr_t)). */
+        uintptr_t *pi = (uintptr_t *)((uintptr_t)g_pSortBuffer + 3 * sizeof(uintptr_t));
+        uintptr_t *end = (uintptr_t *)g_pSortBufCur;
+        while (pi + 5 <= end) { /* one full entry remains (orig: pi+2<end on 4B slots) */
+            uintptr_t pTexS = *pi; uintptr_t pPalS = pi[1];
+            if (pTexS >= 0x10000U && pPalS >= 0x10000U) {
+                meshDrawPoly((ushort *)pi[-3], (byte *)pi[-2], (byte *)pi[-1], (byte *)*pi, (byte *)pi[1]);
             }
             pi += 5;
         }

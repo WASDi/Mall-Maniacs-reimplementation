@@ -95,12 +95,12 @@ void levelEventDirector_L2_Init(void) /* @0x417dc0 */
 {
     void *pName;
 
-    g_pL2SignObj = (SceneNode *)(uintptr_t)scenNameToIdEx("SIGN_FELIXPO");   /* @0x431e20 @0x417dc5 */
+    g_pL2SignObj = (SceneNode *)scenNameToIdEx("SIGN_FELIXPO");   /* @0x431e20 @0x417dc5 */
     g_pL2KassoerskaObj = (SceneNode *)sceneNodeAllocChild(NULL, NULL,        /* @0x4319e0 @0x417de2 */
                                                           (void *)0xffffd6fc, (void *)0xfffffe0c,
                                                           (void *)0xffffafec);
     sceneObjSetPosOrient(g_pL2KassoerskaObj, 0, 16000, 0, 2);                /* @0x4307d0 @0x417df8 */
-    pName = (void *)(uintptr_t)scenNameToId("KASSOERSKA");                   /* @0x431ed0 @0x417e02 */
+    pName = scenNameToId("KASSOERSKA");                   /* @0x431ed0 @0x417e02 */
     g_pL2KassoerskaObj = (SceneNode *)sceneryObjAlloc(g_pL2KassoerskaObj,    /* @0x430200 @0x417e1c */
                                                       0, 0, 0, 0, 0, 0, 0, pName);
     g_pL2CashSitAnim = anmLoadFile("anim\\cash_sit.anm", NULL,               /* @0x433a50 @0x417e31 */
@@ -111,10 +111,10 @@ void levelEventDirector_L2_Init(void) /* @0x417dc0 */
                                                       (void *)0x81b0, (void *)0xfffffe0c,
                                                       (void *)0x3e8);
     sceneObjSetPosOrient(g_pL2McdmanObj, 0, -16000, 0, 2);                   /* @0x4307d0 @0x417e7c */
-    pName = (void *)(uintptr_t)scenNameToId("MCDMAN");                       /* @0x431ed0 @0x417e89 */
+    pName = scenNameToId("MCDMAN");                       /* @0x431ed0 @0x417e89 */
     g_pL2McdmanObj = (SceneNode *)sceneryObjAlloc(g_pL2McdmanObj,            /* @0x430200 @0x417ea4 */
                                                   0, 0, 0, 0, 0, 0, 0, pName);
-    pName = (void *)(uintptr_t)scenNameToId("BURGER");                       /* @0x431ed0 @0x417eae */
+    pName = scenNameToId("BURGER");                       /* @0x431ed0 @0x417eae */
     g_pL2BurgerObj = (SceneNode *)sceneryObjAlloc(NULL, 0, 0, 0, 0, 0, 0, 0, /* @0x430200 @0x417ec9 */
                                                   pName);
     sceneNodeSetHiddenFlag(g_pL2BurgerObj, 2);                               /* @0x4305c0 @0x417ed9 */
@@ -225,7 +225,7 @@ void levelEventDirector_L2(void) /* @0x418000 */
         case 5:
             eventAnimReset(g_pL2Throw1Anim);                                 /* @0x434270 @0x418296 */
             eventAnimStep(g_pL2Throw1Anim, 1);                               /* @0x434090 @0x4182a4 */
-            sceneObjSetClassMesh((int)g_pL2BurgerObj, g_pL2McdmanObj, 8, 3); /* @0x430db0 @0x4182ba */
+            sceneObjSetClassMesh(g_pL2BurgerObj, g_pL2McdmanObj, 8, 3); /* @0x430db0 @0x4182ba */
             sceneObjSetPos(g_pL2BurgerObj, 0, 0x78, 0, 2);                   /* @0x430660 @0x4182cc */
             sceneObjSetPosOrient(g_pL2BurgerObj, 0, 0, -16000, 2);           /* @0x4307d0 @0x4182e1 */
             sceneObjResetFlags(g_pL2BurgerObj, 2);                           /* @0x430620 @0x4182f1 */
@@ -244,7 +244,7 @@ void levelEventDirector_L2(void) /* @0x418000 */
         case 7:
             eventAnimReset(g_pL2Throw2Anim);                                 /* @0x434270 @0x418370 */
             eventAnimStep(g_pL2Throw2Anim, 1);                               /* @0x434090 @0x41837e */
-            sceneObjSetClassMesh((int)g_pL2BurgerObj, NULL, 0, 3);           /* @0x430db0 @0x41838d */
+            sceneObjSetClassMesh(g_pL2BurgerObj, NULL, 0, 3);           /* @0x430db0 @0x41838d */
             sceneObjSetPos(g_pL2BurgerObj, 0x81b0, -0x5e6, 800, 2);          /* @0x430660 @0x4183aa */
             sceneObjSetPosOrient(g_pL2BurgerObj, 0, 0, 0, 2);                /* @0x4307d0 @0x4183bb */
             g_nL2MoveStep = 0;                                               /* @0x4183c3 */
@@ -277,14 +277,14 @@ void levelEventDirector_L2(void) /* @0x418000 */
             g_nL2EventActive = 1;                                            /* @0x4184b6 */
             /* mode 2 stores the raw int channel coords into the buffer */
             sceneNodeGetPosWorld(g_pL2BurgerObj, (float *)g_anL2SpawnPos, 2); /* @0x430e80 @0x4184c0 */
-            pNew = (EventObject *)malloc(0x50);                              /* operator_new @0x43dd42 @0x4184c7 */
+            pNew = (EventObject *)malloc(sizeof(EventObject));                              /* operator_new @0x43dd42 @0x4184c7 */
             if (pNew != NULL) {                                              /* @0x4184d3 */
                 /* ctor args are the {flX=worldZ, flY=worldX, flHeight=worldY}
                  * ints of the BURGER pos (FILD integer loads @0x4184db..0x4184f6) */
                 sceneObjCtor3(pNew, 0x1f, (float)g_anL2SpawnPos[2],          /* @0x4146a0 @0x4184fd */
                               (float)g_anL2SpawnPos[0], (float)g_anL2SpawnPos[1]);
                 pNew->nValue0 = g_anL2SpawnPos[1];                          /* +0x10 @0x41850d */
-                pNew->nValue1 = (int)(uintptr_t)g_pL2BurgerObj;             /* +0x14 @0x41851e */
+                pNew->nValue1 = (intptr_t)g_pL2BurgerObj;             /* +0x14 @0x41851e */
                 objHashRegister(pNew);                                       /* @0x4148f0 @0x418521 */
             }
             break;                                                           /* @0x418529 (tick++ -> 1) */

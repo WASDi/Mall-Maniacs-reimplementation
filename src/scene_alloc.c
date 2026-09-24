@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,9 +22,9 @@
 void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3,
                      short nMeshIdx, short nUnk5, short nUnk6, short nUnk7) /* @0x4318e0 */
 {
-    SceneNode *n = (SceneNode *)malloc(0xa8);
+    SceneNode *n = (SceneNode *)malloc(sizeof(SceneNode));
     if (!n) return NULL;
-    memset(n, 0, 0xa8);
+    memset(n, 0, sizeof(SceneNode));
     n->pParent = &g_rootNode;
     n->pNextSib = g_rootNode.pChild;            /* +8 = old head @0x4318fd */
     if (n->pNextSib) n->pNextSib->pPrevLink = n; /* oldHead+0x10 = n @0x431906 */
@@ -54,7 +54,7 @@ void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3,
     ch->nIdx = 0;
     g_nSceneNodeCount++;
     if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
-    g_nSceneNodeMemUsed += 0xa8;
+    g_nSceneNodeMemUsed += (int)sizeof(SceneNode);
     if (g_nSceneNodeMemPeak < g_nSceneNodeMemUsed) g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
     return n;
 }
@@ -68,9 +68,9 @@ void *sceneNodeAlloc(void *pChannelPtr, void *pChannelPtr2, void *pChannelPtr3,
 void *sceneNodeAllocChild(SceneNode *pParent, void *pChannelPtr, void *pChannelPtr2,
                           void *pChannelPtr3, void *pChannelPtr4) /* @0x4319e0 */
 {
-    SceneNode *n = (SceneNode *)malloc(0xa8);
+    SceneNode *n = (SceneNode *)malloc(sizeof(SceneNode));
     if (!n) return NULL;
-    memset(n, 0, 0xa8);
+    memset(n, 0, sizeof(SceneNode));
     n->pParent = pParent ? pParent : &g_rootNode;
     SceneNode *parent = n->pParent;
     SceneNode *oldChild = parent->pChild;
@@ -92,7 +92,7 @@ void *sceneNodeAllocChild(SceneNode *pParent, void *pChannelPtr, void *pChannelP
     ch->z = (int)(uintptr_t)pChannelPtr4;
     g_nSceneNodeCount++;
     if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
-    g_nSceneNodeMemUsed += 0xa8;
+    g_nSceneNodeMemUsed += (int)sizeof(SceneNode);
     if (g_nSceneNodeMemPeak < g_nSceneNodeMemUsed) g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
     if (n->pParent != &g_rootNode) sceneNodeUpdateBounds(n->pParent);
     return n;
@@ -114,9 +114,9 @@ void *sceneryObjAlloc(SceneNode *pParent, int nChanPtr, int nChanPtr2, int nChan
     int nSub = td->field_08 & 0xFF; /* low byte @+8 */
     if (nSub < 0) nSub = 0;
     if (nSub > 64) nSub = 64;
-    SceneNode *n = (SceneNode *)malloc(0xa8 + nSub * 0x70);
+    SceneNode *n = (SceneNode *)malloc(sizeof(SceneNode) + (size_t)nSub * sizeof(SceneChannel));
     if (!n) return NULL;
-    memset(n, 0, 0xa8 + nSub * 0x70);
+    memset(n, 0, sizeof(SceneNode) + (size_t)nSub * sizeof(SceneChannel));
     n->pParent = pParent ? pParent : &g_rootNode;
     SceneNode *parent = n->pParent;
     SceneNode *oldChild = parent->pChild;
@@ -165,7 +165,7 @@ void *sceneryObjAlloc(SceneNode *pParent, int nChanPtr, int nChanPtr2, int nChan
     }
     g_nSceneNodeCount++;
     if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
-    g_nSceneNodeMemUsed += 0xa8 + nSub * 0x70;
+    g_nSceneNodeMemUsed += (int)(sizeof(SceneNode) + (size_t)nSub * sizeof(SceneChannel));
     if (g_nSceneNodeMemPeak < g_nSceneNodeMemUsed) g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
     if (n->pParent && n->pParent->pChannels && td->pRender && td->pRender->nVerts) {
         if (g_nSceneryObjCountPeak < td->pRender->nVerts) { /* keep */ }

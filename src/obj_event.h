@@ -41,10 +41,12 @@ typedef struct ObjLine {
  * 4-byte name tag (hash key); nValue0..nValue3 are the generic "values"
  * block (evalueCmd index 0..3; esaveCmd serializes values[0..4]);
  * nReserved20 is values[4], always 0 and never read. nValue1 doubles as
- * the burger/scene mesh (SceneNode*) for id-0x1f and level-spawn pickups
- * (stored as int, read back as pointer). pThrownRef is the landed-item
- * backref (ThrownItem*, NULL otherwise). nReserved00/bReserved0c and
- * nReserved28..nReserved34 are zeroed by the ctors and never read. */
+ * the burger/scene mesh (SceneNode*) for id-0x1f and level-spawn pickups.
+ * 64-bit port: intptr_t (was int holding the pointer). The int/float
+ * consumers (zone extents, flags) still work; a future save writer must
+ * persist values as 4-byte ints as the original did. pThrownRef is the
+ * landed-item backref (ThrownItem*, NULL otherwise). nReserved00/bReserved0c
+ * and nReserved28..nReserved34 are zeroed by the ctors and never read. */
 struct ThrownItem;
 typedef struct EventObject {
     int      nReserved00;     /* +0x00 always 0, never read */    ObjLine *pLineList;      /* +0x04 zone polygon line list (Ghidra: pLineList void*) */
@@ -52,7 +54,7 @@ typedef struct EventObject {
     byte     bReserved0c;     /* +0x0c byte store @0x41472d/@0x4146c6, always 0 */
     byte     _pad0d[3];       /* +0x0d padding (alignment 1) */
     int      nValue0;         /* +0x10 values[0]: cam upper / half-extent X / dest Y / height */
-    int      nValue1;         /* +0x14 values[1]: cam snap / half-extent Y / flag / SceneNode* */
+    intptr_t nValue1;         /* +0x14 values[1]: cam snap / half-extent Y / flag / SceneNode* */
     int      nValue2;         /* +0x18 values[2]: cam lower (0 = ignore) */
     int      nValue3;         /* +0x1c values[3]: cam snap flag */
     int      nReserved20;     /* +0x20 values[4], always 0, never read */

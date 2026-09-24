@@ -17,7 +17,7 @@
  * parsed by senChunkParse), OBJI (object instances — instantiated into the
  * scene graph by the inline loop at the end of sceneLoadSen). */
 
-#include <windows.h>
+#include "compat_types.h"
 
 /* sceneLoadSen @0x432320 — load a .SEN scene file. Returns a scene-instance
  * handle (the memPool that owns the loaded data) or 0 on failure. param_2 is
@@ -29,11 +29,8 @@ int  sceneLoadSen(LPCSTR path, int *param_2);
  * between pData and pDataEnd. Populates the mesh/object/name tables. Returns 1. */
 int  senChunkParse(byte *pData, byte *pDataEnd);
 
-/* sceneMeshFixup @0x4320f0 — relocate the pointer fields of a loaded mesh
- * node. pMesh = node base (relocated MESH bytes = SceneObjTypeDef), pNames =
- * object-name table, pMapGeom = &g_pMapGeom (NULL or pointer to map-geometry
- * base; when non-null the +0x20/+0x28 and vertex fixups use it). Returns 1. */
-int sceneMeshFixup(int pMesh, void *pNames, int pMapGeom);
+/* (Superseded by the native-expansion sceneMeshFixup below; the
+ * original int-based contract is kept in Ghidra.) */
 
 /* sceneCreateTextureSurfaces @0x432260 — bind a list of texture ids to
  * surfaces (via gxCreateSurface). pTexIdList is an array of 0x10-byte records
@@ -42,15 +39,42 @@ int sceneMeshFixup(int pMesh, void *pNames, int pMapGeom);
  * 0 on gxCreateSurface failure. */
 int  sceneCreateTextureSurfaces(int *pTexIdList, int nCount, char *pszFilenames);
 
+/* Geometry-base block for sceneMeshFixup (mirrors the original's 5-global
+ * block at 0x45eb20: MAPI ptr/count, COLS ptr/count, SUBO ptr). Pointer-
+ * sized on 64-bit; the fixup reads it by field, never by numeric offset. */
+typedef struct SenGeom {
+    void *pMapGeom;      /* MAPI chunk base (NULL when absent) */
+    int   nMapGeomCount;
+    void *pColsData;     /* COLS chunk base */
+    int   nColsCount;
+    void *pSubObjData;   /* SUBO chunk base */
+} SenGeom;
+
+/* sceneMeshFixup @0x4320f0 — expand a raw MESH chunk into native runtime
+ * structs (SceneObjTypeDef + SceneObjRenderInfo array + pointer arrays),
+ * allocated from the scene pool. Returns the native typedef, NULL on
+ * allocation failure. pImage is the raw chunk base; RVAs resolve against
+ * it (or the geom bases exactly as the original). */
+struct SceneObjTypeDef *sceneMeshFixup(void *pImage, void *pNames, SenGeom *pGeom, int nPool);
+
 /* --- mesh-table registry (shared with scene_render.c / scenNameToId) ---
  * g_pMeshTable holds 8-byte entries {char *name, void *pMeshData}; pMeshData is
  * the raw MESH chunk bytes, which are a serialized SceneObjTypeDef. */
+/* 64-bit port: entries carry native pointers (mesh data or scene nodes),
+ * so the id is pointer-sized (8-byte entries on 32-bit, 16 on 64-bit).
+ * Serialized name/id pairs on disk are parsed into this at load. */
 typedef struct ScenNameEntry {
     char *pszName;   /* +0x00 */
-    int   nId;       /* +0x04 mesh id (mesh table) / scene-node handle (scene-obj table) */
+    void  *pId;      /* +0x04 mesh data (mesh table) / scene node (scene-obj table) */
 } ScenNameEntry;
 
-extern void *g_pMeshTable;      /* @0x45e930 */
+/* Mesh-table entry view (same storage): name + MESH data pointer. */
+typedef struct MeshTableEntry {
+    char *name;      /* +0x00 */
+    void *data;      /* +0x04 MESH chunk (native typedef after sceneMeshFixup) */
+} MeshTableEntry;
+
+extern MeshTableEntry *g_pMeshTable; /* @0x45e930 */
 extern int   g_nMeshTableCount; /* @0x45e994 */
 extern ScenNameEntry *g_pScenObjTable; /* @0x45eb10 {name,node} scene-object table */
 extern char g_szSceneDir[];     /* @0x45e950 scene base dir (set by scenSetDir) */

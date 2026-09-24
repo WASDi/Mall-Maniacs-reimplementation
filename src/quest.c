@@ -5,6 +5,7 @@
 #include "pool.h"
 #include "quest.h"
 #include "time.h"
+#include "util.h"
 #include "custom_helpers.h"
 
 QuestRecord *g_pQuestHead;  /* @0x458978 */
@@ -76,14 +77,17 @@ void questLoad(const char *pszPath)
     QuestRecord *pRec;
     int i;
 
-    fp = fopen(pszPath, "rb");                    /* fileOpen @0x43e68a, "rb" @0x44e6c0 @0x40ffd4 */
+    fp = fileOpenMode(pszPath, 0);          /* fileOpen @0x43e68a, "rb" @0x44e6c0 @0x40ffd4 */
     if (fp != NULL) {
         fseek(fp, 0, SEEK_END);                   /* fileSeek @0x43e5a0 @0x40ffe7 */
         nSize = ftell(fp);                        /* fileTell @0x43e41d @0x40ffed */
         fseek(fp, 0, SEEK_SET);                   /* @0x40fff9 */
-        pBuf = (char *)malloc(nSize);             /* operator_new @0x43dd42 @0x40ffff */
-        fread(pBuf, 1, nSize, fp);                /* fileRead @0x43e306 @0x41000f */
+        pBuf = (char *)malloc((size_t)nSize + 1); /* operator_new @0x43dd42 @0x40ffff */
+        fread(pBuf, 1, (size_t)nSize, fp);                /* fileRead @0x43e306 @0x41000f */
         fclose(fp);                               /* fileClose @0x43e289 @0x410015 */
+        pBuf[nSize] = '\0'; /* 64-bit port: the line scan stops at NUL past
+                             * the last line; the original relied on heap
+                             * slack when quest.txt lacks a trailing NUL. */
         for (i = 0; i < nSize; i++) {             /* XOR deobfuscation @0x410023 */
             pBuf[i] ^= 0x55;
         }
@@ -137,7 +141,7 @@ void questLoad(const char *pszPath)
             continue;
         }
         nCount++;                                 /* @0x410135 */
-        pRec = (QuestRecord *)malloc(0x18);       /* operator_new @0x43dd42 @0x41013a */
+        pRec = (QuestRecord *)malloc(sizeof(QuestRecord));       /* operator_new @0x43dd42 @0x41013a */
         if (pRec != NULL) {
             questRecordCtor(pRec, nCategory, szQuestion, bAnswer); /* @0x40fec0 @0x410161 */
         }

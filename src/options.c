@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -31,7 +31,7 @@ float g_optionsVol = 0.0f;    /* @0x45d458 */
 int   g_nModeSel = 0;         /* @0x4580fc difficulty 0 Lätt,1 Medium,2 Svårt (default Lätt = 0 in .data) */
 int   g_nGfxMode = 2;         /* @0x4580c4 1 Glide,2 Software */
 int   g_nRendererMode = 2;    /* @0x45a390 */
-void *g_hMenuTexGfx;          /* @0x45a6bc menu\gfx00.tpg */
+int g_hMenuTexGfx;          /* @0x45a6bc menu\gfx00.tpg */
 
 static const char * const kDifficultyName[3] = {
     "L\xe4tt",   /* @0x450260 */
@@ -175,8 +175,8 @@ int stateOptions(int nType, int nKey, int nKeyType)
             int offR = sel ? (int)(s *  5.0f) : 0;
             GxVert v0, v1, v2, v3;
             GxColorUv uv;
-            uv.pTexture = g_hMenuTexGfx;
-            uv.pParam5 = NULL;
+            uv.nTexture = g_hMenuTexGfx;
+            uv.nParam5 = 0;
             uv.pad = 0;
             uv.V = 0x3300;
             uv.V2 = 0x3300;
@@ -210,8 +210,8 @@ int stateOptions(int nType, int nKey, int nKeyType)
         {
             GxVert v0, v1, v2, v3;
             GxColorUv uv;
-            uv.pTexture = g_hMenuTexGfx;
-            uv.pParam5 = NULL;
+            uv.nTexture = g_hMenuTexGfx;
+            uv.nParam5 = 0;
             uv.pad = 0;
             uv.U = 0; uv.V = 0; uv.V2 = 0; uv.hV = 0x3200; uv.hV2 = 0x3200;
             uv.U2 = 0; uv.gwU = 0xff00; uv.gwU2 = 0xff00;
@@ -237,8 +237,8 @@ int stateOptions(int nType, int nKey, int nKeyType)
                 GxVert v0, v1, v2, v3;
                 GxColorUv uv;
                 int off2 = g_nModeSel * 0x1a;
-                uv.pTexture = g_hMenuTexGfx;
-                uv.pParam5 = NULL;
+                uv.nTexture = g_hMenuTexGfx;
+                uv.nParam5 = 0;
                 uv.pad = 0;
                 uv.V = 32000; uv.V2 = 32000; uv.hV = 0x9600; uv.hV2 = 0x9600;
                 uv.U = (unsigned short)((off2 + 0x65) * 0x100);

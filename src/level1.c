@@ -76,7 +76,7 @@ void levelEventDirector_L1_Init(void) /* @0x4175e0 */
                                                           (void *)0xffffdecc, NULL,
                                                           (void *)0x1194);
     sceneObjSetPosOrient(g_pL1KassoerskaObj, 0, 16000, 0, 2);              /* @0x4307d0 @0x41761a */
-    pName = (void *)(uintptr_t)scenNameToId("KASSOERSKA");                 /* @0x431ed0 @0x417624 */
+    pName = scenNameToId("KASSOERSKA");                 /* @0x431ed0 @0x417624 */
     g_pL1KassoerskaObj = (SceneNode *)sceneryObjAlloc(g_pL1KassoerskaObj,  /* @0x430200 @0x417637 */
                                                       0, 0, 0, 0, 0, 0, 0, pName);
     g_pL1CashSitAnim = anmLoadFile("anim\\cash_sit.anm", NULL,             /* @0x433a50 @0x41764b */
@@ -87,10 +87,10 @@ void levelEventDirector_L1_Init(void) /* @0x4175e0 */
                                                       (void *)0xffff7748,
                                                       (void *)0xfffff448,
                                                       (void *)0xfffffed4);
-    pName = (void *)(uintptr_t)scenNameToId("MCDMAN");                     /* @0x431ed0 @0x41768c */
+    pName = scenNameToId("MCDMAN");                     /* @0x431ed0 @0x41768c */
     g_pL1McdmanObj = (SceneNode *)sceneryObjAlloc(g_pL1McdmanObj,          /* @0x430200 @0x4176a0 */
                                                   0, 0, 0, 0, 0, 0, 0, pName);
-    pName = (void *)(uintptr_t)scenNameToId("BURGER");                     /* @0x431ed0 @0x4176b2 */
+    pName = scenNameToId("BURGER");                     /* @0x431ed0 @0x4176b2 */
     g_pL1BurgerObj = (SceneNode *)sceneryObjAlloc(NULL, 0, 0, 0, 0, 0, 0, 0, /* @0x430200 @0x4176c0 */
                                                   pName);
     sceneNodeSetHiddenFlag(g_pL1BurgerObj, 2);                             /* @0x4305c0 @0x4176cd */
@@ -109,17 +109,17 @@ void levelEventDirector_L1_Init(void) /* @0x4175e0 */
     g_nL1EventActive = 0;                                                  /* @0x417763 */
     g_nL1EventTick = 0;                                                    /* @0x417769 */
     g_nL1EventStep = 0;                                                    /* @0x41776f */
-    pEmitter = (SndEmitter *)malloc(0x1c);                                 /* operator_new @0x43dd42 @0x417775 */
+    pEmitter = (SndEmitter *)malloc(sizeof(SndEmitter));                                 /* operator_new @0x43dd42 @0x417775 */
     if (pEmitter != NULL) {
         sndPlaySfx3D(pEmitter, 1, 0x20, 65000, 0xff, NULL, 0,              /* @0x42bcd0 @0x4177ac */
                      -50000, -5000, 3000, 0x11);
     }
-    pEmitter = (SndEmitter *)malloc(0x1c);                                 /* operator_new @0x43dd42 @0x4177bb */
+    pEmitter = (SndEmitter *)malloc(sizeof(SndEmitter));                                 /* operator_new @0x43dd42 @0x4177bb */
     if (pEmitter != NULL) {
         sndPlaySfx3D(pEmitter, 1, 0x1f, 65000, 0xff, NULL, 0,              /* @0x42bcd0 @0x4177f6 */
                      -3700, -4000, 0x4074, 0x11);
     }
-    pEmitter = (SndEmitter *)malloc(0x1c);                                 /* operator_new @0x43dd42 @0x417805 */
+    pEmitter = (SndEmitter *)malloc(sizeof(SndEmitter));                                 /* operator_new @0x43dd42 @0x417805 */
     if (pEmitter != NULL) {
         sndPlaySfx3D(pEmitter, 1, 0x1f, 65000, 0xff, NULL, 0,              /* @0x42bcd0 @0x417840 */
                      0x1900, -2000, -16000, 0x11);
@@ -194,7 +194,7 @@ void levelEventDirector_L1(void) /* @0x4178c0 */
         case 5:
             eventAnimReset(g_pL1Throw1Anim);                               /* @0x434270 @0x417a42 */
             eventAnimStep(g_pL1Throw1Anim, 1);                             /* @0x434090 @0x417a50 */
-            sceneObjSetClassMesh((int)g_pL1BurgerObj, g_pL1McdmanObj, 8, 3); /* @0x430db0 @0x417a66 */
+            sceneObjSetClassMesh(g_pL1BurgerObj, g_pL1McdmanObj, 8, 3); /* @0x430db0 @0x417a66 */
             sceneObjSetPos(g_pL1BurgerObj, 0, 0x78, 0, 2);                 /* @0x430660 @0x417a78 */
             sceneObjSetPosOrient(g_pL1BurgerObj, 0, 0, -16000, 2);         /* @0x4307d0 @0x417a8d */
             sceneObjResetFlags(g_pL1BurgerObj, 2);                         /* @0x430620 @0x417a9d */
@@ -213,7 +213,7 @@ void levelEventDirector_L1(void) /* @0x4178c0 */
         case 7:
             eventAnimReset(g_pL1Throw2Anim);                               /* @0x434270 @0x417b1c */
             eventAnimStep(g_pL1Throw2Anim, 1);                             /* @0x434090 @0x417b2a */
-            sceneObjSetClassMesh((int)g_pL1BurgerObj, NULL, 0, 3);         /* @0x430db0 @0x417b39 */
+            sceneObjSetClassMesh(g_pL1BurgerObj, NULL, 0, 3);         /* @0x430db0 @0x417b39 */
             sceneObjSetPos(g_pL1BurgerObj, -0x87f0, -0xfaa, 0, 2);         /* @0x430660 @0x417b52 */
             sceneObjSetPosOrient(g_pL1BurgerObj, 0, 0, 0, 2);              /* @0x4307d0 @0x417b63 */
             g_nL1MoveStep = 0;                                             /* @0x417b6d */
@@ -246,14 +246,14 @@ void levelEventDirector_L1(void) /* @0x4178c0 */
             g_nL1EventActive = 1;                                          /* @0x417c63 */
             /* mode 2 stores the raw int channel coords into the buffer */
             sceneNodeGetPosWorld(g_pL1BurgerObj, (float *)g_anL1SpawnPos, 2); /* @0x430e80 @0x417c6d */
-            pNew = (EventObject *)malloc(0x50);                            /* operator_new @0x43dd42 @0x417c74 */
+            pNew = (EventObject *)malloc(sizeof(EventObject));                            /* operator_new @0x43dd42 @0x417c74 */
             if (pNew != NULL) {                                            /* @0x417c80 */
                 /* ctor args are the {flX=worldZ, flY=worldX, flHeight=worldY}
                  * ints of the BURGER pos (FILD integer loads @0x417c88..0x417ca5) */
                 sceneObjCtor3(pNew, 0x1f, (float)g_anL1SpawnPos[2],        /* @0x4146a0 @0x417caa */
                               (float)g_anL1SpawnPos[0], (float)g_anL1SpawnPos[1]);
                 pNew->nValue0 = g_anL1SpawnPos[1];                        /* +0x10 @0x417cba */
-                pNew->nValue1 = (int)(uintptr_t)g_pL1BurgerObj;           /* +0x14 @0x417ccb */
+                pNew->nValue1 = (intptr_t)g_pL1BurgerObj;           /* +0x14 @0x417ccb */
                 objHashRegister(pNew);                                     /* @0x4148f0 @0x417cce */
             }
             break;                                                         /* @0x417cd6 (tick++ -> 1) */

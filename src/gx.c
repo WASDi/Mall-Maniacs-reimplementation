@@ -3,21 +3,29 @@
 #include <string.h>
 #include <math.h>
 #include "gx.h"
+#include "gx_sdl2_gl.h"
 #include "pool.h"
 #include "util.h"
 
-/* Vertical-slice GX driver adapter. Reimplements the narrow slice of the
- * maniac-side gx* wrappers that the GUI vertical slice needs. Driver is the
- * original DRIVERS\GXSOFT.DLL (software rasterizer), loaded directly (the
- * original gxLoadDriver @0x432ea0 reads the driver path + options from the
- * registry. */
+/* GX driver adapter (SDL2/OpenGL target). The legacy DLL loader (@0x432ea0) is deleted; gxLoadDriver(NULL) installs the built-in
+ * GL backend instead of loading a DLL. GxMode.hInstance/hwnd are ignored
+ * fields. Wrapper dispatch below is unchanged. */
 
-/* gxDLLInit / gxDLLExit use the compiler's default C convention. */
-typedef int  (*pfn_gxDLLInit)(GxDriverApi *api);
-typedef void (*pfn_gxDLLExit)(void);
-
-/* GxDriverApi extension @0x45eb40, populated by gxDLLInit. */
+/* GxDriverApi extension @0x45eb40, populated by the GL backend. */
 GxDriver g_driver;
+
+/* Current scene texture dir for gxCreateSurface bare-name resolution
+ * (TNAM names carry no dir/extension). Written by sceneLoadSen from the
+ * loading .sen path; read by the GL backend. Rebuild-only state. */
+static char s_texDir[256];
+void gxSetTextureDir(const char *dir)
+{
+    size_t i;
+    if (!dir) dir = "";
+    snprintf(s_texDir, sizeof(s_texDir), "%s", dir);
+    for (i = 0; s_texDir[i]; i++) if (s_texDir[i] == '\\') s_texDir[i] = '/';
+}
+const char *gxGetTextureDir(void) { return s_texDir; }
 
 /* gxDrawPolygon scale globals @0x45eb38/@0x45eb3c. The registry-driven
  * option loading that supplies alternate driver scales is deferred; the
@@ -25,58 +33,25 @@ GxDriver g_driver;
 static float g_gxScaleY = 1.0f / 256.0f; /* @0x45eb38 */
 static float g_gxScaleX = 1.0f / 256.0f; /* @0x45eb3c */
 
-/* gxLoadDriver @0x432ea0 — the registry-selected driver path is deferred;
- * this slice accepts the known GXSOFT DLL path directly. */
+/* gxLoadDriver @0x432ea0 — SDL/GL port: installs the built-in GL backend
+ * instead of loading a DLL. The driver-name argument is accepted and
+ * ignored (original read it from the registry). */
 int gxLoadDriver(char *driverName)
 {
-    HMODULE         hMod;
-    pfn_gxDLLInit   pInit;
-    GxDriverApi    *api = &g_driver.api;
-
-    /* gxLoadDriver @0x432ea0 unloads an existing module first. */
+    (void)driverName;
     if (g_driver.hDriverModule != NULL) {
         gxUnloadDriver();
     }
-    /* Registry-sourced path is deferred; use the known file when the caller
-     * supplies the original NULL/configuration form. */
-    hMod = LoadLibraryA(driverName != NULL ? driverName : "DRIVERS\\GXSOFT.DLL");
-    if (hMod == NULL) {
-        fprintf(stderr, "[gxLoadDriver] LoadLibraryA(DRIVERS\\GXSOFT.DLL) failed: %lu\n",
-                (unsigned long)GetLastError());
-        return 0;
-    }
-    g_driver.hDriverModule = hMod;
-
-    memset(api, 0, sizeof(*api));
-    /* The original loader clears this before gxDLLInit; the driver may then
-     * set the software-mode flag while filling its table. */
+    memset(&g_driver.api, 0, sizeof(g_driver.api));
     g_driver.api.nSoftwareMode = 0;
     g_driver.nDriverActive = 0;
-
-    pInit = (pfn_gxDLLInit)GetProcAddress(hMod, "gxDLLInit");
-    if (pInit == NULL) {
-        fprintf(stderr, "[gxLoadDriver] gxDLLInit not found\n");
-        goto fail;
+    if (!gxGLBackendInstall()) {
+        fprintf(stderr, "[gxLoadDriver] GL backend install failed\n");
+        return 0;
     }
-    if (pInit(api) == 0) {
-        fprintf(stderr, "[gxLoadDriver] gxDLLInit failed\n");
-        goto fail;
-    }
-
-
-    /* First texture load installs the DirectDraw palette (gxLoadTexture
-     * @0x100019b0, DAT_1006bff0 branch). Callers should load a .tpg before
-     * blitting indexed art so the palette is correct. */
+    /* First texture load expands its own palette (per-texture RGBA8);
+     * callers should still load a .tpg before blitting indexed art. */
     return 1;
-
-fail:
-    {
-        pfn_gxDLLExit pExit = (pfn_gxDLLExit)GetProcAddress(hMod, "gxDLLExit");
-        if (pExit != NULL) pExit();
-    }
-    FreeLibrary(hMod);
-    g_driver.hDriverModule = NULL;
-    return 0;
 }
 
 /* gxInit @0x4332f0 — the original is only the pSetMode dispatch. */
@@ -88,17 +63,10 @@ int gxInit(GxMode *mode)
     return 0;
 }
 
-/* gxUnloadDriver @0x433280 — gxDLLExit + FreeLibrary. */
+/* gxUnloadDriver @0x433280 — destroys the built-in GL backend. */
 int gxUnloadDriver(void)
 {
-    HMODULE hMod = g_driver.hDriverModule;
-
-    if (hMod != NULL) {
-        /* gxUnloadDriver @0x433280: gxDLLExit then FreeLibrary. */
-        pfn_gxDLLExit pExit = (pfn_gxDLLExit)GetProcAddress(hMod, "gxDLLExit");
-        if (pExit != NULL) pExit();
-        FreeLibrary(hMod);
-    }
+    gxGLBackendUninstall();
     g_driver.hDriverModule = NULL;
     g_driver.nDriverActive = 0;
     return 1;
@@ -121,13 +89,13 @@ int gxLoadTexture(int mode, int reserved, char *name, void *data,
 }
 
 /* presentFrame @0x410310:
- *   gxBlitSurface(1,0,0,tex,0,0,0x280,0x280,0x1e0); gxFlip(); gxClearScreen(1,g_nClearColor);
- * g_nClearColor @0x45892c is 0. */
-void presentFrame(int texture)
+ *   gxBlitSurface(1,0,0,pixels,0,0,0x280,0x280,0x1e0); gxFlip(); gxClearScreen(1,g_nClearColor);
+ * g_nClearColor @0x45892c is 0. The pixel buffer is the 640x480 R5G6B5
+ * tgaLoad16Pal output (0x4b000 bytes); carried as int in the 32-bit original. */
+void presentFrame(void *pixels)
 {
-    if (texture != 0) {
-        gxBlitSurface(1, 0, 0, (void *)(size_t)texture,
-                      0, 0, 0x280, 0x280, 0x1e0);
+    if (pixels != NULL) {
+        gxBlitSurface(1, 0, 0, pixels, 0, 0, 0x280, 0x280, 0x1e0);
         gxFlip();
         gxClearScreen(1, 0);
     }
@@ -293,7 +261,7 @@ void gxSetOrigin(int packedOrigin)
 }
 
 /* gxDrawTriangle @0x4335f0 */
-void gxDrawTriangle(void *v0, int color)
+void gxDrawTriangle(void *v0, void *color)
 {
     if (g_driver.api.pDrawTriangle != NULL) {
         g_driver.api.pDrawTriangle(v0, color);
@@ -302,7 +270,7 @@ void gxDrawTriangle(void *v0, int color)
 
 /* gxDrawLine @0x433610 — gate on pDrawTriangle (decompiled wrapper checks
  * GxDriverApi.pDrawTriangle), dispatch via pDrawLine. */
-void gxDrawLine(void *v0, void *v1, int color)
+void gxDrawLine(void *v0, void *v1, void *color)
 {
     if (g_driver.api.pDrawTriangle != NULL) {
         g_driver.api.pDrawLine(v0, v1, color);
@@ -310,7 +278,7 @@ void gxDrawLine(void *v0, void *v1, int color)
 }
 
 /* gxDrawTriUV @0x433640 — gate on pDrawTriangle, dispatch via pDrawTriUV. */
-void gxDrawTriUV(void *v0, void *v1, void *v2, int color, void *uv)
+void gxDrawTriUV(void *v0, void *v1, void *v2, void *color, void *uv)
 {
     if (g_driver.api.pDrawTriangle != NULL) {
         g_driver.api.pDrawTriUV(v0, v1, v2, color, uv);
@@ -318,7 +286,7 @@ void gxDrawTriUV(void *v0, void *v1, void *v2, int color, void *uv)
 }
 
 /* gxDrawQuad @0x433670 — gate on pDrawTriangle, dispatch via pDrawQuad. */
-void gxDrawQuad(void *v0, void *v1, void *v2, void *v3, int color, void *uv)
+void gxDrawQuad(void *v0, void *v1, void *v2, void *v3, void *color, void *uv)
 {
     if (g_driver.api.pDrawTriangle != NULL) {
         g_driver.api.pDrawQuad(v0, v1, v2, v3, color, uv);
@@ -329,14 +297,14 @@ void gxDrawQuad(void *v0, void *v1, void *v2, void *v3, int color, void *uv)
  * screen (and others). Original builds GxVert[4] at x0*0x100 etc, y*0x100,
  * z 0, r=g=b=0xff, and GxColorUv with U=u0*0x100 etc, then gxDrawPolygon
  * @0x433440 with flags 0x2004. Replicates the original's fixed-point math. */
-void gxDrawQuadColor(void *tex,int x0,int y0,int x1,int y1,int u0,int v0,int u1,int v1)
+void gxDrawQuadColor(int tex,int x0,int y0,int x1,int y1,int u0,int v0,int u1,int v1)
 {
     GxVert v00,v01,v02,v03; GxColorUv uv;
     v00.x = x0 << 8; v00.y = y0 << 8; v00.z = 0; v00.r=v00.g=v00.b=0xff;
     v01.x = x1 << 8; v01.y = y0 << 8; v01.z = 0; v01.r=v01.g=v01.b=0xff;
     v02.x = x1 << 8; v02.y = y1 << 8; v02.z = 0; v02.r=v02.g=v02.b=0xff;
     v03.x = x0 << 8; v03.y = y1 << 8; v03.z = 0; v03.r=v03.g=v03.b=0xff;
-    uv.pTexture = tex; uv.pParam5 = NULL; uv.pad = 0;
+    uv.nTexture = tex; uv.nParam5 = 0; uv.pad = 0;
     uv.U = (unsigned short)(u0 << 8); uv.U2 = uv.U;
     uv.V = (unsigned short)(v0 << 8); uv.V2 = uv.V;
     uv.gwU = (unsigned short)(u1 << 8); uv.gwU2 = uv.gwU;

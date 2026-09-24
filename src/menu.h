@@ -1,7 +1,7 @@
 #ifndef MENU_H
 #define MENU_H
 
-#include <windows.h>
+#include "compat_types.h"
 
 #include "gx.h"
 #include "font.h"
@@ -60,6 +60,8 @@ int  menuUpdate(int nType, int nKey, int nKeyType);
 unsigned short *imageLoadByMode(LPCSTR path);
 
 /* Menu-state globals (maniac addresses). */
+extern int    g_menuMode;       /* @0x45022c low byte starts intro; high byte starts CD cue */
+extern void  *g_hIntroTex[6];   /* @0x45a618-0x45a62c intro logo textures */
 extern float  g_introFade_2;    /* @0x45d444 intro timeline ms */
 extern gxFont *g_hMenuFontTiny;   /* @0x45a654 tinyfont.txt + TINY00.TPG */
 extern gxFont *g_hMenuFontSmall;  /* @0x45a644 menysmallfont.txt + MSFONT00.TPG */
@@ -81,21 +83,21 @@ extern int     g_nGameMode;       /* @0x458120 game mode id (1 quiz, 2 varujakte
 extern int     g_nPlayerCount;    /* @0x458108 player count (0 = auto-derive) */
 
 /* Map-selection assets loaded by menuInit @0x419c20. */
-extern void *g_hMenuTexSmal;       /* @0x45a68c menu\smal00.tpg */
-extern void *g_hMenuTexWood;       /* @0x45a690 menu\wood00.tpg */
-extern void *g_hMenuTexOrie;       /* @0x45a694 menu\orie00.tpg */
-extern void *g_hMenuTexAqua;       /* @0x45a698 menu\aqua00.tpg */
-extern void *g_hMenuTexRock;       /* @0x45a69c menu\rock00.tpg */
-extern void *g_hMenuTexSec100;     /* @0x45a6a0 menu\sec100.tpg */
-extern void *g_hMenuTexSec200;     /* @0x45a6a4 menu\sec200.tpg */
-extern void *g_hMenuTexSec300;     /* @0x45a6a8 menu\sec300.tpg */
-extern void *g_hMenuTexSec400;     /* @0x45a6ac menu\sec400.tpg */
-extern void *g_hMenuTexSec500;     /* @0x45a6b0 menu\sec500.tpg */
+extern int g_hMenuTexSmal;       /* @0x45a68c menu\smal00.tpg */
+extern int g_hMenuTexWood;       /* @0x45a690 menu\wood00.tpg */
+extern int g_hMenuTexOrie;       /* @0x45a694 menu\orie00.tpg */
+extern int g_hMenuTexAqua;       /* @0x45a698 menu\aqua00.tpg */
+extern int g_hMenuTexRock;       /* @0x45a69c menu\rock00.tpg */
+extern int g_hMenuTexSec100;     /* @0x45a6a0 menu\sec100.tpg */
+extern int g_hMenuTexSec200;     /* @0x45a6a4 menu\sec200.tpg */
+extern int g_hMenuTexSec300;     /* @0x45a6a8 menu\sec300.tpg */
+extern int g_hMenuTexSec400;     /* @0x45a6ac menu\sec400.tpg */
+extern int g_hMenuTexSec500;     /* @0x45a6b0 menu\sec500.tpg */
 
 /* Fling/sign background textures (menuInit @0x419c20). */
-extern void   *g_hMenuTexFling;   /* @0x45a6b4 menu\fling00.tpg */
-extern void   *g_hMenuTexSign100; /* @0x45a6e0 menu\sign100.tpg */
-extern void   *g_hMenuTexSign200; /* @0x45a6e4 menu\sign200.tpg */
-extern void   *g_hMenuTexSign300; /* @0x45a6e8 menu\sign300.tpg */
+extern int g_hMenuTexFling;   /* @0x45a6b4 menu\fling00.tpg */
+extern int g_hMenuTexSign100; /* @0x45a6e0 menu\sign100.tpg */
+extern int g_hMenuTexSign200; /* @0x45a6e4 menu\sign200.tpg */
+extern int g_hMenuTexSign300; /* @0x45a6e8 menu\sign300.tpg */
 
 #endif /* MENU_H */

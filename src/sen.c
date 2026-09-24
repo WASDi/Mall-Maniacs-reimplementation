@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,10 +28,10 @@
 /* --- scene-load globals (original addrs in comments) --- */
 char   g_szSceneDir[256];               /* @0x45e950 scene dir (empty for menu) */
 static char  *g_pMeshNameStr;                  /* @0x45eab4 running name cursor */
-void  *g_pMeshTable;                            /* @0x45e930 */
+MeshTableEntry *g_pMeshTable;                   /* @0x45e930 */
 int   g_nMeshTableCount = 0;                  /* @0x45e994 */
-static void  *g_pMeshTableWr;                 /* @0x45e948 write cursor */
-static void  *g_pMeshTableStart;              /* @0x45eab8 first new entry this load */
+static MeshTableEntry *g_pMeshTableWr;        /* @0x45e948 write cursor */
+static MeshTableEntry *g_pMeshTableStart;     /* @0x45eab8 first new entry this load */
 static char  *g_pSceneNameBufPos;             /* @0x45e94c write cursor into scene name arena */
 static char  *g_pObjNameList = NULL;          /* @0x45e934 */
 char  *g_pObjNameTable = NULL;         /* @0x45e990 */
@@ -86,7 +86,7 @@ int scenSetDir(LPCSTR pszDir) /* @0x432e60 */
  * cursor by it. The OBJI name walk (@0x00432935) then navigates the
  * expanded list via its +dir-per-NUL stride, so the per-instance scen-obj
  * names come out dir-prefixed — roundStartInit's hide pass matches the
- * loaded objects.sen/characters.sen instances against "__HIDE_ME__"
+ * loaded OBJECTS.SEN/CHARACTERS.SEN instances against "__HIDE_ME__"
  * (@0x44f23c) through exactly these names.
  * Verified against the original by simulating both the expansion and the
  * subsequent name walk on scene_ica CHARACTERS.SEN/OBJECTS.SEN: all 78
@@ -144,7 +144,7 @@ int scenExpandNameList(char *pList, void *pEnd, char *pszDir) /* @0x432dd0 */
 int scenNameTableInit(int nMeshCount, int nScenObjCap)
 {
     int nPool;
-    ScenNameEntry *pMeshTable;
+    MeshTableEntry *pMeshTable;
     ScenNameEntry *pScenObjTable;
     char *pSceneNames;
     char *pMeshNames;
@@ -153,8 +153,8 @@ int scenNameTableInit(int nMeshCount, int nScenObjCap)
     g_nSceneNamePool = nPool;
     if (nPool < 0) return 0;
 
-    pMeshTable = (ScenNameEntry *)memPoolAlloc(nPool, (size_t)nMeshCount * 8);              /* @0x431cdc */
-    pScenObjTable = (ScenNameEntry *)memPoolAlloc(nPool, (size_t)nScenObjCap * 8 + 8);      /* @0x431cf8 */
+    pMeshTable = (MeshTableEntry *)memPoolAlloc(nPool, (size_t)nMeshCount * sizeof(MeshTableEntry));              /* @0x431cdc */
+    pScenObjTable = (ScenNameEntry *)memPoolAlloc(nPool, (size_t)nScenObjCap * sizeof(ScenNameEntry) + 8);      /* @0x431cf8 */
     pSceneNames = memPoolAlloc(nPool, (size_t)nScenObjCap * 32);           /* @0x431d0f */
     pMeshNames = memPoolAlloc(nPool, (size_t)nMeshCount * 32);             /* @0x431d26 */
     if (pMeshTable == NULL || pScenObjTable == NULL ||
@@ -177,8 +177,8 @@ int scenNameTableInit(int nMeshCount, int nScenObjCap)
      * name fields rely on the pool's underlying zero-filled allocation. The
      * rebuild's memPoolAlloc wraps malloc, so both tables are zeroed fully
      * for an identical starting state. */
-    memset(pMeshTable, 0, (size_t)nMeshCount * 8);
-    memset(pScenObjTable, 0, (size_t)nScenObjCap * 8 + 8);
+    memset(pMeshTable, 0, (size_t)nMeshCount * sizeof(MeshTableEntry));
+    memset(pScenObjTable, 0, (size_t)nScenObjCap * sizeof(ScenNameEntry) + 8);
     g_nSceneLoadCount = 0;                  /* @0x45e938 @0x431dc0 */
     memset(g_anSceneTblStat, 0, sizeof(g_anSceneTblStat));   /* @0x431dbb */
     g_nSceneTblStatA = 0;                   /* @0x45eb08 @0x431dc9 */
@@ -225,7 +225,7 @@ int senChunkParse(byte *pData, byte *pDataEnd) /* @0x432c00 */
                     g_pObjInstances = (char *)pChunk;
                 } else if (tag == 0x454d414e) {      /* EMAN (mesh name) */
                     if (g_pMeshTableStart < g_pMeshTableWr) {
-                        *(char **)((int)g_pMeshTableWr - 8) = g_pMeshNameStr;
+                        (g_pMeshTableWr - 1)->name = g_pMeshNameStr;
                     }
                     /* Original: REPNE SCASB to get len of g_szSceneDir, then REP MOVSD/MOVSB */
                     {
@@ -237,9 +237,9 @@ int senChunkParse(byte *pData, byte *pDataEnd) /* @0x432c00 */
                     }
                     pSub = g_pSubObjData;
                 } else if (tag == 0x4853454d) {      /* MESH */
-                    *(byte **)((int)g_pMeshTableWr + 4) = pChunk;
-                    *(int *)g_pMeshTableWr = 0;
-                    g_pMeshTableWr = (void *)((int)g_pMeshTableWr + 8);
+                    g_pMeshTableWr->data = pChunk;
+                    g_pMeshTableWr->name = NULL;
+                    g_pMeshTableWr++;
                     pSub = g_pSubObjData;
                 }
             } else if (tag == 0x494e4154) {          /* TANI */
@@ -253,7 +253,7 @@ int senChunkParse(byte *pData, byte *pDataEnd) /* @0x432c00 */
                     g_pObjNameList = g_pSceneNameBufPos;
                     /* Original: SHR ECX,2; REP MOVSD; AND 3; REP MOVSB */
                     memcpy(g_pSceneNameBufPos, pChunk, size);
-                    g_pSceneNameBufPos = (void *)((int)g_pSceneNameBufPos + size);
+                    g_pSceneNameBufPos = (void *)((char *)g_pSceneNameBufPos + size);
                     pSub = g_pSubObjData;
                 } else {                              /* TNAM */
                     pSub = g_pSubObjData;
@@ -274,93 +274,142 @@ int senChunkParse(byte *pData, byte *pDataEnd) /* @0x432c00 */
 }
 
 /* ---------------------------------------------------------------------
- * sceneMeshFixup @0x4320f0 — relocate pointer fields of a loaded mesh
- * node. pMesh = node base, pNames = object-name table, pMapGeom =
- * &g_pMapGeom (or 0). Relocates +0xc/+0x10/+0x14/+0x20/+0x28/+0x30 and
- * per-subobj at pRender+8 stride 0x30. Original asm at 0x4320f0.
- * Returns 1 (original checks CMP EAX,1). Faithful to disassembly
- * @0x004320f0 (PUSH/POP, LEA, TEST/JNZ branches preserved in C).
+ * sceneMeshFixup @0x4320f0 — expand a raw MESH chunk into native runtime
+ * structs. The original relocated 4-byte RVAs to absolute pointers
+ * IN PLACE (32-bit); on 64-bit the runtime structs (SceneObjTypeDef,
+ * SceneObjRenderInfo, pointer arrays) are wider than their file images,
+ * so the fixup parses disk records into native structs instead, per the
+ * cross-platform plan Phase 1.3. On-disk layout (verified against
+ * menu/CHARACTERS.SEN + sceneNodeRender @0x42f8c0 disasm): header
+ * ints/RVAs, then nSubObjs 0x30-byte render records AT (pRenderRVA) —
+ * no +8 (the +8 in sceneMeshFixup @0x4320f0 is the fixup cursor's own
+ * base: its word[3]/word[7] are our words [5]/[9], i.e. nPolyA/nPolyB).
+ * Record words: [0]=const 0x989680, [1]=nVerts, [2]=pVerts RVA,
+ * [3]=reserved (0), [4]=prim-array RVA (alias of [6] in shipped files),
+ * [5]=nPolyA, [6]=prim-array RVA ((nPolyA+nPolyB) consecutive prim RVAs
+ * into SUBO), [7]=nGroups, [8]=pGroups RVA (inline 0x0c records),
+ * [9]=nPolyB (0 in all shipped files), [10]=pPolyB guard (0),
+ * [11]=pPolyB RVA (vertex stream for the polyB loop; unused when nPolyB=0).
+ * Native structs are allocated from the scene pool (same lifetime as the
+ * image). Returns the native typedef, NULL on allocation failure.
  * ------------------------------------------------------------------- */
-int sceneMeshFixup(int pMesh, void *pNames, int pMapGeom) /* @0x4320f0 */
+static int readI32(const void *p)
 {
-    int idx;
-    int tmp;
-    int *pRender;
+    int v;
+    memcpy(&v, p, sizeof(v));
+    return v;
+}
 
-    (void)pNames; /* only forwarded to sceneCreateTextureSurfaces when pMapGeom empty */
+SceneObjTypeDef *sceneMeshFixup(void *pImage, void *pNames, SenGeom *pGeom, int nPool) /* @0x4320f0 */
+{
+    char *base = (char *)pImage;
+    int field_00 = readI32(base + 0x00);
+    int nSubObjs = readI32(base + 0x04);
+    int field_08 = readI32(base + 0x08);
+    int rvaA = readI32(base + 0x0c);
+    int rvaB = readI32(base + 0x10);
+    int rvaRender = readI32(base + 0x14);
+    int field_18 = readI32(base + 0x18);
+    int nTex = readI32(base + 0x1c);
+    int rvaTex = readI32(base + 0x20);
+    int field_24 = readI32(base + 0x24);
+    int rvaC = readI32(base + 0x28);
+    int field_2c = readI32(base + 0x2c);
+    int rvaD = readI32(base + 0x30);
+    void *mapBase = (pGeom != NULL) ? pGeom->pMapGeom : NULL;
+    void *colsBase = (pGeom != NULL) ? pGeom->pColsData : NULL;
+    void *suboBase = base;
+    SceneObjTypeDef *td;
+    SceneObjRenderInfo *ri;
+    int i;
 
-    if (*(int *)(pMesh + 8) > 0) {
-        *(int *)(pMesh + 0xc) = *(int *)(pMesh + 0xc) + pMesh;
-        *(int *)(pMesh + 0x10) = *(int *)(pMesh + 0x10) + pMesh;
-    }
-    tmp = *(int *)(pMesh + 0x14) + pMesh;
-    *(int *)(pMesh + 0x14) = tmp;
+    (void)colsBase;
+    if (pGeom != NULL && pGeom->pSubObjData != NULL) suboBase = (char *)pGeom->pSubObjData;
 
-    if (pMapGeom == 0) {
-        *(int *)(pMesh + 0x20) = *(int *)(pMesh + 0x20) + pMesh;
-        *(int *)(pMesh + 0x28) = *(int *)(pMesh + 0x28) + pMesh;
+    td = (SceneObjTypeDef *)memPoolAlloc(nPool, sizeof(*td));
+    if (!td) return NULL;
+    if (nSubObjs > 0) {
+        ri = (SceneObjRenderInfo *)memPoolAlloc(nPool, sizeof(*ri) * (size_t)nSubObjs);
+        if (!ri) return NULL;
     } else {
-        if (*(int *)pMapGeom == 0) {
-            *(int *)(pMesh + 0x20) = *(int *)(pMesh + 0x20) + pMesh;
-        } else {
-            *(int *)(pMesh + 0x20) = *(int *)(pMesh + 0x20) + *(int *)pMapGeom;
-        }
-        if (*(int *)(pMapGeom + 8) == 0) {
-            *(int *)(pMesh + 0x28) = *(int *)(pMesh + 0x28) + pMesh;
-        } else {
-            *(int *)(pMesh + 0x28) = *(int *)(pMesh + 0x28) + *(int *)(pMapGeom + 8);
-        }
+        ri = NULL;
     }
 
-    idx = 0;
-    *(int *)(pMesh + 0x30) = *(int *)(pMesh + 0x30) + pMesh;
+    td->field_00 = field_00;
+    td->nSubObjs = nSubObjs;
+    td->field_08 = field_08;
+    td->pA = (field_08 > 0) ? (void *)(base + rvaA) : (void *)(uintptr_t)(uint32_t)rvaA;
+    td->pB = (field_08 > 0) ? (void *)(base + rvaB) : (void *)(uintptr_t)(uint32_t)rvaB;
+    td->pRender = ri;
+    td->field_18 = field_18;
+    td->nTex = nTex;
+    if (pGeom == NULL) {
+        td->pTex = (void *)(base + rvaTex);
+        td->pC = (void *)(base + rvaC);
+    } else {
+        td->pTex = (void *)((mapBase == NULL) ? (base + rvaTex)
+                                             : ((char *)mapBase + rvaTex));
+        td->pC = (void *)((mapBase == NULL) ? (base + rvaC)
+                                           : ((char *)colsBase + rvaC));
+    }
+    td->field_24 = field_24;
+    td->field_2c = field_2c;
+    td->pD = (void *)(base + rvaD);
 
-    if (*(int *)(pMesh + 4) > 0) {
-        pRender = (int *)(tmp + 8);
-        do {
-            *pRender = *pRender + pMesh;
-            if (pRender[1] != 0) {
-                pRender[2] = pRender[2] + pMesh;
-            }
-            if (pRender[8] != 0) {
-                pRender[9] = pRender[9] + pMesh;
-            }
-            pRender[4] = pRender[4] + pMesh;
-            pRender[6] = pRender[6] + pMesh;
-            {
-                int *pVerts = (int *)pRender[4];
-                int nFix = pRender[3] + pRender[7];
-                int base;
-                if (pMapGeom == 0) {
-                    base = pMesh;
-                } else if (*(int *)(pMapGeom + 0x10) == 0) {
-                    base = pMesh;
-                } else {
-                    base = *(int *)(pMapGeom + 0x10);
+    for (i = 0; i < nSubObjs; i++) {
+        char *rec = base + rvaRender + (size_t)i * 0x30;
+        int nVerts = readI32(rec + 1 * 4);
+        int rvaVerts = readI32(rec + 2 * 4);
+        int nPolyA = readI32(rec + 5 * 4);
+        int rvaPolyA = readI32(rec + 6 * 4);
+        int nGroups = readI32(rec + 7 * 4);
+        int rvaGroups = readI32(rec + 8 * 4);
+        int nPolyB = readI32(rec + 9 * 4);
+        int guardB = readI32(rec + 10 * 4);
+        int rvaPolyB = readI32(rec + 11 * 4);
+        int k;
+        ri[i].field_00 = readI32(rec + 0 * 4);
+        ri[i].nVerts = nVerts;
+        ri[i].pVerts = (short *)(base + rvaVerts);
+        ri[i].field_0c = readI32(rec + 3 * 4);
+        ri[i].nPolyA = nPolyA;
+        /* pPolyA holds (nPolyA + nPolyB) consecutive prim RVAs at
+         * base+rvaPolyA (sceneMeshFixup @0x4320f0 rebases that many),
+         * each fixed up against suboBase. sceneNodeRender @0x42f8c0
+         * draws pPolyA[0..nPolyA) directly and pPolyA[nPolyA..) as the
+         * polyB fan streams. Native pointer array. */
+        {
+            int nPrims = nPolyA + nPolyB;
+            struct SceneMeshPrim **ppA = NULL;
+            if (nPrims > 0) {
+                ppA = (struct SceneMeshPrim **)memPoolAlloc(nPool, sizeof(*ppA) * (size_t)nPrims);
+                if (!ppA) return NULL;
+                for (k = 0; k < nPrims; k++) {
+                    int rva = readI32(base + rvaPolyA + (size_t)k * 4);
+                    ppA[k] = (struct SceneMeshPrim *)((char *)suboBase + rva);
                 }
-                if (nFix > 0) {
-                    int k = 0;
-                    do {
-                        *pVerts = *pVerts + base;
-                        pVerts++;
-                        k++;
-                    } while (k < nFix);
-                }
             }
-            idx++;
-            pRender += 0xc; /* 0x30 bytes = 12 ints */
-        } while (idx < *(int *)(pMesh + 4));
+            ri[i].pPolyA = ppA;
+            ri[i].field_10 = readI32(rec + 4 * 4);
+        }
+        ri[i].nGroups = nGroups;
+        ri[i].pGroups = (SceneGroupInfo *)(base + rvaGroups);
+        ri[i].nPolyB = nPolyB;
+        ri[i].field_28 = guardB;
+        ri[i].pPolyB = (guardB != 0) ? (void *)(base + rvaPolyB)
+                                     : (void *)(uintptr_t)(uint32_t)rvaPolyB;
     }
 
-    if ((pMapGeom == 0) || (*(int *)pMapGeom == 0)) {
-        sceneCreateTextureSurfaces(*(int **)(pMesh + 0x20),
-                                   *(int *)(pMesh + 0x1c), (char *)pNames);
+    if (pGeom == NULL || mapBase == NULL) {
+        sceneCreateTextureSurfaces((int *)td->pTex, nTex, (char *)pNames);
     }
 
-    tmp = *(int *)(*(int *)(pMesh + 0x14) + 4);
-    if (g_nSceneMeshMaxSize < tmp) g_nSceneMeshMaxSize = tmp;
-    if (tmp > 0x100) g_scenesceneMeshFixup++;
-    return 1;
+    {
+        int nV = (nSubObjs > 0) ? ri[0].nVerts : 0;
+        if (g_nSceneMeshMaxSize < nV) g_nSceneMeshMaxSize = nV;
+        if (nV > 0x100) g_scenesceneMeshFixup++;
+    }
+    return td;
 }
 
 /* ---------------------------------------------------------------------
@@ -457,8 +506,11 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
     g_pSubObjData     = NULL;
     g_pKeepChunk      = NULL;
 
-    fp = (FILE *)(size_t)fileOpenMode(pszPath, 0);
-    if (fp == (FILE *)0xffffffff) return 0;
+    fp = fileOpenMode(pszPath, 0);
+    if (fp == NULL) {
+        appLog("[sen] scene file not found: '%s'", pszPath);
+        return 0;
+    }
 
     snprintf(local_100, sizeof(local_100), "SCENERY %d", g_nSceneLoadCount);
     g_nSceneLoadCount++;
@@ -470,14 +522,12 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
     {
         int firstFree = 0;
         if (g_nMeshTableCount > 0) {
-            int *p = (int *)((char *)g_pMeshTable + 4);
             while (firstFree < g_nMeshTableCount) {
-                if (*p == 0) break;
+                if (g_pMeshTable[firstFree].data == NULL) break;
                 firstFree++;
-                p += 2;
             }
         }
-        g_pMeshTableWr    = (void *)((char *)g_pMeshTable + firstFree * 8);
+        g_pMeshTableWr    = &g_pMeshTable[firstFree];
         g_pMeshTableStart = g_pMeshTableWr;
     }
 
@@ -493,7 +543,7 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
                     if (tag == 0x4d414e4f) {            /* ONAM */
                         g_pObjNameList = g_pSceneNameBufPos;
                         fileReadN(fp, g_pSceneNameBufPos, size);
-                        g_pSceneNameBufPos = (char *)((int)g_pSceneNameBufPos + size);
+                        g_pSceneNameBufPos = (char *)g_pSceneNameBufPos + size;
                     } else if (tag < 0x494a4250) {
                         if (tag == 0x494a424f) {            /* OBJI — deferred but load bytes */
                             pcVar5 = memPoolAlloc((int)(intptr_t)pvPool, size);
@@ -510,7 +560,7 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
                             char nbuf[256];
                             fileReadN(fp, nbuf, size);
                             if (g_pMeshTableStart < g_pMeshTableWr) {
-                                *(char **)((int)g_pMeshTableWr - 8) = g_pMeshNameStr;
+                                (g_pMeshTableWr - 1)->name = g_pMeshNameStr;
                             }
                             {
                                 size_t nm = strlen(nbuf) + 1;
@@ -522,9 +572,9 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
                             pcVar5 = memPoolAlloc((int)(intptr_t)pvPool, size);
                             if (pcVar5) {
                                 fileReadN(fp, pcVar5, size);
-                                *(char **)((int)g_pMeshTableWr + 4) = pcVar5;
-                                *(int *)g_pMeshTableWr = 0;
-                                g_pMeshTableWr = (void *)((int)g_pMeshTableWr + 8);
+                                g_pMeshTableWr->data = pcVar5;
+                                g_pMeshTableWr->name = NULL;
+                                g_pMeshTableWr++;
                             }
                         }
                     } else {
@@ -589,34 +639,51 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
          * if both present (disasm @0x0043281e). Faithful. */
         if (g_pObjNameList != NULL && g_szSceneDir[0] != '\0') {
             int n = scenExpandNameList(g_pObjNameList, g_pSceneNameBufPos, g_szSceneDir);
-            g_pSceneNameBufPos = (void *)((int)g_pSceneNameBufPos + n);
+            g_pSceneNameBufPos = (void *)((char *)g_pSceneNameBufPos + n);
         }
-        /* Relocate each newly loaded mesh. Original passes 0x45eb20 (address
-         * of the contiguous global block {g_pMapGeom, g_nMapGeomCount,
-         * g_pColsData, g_nColsCount, g_pSubObjData} at 0x45eb20..0x45eb30).
-         * The rebuild keeps these as separate C globals, so pack them into
-         * a local struct that mirrors the original memory layout before
-         * passing its address — sceneMeshFixup reads +0x00 (MAPI),
-         * +0x08 (COLS), +0x10 (SUBO) from this pointer.
-         * Disasm @0x00432857 checks return ==1. */
+        /* Expand each newly loaded mesh to native runtime structs.
+         * Original passes 0x45eb20 (address of the contiguous global block
+         * {g_pMapGeom, g_nMapGeomCount, g_pColsData, g_nColsCount,
+         * g_pSubObjData}); the rebuild packs the same values into a typed
+         * SenGeom (pointer-sized fields, read by field). NULL native
+         * typedef signals failure (original checked return == 1). */
         {
-            int n = ((int)g_pMeshTableWr - (int)g_pMeshTableStart) >> 3;
+            int n = (int)(g_pMeshTableWr - g_pMeshTableStart);
             int i;
-            struct { int *pMapGeom; int nMapGeomCount; char *pColsData; int nColsCount; char *pSubObjData; } geom;
+            SenGeom geom;
             geom.pMapGeom = g_pMapGeom;
             geom.nMapGeomCount = g_nMapGeomCount;
             geom.pColsData = g_pColsData;
             geom.nColsCount = g_nColsCount;
             geom.pSubObjData = g_pSubObjData;
             for (i = 0; i < n; i++) {
-                int pMesh = *(int *)((int)g_pMeshTableStart + i * 8 + 4);
+                void *pMesh = g_pMeshTableStart[i].data;
                 if (pMesh) {
-                    int r = sceneMeshFixup(pMesh, g_pObjNameTable, (int)&geom);
-                    if (r != 1) {
+                    SceneObjTypeDef *td = sceneMeshFixup(pMesh, g_pObjNameTable, &geom,
+                                                         (int)(intptr_t)pvPool);
+                    if (!td) {
                         memPoolDestroy((int)(intptr_t)pvPool);
                         return 0;
                     }
+                    g_pMeshTableStart[i].data = td;
                 }
+            }
+        }
+        /* Scene texture dir for bare TNAM names (same dir as the .sen). */
+        {
+            const char *slash = strrchr(pszPath, '/');
+            const char *back = strrchr(pszPath, '\\');
+            const char *sep = slash;
+            if (back && (!sep || back > sep)) sep = back;
+            if (sep) {
+                char dir[256];
+                size_t n = (size_t)(sep - pszPath);
+                if (n >= sizeof(dir)) n = sizeof(dir) - 1;
+                memcpy(dir, pszPath, n);
+                dir[n] = '\0';
+                gxSetTextureDir(dir);
+            } else {
+                gxSetTextureDir("");
             }
         }
         /* Global MAPI texture binding @0x004328a5:
@@ -638,7 +705,7 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
         /* Verification logging for SEN+TPG step (pre-render): mesh count,
          * MAPI/COLS/SUBO sizes. */
         {
-            int nMesh = ((int)g_pMeshTableWr - (int)g_pMeshTableStart) >> 3;
+            int nMesh = (int)(g_pMeshTableWr - g_pMeshTableStart);
             int suboSize = g_pSubObjData ? 0 : 0; /* SUBO presence, size tracked via g_pMapGeomCount handling */
             /* derive SUBO size via file header: total - known chunks is not tracked; log presence */
             appLog("[sen] loaded '%s' REV2 %d bytes: %d MESH, MAPI %d (16B), COLS %d, SUBO %s, TNAM %dB, OBJI %d", pszPath, hdr[1], nMesh, g_nMapGeomCount, g_nColsCount, g_pSubObjData?"present":"none", g_nObjNameTableSize, g_nObjInstanceCount);
@@ -661,7 +728,7 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
             int nExisting = 0;
             int iInst;
 
-            while (g_pScenObjTable[nExisting].nId != 0) nExisting++;   /* @0x00432900 */
+            while (g_pScenObjTable[nExisting].pId != NULL) nExisting++;   /* @0x00432900 */
             pEntry = &g_pScenObjTable[nExisting];
             for (iInst = 0; iInst < g_nObjInstanceCount;
                  iInst++, pInst += 0x20, pEntry++) {
@@ -678,6 +745,8 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
                 }
                 pName -= d;                                            /* @0x0043296a */
                 pEntry->pszName = pName;
+                /* pInst+8 is a file int (parent slot, zero in shipped
+                 * files); kept as int, never a native pointer. */
                 if (*(int *)(pInst + 8) == 0) {                        /* @0x00432978 */
                     *(int *)(pInst + 8) = g_nSceneTblStatA;            /* zero @0x45eb08 */
                     nChanArg = g_nSceneTblStatB;                       /* zero @0x45eb0c */
@@ -697,7 +766,7 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
                         (void *)(uintptr_t)(int)(*(float *)(pInst + 0x0c)),
                         (void *)(uintptr_t)(int)(*(float *)(pInst + 0x10)),
                         (void *)(uintptr_t)(int)(*(float *)(pInst + 0x14)));
-                    pEntry->nId = (int)(uintptr_t)pNode;
+                    pEntry->pId = pNode;
                     if (pNode != NULL) {
                         sceneObjSetPosOrient(pNode,                    /* @0x00432ab2 */
                                              *(short *)(pInst + 0x18),
@@ -706,14 +775,17 @@ int sceneLoadSen(LPCSTR pszPath, int *pOut) /* @0x432320 */
                     }
                 } else if (*(int *)(pInst + 4) == 1) {                 /* @0x00432abf */
                     short nMeshIdx = *(short *)(pInst + 0x1e);
-                    void *pMesh = *(void **)((char *)g_pMeshTableStart + nMeshIdx * 8 + 4);
+                    void *pMesh = g_pMeshTableStart[nMeshIdx].data;
                     pNode = (SceneNode *)sceneryObjAlloc(
                         (SceneNode *)(uintptr_t)*(int *)(pInst + 8), nChanArg,
                         (int)(*(float *)(pInst + 0x0c)), (int)(*(float *)(pInst + 0x10)),
                         (int)(*(float *)(pInst + 0x14)),
                         *(short *)(pInst + 0x18), *(short *)(pInst + 0x1a),
                         *(short *)(pInst + 0x1c), pMesh);
-                    pEntry->nId = (int)(uintptr_t)pNode;
+                    pEntry->pId = pNode;
+                    /* NOTE(64-bit): pOut item quads ({node,x,y,z}) predate
+                     * pointer-sized nodes; all callers pass NULL, so this
+                     * branch is inert. It needs a stride change if revived. */
                     if (pOut != NULL) {                                /* @0x00432b2b */
                         int *pDst = *(int **)pOut;
                         pDst[0] = (int)(uintptr_t)pNode;

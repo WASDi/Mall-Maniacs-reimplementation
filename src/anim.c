@@ -1,8 +1,9 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stddef.h>
 
 #include "anim.h"
 #include "pool.h"
@@ -56,6 +57,13 @@ unsigned short dataReadU16(byte *pData) /* @0x433ef0 */
     memcpy(&v, pData, sizeof(v));
     return v;
 }
+/* List/set aliasing contract (sceneObjectAnimStep/Interp take AnmSet* as
+ * SceneObjAnimList*): mesh slots, the NULL terminator overlap, and the
+ * state pointer must share offsets. C99 compile-time checks. */
+typedef char AnmAliasCheckMesh[offsetof(AnmSet, pMesh) == offsetof(SceneObjAnimList, apObjs) ? 1 : -1];
+typedef char AnmAliasCheckState[offsetof(AnmSet, pAnm) == offsetof(SceneObjAnimList, pState) ? 1 : -1];
+typedef char AnmAliasCheckTerm[offsetof(AnmSet, nUnkC) == 3 * sizeof(void *) ? 1 : -1];
+
 unsigned int dataReadU32(byte *pData) /* @0x433f10 */
 {
     unsigned int v;
@@ -68,6 +76,9 @@ unsigned int dataReadU32(byte *pData) /* @0x433f10 */
  * Scans header to compute arena size, allocates via memPoolAlloc(pPool,size),
  * returns header pointer + track/data pointers. Disasm: base = nTrack*8+0x38,
  * then per-track per-record	switch adds 0x10/0x14/8 for internal expansion.
+ * 64-bit port: AnmTrack is 16 bytes (not 8) and type-3/4 records widened
+ * (0x18/0x14, mesh slot is a native pointer) — the arena uses sizeof-based
+ * strides so anmLoad's writer fits. Must stay in sync with the writer below.
  * ------------------------------------------------------------------- */
 void anmCalcSize(void *pPool, byte *pData, AnmFile **ppOut, void **ppTrackData, void **ppRecordData) /* @0x433f40 */
 {
@@ -94,7 +105,7 @@ void anmCalcSize(void *pPool, byte *pData, AnmFile **ppOut, void **ppTrackData, 
     n = dataReadU16(p);
     nTracks = (int)((unsigned int)n & 0xffffu);
     p += 2;
-    size = (size_t)nTracks * 8u + 0x38u;
+    size = (size_t)nTracks * sizeof(AnmTrack) + sizeof(AnmFile);
     {
         int iTracks = nTracks;
         int perTrackSave = nTracks;
@@ -114,11 +125,11 @@ void anmCalcSize(void *pPool, byte *pData, AnmFile **ppOut, void **ppTrackData, 
                     break;
                 case 3:
                     np = p + 0xfu;
-                    size += 0x14u;
+                    size += 0x18u; /* writer stride (native mesh pointer) */
                     break;
                 case 4:
                     np = p + 9u;
-                    size += 0x10u;
+                    size += 0x14u; /* writer stride (native mesh pointer) */
                     break;
                 case 5:
                     np = p + 9u;
@@ -140,8 +151,8 @@ void anmCalcSize(void *pPool, byte *pData, AnmFile **ppOut, void **ppTrackData, 
     {
         AnmFile *base = (AnmFile *)memPoolAlloc((int)(intptr_t)pPool, size);
         *ppOut = base;
-        *ppTrackData = (void *)(base + 1); /* +0x38 */
-        *ppRecordData = (void *)((char *)(base + 1) + nTracks * 8);
+        *ppTrackData = (void *)(base + 1); /* past native header */
+        *ppRecordData = (void *)((char *)(base + 1) + nTracks * sizeof(AnmTrack));
     }
 }
 
@@ -159,8 +170,8 @@ AnmFile *anmLoad(byte *pData, SceneNode *pMasterNode, SceneNode *pObj) /* @0x433
     int i;
     unsigned short nMesh, nChan, nTracks;
     byte *p;
-    int *pMeshIds = NULL;
-    int *pChanIds = NULL;
+    void **pMeshIds = NULL;
+    void **pChanIds = NULL;
     byte *pChanVals = NULL; /* stored as byte array but alloced as int array in original */
     AnmFile *pAnm = NULL;
     AnmTrack *pTracks = NULL;
@@ -179,7 +190,7 @@ AnmFile *anmLoad(byte *pData, SceneNode *pMasterNode, SceneNode *pObj) /* @0x433
     nMesh = dataReadU16(pData + 4);
     nMesh &= 0xffffu;
     if (nMesh) {
-        pMeshIds = (int *)memPoolAlloc(0, (size_t)nMesh * 4u);
+        pMeshIds = (void **)memPoolAlloc(0, (size_t)nMesh * sizeof(void *));
         for (i = 0; i < (int)nMesh; i++) {
             char tmp[256];
             byte len = dataReadU8(p);
@@ -203,7 +214,7 @@ AnmFile *anmLoad(byte *pData, SceneNode *pMasterNode, SceneNode *pObj) /* @0x433
     p += 2;
     nChan &= 0xffffu;
     if (nChan) {
-        pChanIds = (int *)memPoolAlloc(0, (size_t)nChan * 4u);
+        pChanIds = (void **)memPoolAlloc(0, (size_t)nChan * sizeof(void *));
         pChanVals = (byte *)memPoolAlloc(0, (size_t)nChan * 4u);
         for (i = 0; i < (int)nChan; i++) {
             char tmp[256];
@@ -256,13 +267,15 @@ AnmFile *anmLoad(byte *pData, SceneNode *pMasterNode, SceneNode *pObj) /* @0x433
                     unsigned int a = dataReadU32(p + 3);
                     unsigned int b = dataReadU32(p + 7);
                     unsigned int c = dataReadU32(p + 0xb);
-                    int meshId = 0;
+                    /* 64-bit port: mesh slot widened to a native pointer;
+                     * followers shift +4, stride 0x14 -> 0x18. */
+                    void *meshId = 0;
                     if (pMeshIds && (idx & 0xffffu) < (unsigned int)nMesh) meshId = pMeshIds[idx & 0xffffu];
-                    *(int *)(pRec + 4) = meshId;
-                    *(int *)(pRec + 8) = (int)a;
-                    *(int *)(pRec + 0xc) = (int)b;
-                    *(int *)(pRec + 0x10) = (int)c;
-                    pRec += 0x14;
+                    memcpy(pRec + 4, &meshId, sizeof(meshId));
+                    *(int *)(pRec + 12) = (int)a;
+                    *(int *)(pRec + 16) = (int)b;
+                    *(int *)(pRec + 20) = (int)c;
+                    pRec += 0x18;
                     np = p + 0xf;
                     break;
                 }
@@ -271,13 +284,14 @@ AnmFile *anmLoad(byte *pData, SceneNode *pMasterNode, SceneNode *pObj) /* @0x433
                     unsigned short s0 = dataReadU16(p + 3);
                     unsigned short s1 = dataReadU16(p + 5);
                     unsigned short s2 = dataReadU16(p + 7);
-                    int meshId = 0;
+                    /* 64-bit port: mesh slot widened; stride 0x10 -> 0x14. */
+                    void *meshId = 0;
                     if (pMeshIds && (idx & 0xffffu) < (unsigned int)nMesh) meshId = pMeshIds[idx & 0xffffu];
-                    *(int *)(pRec + 4) = meshId;
-                    *(short *)(pRec + 8) = (short)s0;
-                    *(short *)(pRec + 10) = (short)s1;
-                    *(short *)(pRec + 0xc) = (short)s2;
-                    pRec += 0x10;
+                    memcpy(pRec + 4, &meshId, sizeof(meshId));
+                    *(short *)(pRec + 12) = (short)s0;
+                    *(short *)(pRec + 14) = (short)s1;
+                    *(short *)(pRec + 16) = (short)s2;
+                    pRec += 0x14;
                     np = p + 9;
                     break;
                 }
@@ -355,13 +369,14 @@ void anmFree(AnmFile *pAnm) /* @0x434050 */
 /* anmSetAlloc @0x4344d0 — 0x18 holder, pAnm at +0x14, slots zeroed */
 AnmSet *anmSetAlloc(AnmFile *pAnm) /* @0x4344d0 */
 {
-    AnmSet *pSet = (AnmSet *)memPoolAlloc(0, 0x18);
+    AnmSet *pSet = (AnmSet *)memPoolAlloc(0, sizeof(AnmSet));
     if (!pSet) return NULL;
     pSet->pMesh[0] = NULL;
     pSet->pMesh[1] = NULL;
     pSet->pMesh[2] = NULL;
     pSet->nUnkC = 0;
     pSet->nUnk10 = 0;
+    pSet->_pad20 = 0; /* keeps apObjs[3] NULL when read as a list */
     pSet->pAnm = pAnm;
     return pSet;
 }
@@ -429,24 +444,24 @@ int eventAnimStep(AnmFile *pAnm, byte bLoop) /* @0x434090 */
             break;
         case 3: {
             SceneNode *mesh = *(SceneNode **)(rec + 4);
-            int ax = *(int *)(rec + 8);
-            int ay = -*(int *)(rec + 0xc);
-            int az = -*(int *)(rec + 0x10);
+            int ax = *(int *)(rec + 12);
+            int ay = -*(int *)(rec + 16);
+            int az = -*(int *)(rec + 20);
             if (pAnm->pObj) {
                 sceneObjSetPos(pAnm->pObj, ax, ay, az, 2);
             } else if (mesh != 0) {
                 sceneObjSetPos(mesh, ax, ay, az, 2);
             }
-            rec += 0x14;
+            rec += 0x18;
             break;
         }
         case 4: {
             SceneNode *obj = pAnm->pObj ? pAnm->pObj : *(SceneNode **)(rec + 4);
-            short yaw = *(short *)(rec + 8);
-            short pitch = *(short *)(rec + 10);
-            short roll = *(short *)(rec + 0xc);
+            short yaw = *(short *)(rec + 12);
+            short pitch = *(short *)(rec + 14);
+            short roll = *(short *)(rec + 16);
             sceneObjSetPosOrient(obj, yaw, (short)-pitch, (short)-roll, 2);
-            rec += 0x10;
+            rec += 0x14;
             break;
         }
         case 5: {
@@ -487,7 +502,7 @@ int eventAnimStep(AnmFile *pAnm, byte bLoop) /* @0x434090 */
         pAnm->pCurTrack = pAnm->pTrackBase;
         return 1;
     }
-    pAnm->pCurTrack = (void *)((char *)pAnm->pCurTrack + 8);
+    pAnm->pCurTrack = (void *)((char *)pAnm->pCurTrack + sizeof(AnmTrack)); /* @0x434090 +8 orig */
     return 0;
 }
 
@@ -538,9 +553,9 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
                 memcpy(&curY, &out[1], sizeof(int));
                 memcpy(&curZ, &out[2], sizeof(int));
                 {
-                    int tx = *(int *)(rec + 8);
-                    int ty = *(int *)(rec + 0xc);
-                    int tz = *(int *)(rec + 0x10);
+                    int tx = *(int *)(rec + 12);
+                    int ty = *(int *)(rec + 16);
+                    int tz = *(int *)(rec + 20);
                     /* Asymmetric midpoint per disasm 0x434326-0x434383: X uses
                      * curX + (tx-curX)/2 but Y/Z use (ty+curY)/2 - curY (then
                      * negated). The forms truncate differently for odd sums —
@@ -551,18 +566,18 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
                     sceneObjSetPos(mesh, nx, -ny, -nz, 2);
                 }
             }
-            rec += 0x14;
+            rec += 0x18;
             break;
         }
         case 4: {
             SceneNode *mesh = *(SceneNode **)(rec + 4);
             if (mesh != 0) {
-                short sx = *(short *)(rec + 8);
-                short sy = *(short *)(rec + 10);
-                short sz = *(short *)(rec + 0xc);
+                short sx = *(short *)(rec + 12);
+                short sy = *(short *)(rec + 14);
+                short sz = *(short *)(rec + 16);
                 sceneObjSetSubOrient(mesh, 0, sx, (short)-sy, (short)-sz);
             }
-            rec += 0x10;
+            rec += 0x14;
             break;
         }
         case 5: {
@@ -623,7 +638,7 @@ void eventAnimApply(AnmFile *pAnm, byte bLoop) /* @0x434290 */
 int sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop) /* @0x434540 */
 {
     SceneObjAnimState *st;
-    int *pCur;
+    AnmTrack *pTrk;
     byte *rec;
     int n, i;
 
@@ -632,10 +647,12 @@ int sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop) /* @0x434540 */
     if (!st) return 0;
     if (st->nFrame >= st->nFrameCount) return 0;
     /* Original disasm reads {nRecs, pRecs} directly from pCurTrack, which
-     * advances +8 per frame (no frame*8 re-indexing). */
-    pCur = (int *)st->pCurTrack;
-    n = pCur[0];
-    rec = (byte *)pCur[1];
+     * advances one AnmTrack per frame (+8 in the 32-bit original, native
+     * sizeof here; no frame*stride re-indexing). Typed read: the old int*
+     * view truncated the 64-bit pRecs pointer. */
+    pTrk = st->pCurTrack;
+    n = pTrk->nRecs;
+    rec = (byte *)pTrk->pRecs;
     for (i = 0; i < n; i++) {
         byte tp = rec[0];
         switch (tp) {
@@ -653,9 +670,9 @@ int sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop) /* @0x434540 */
             break;
         case 3: {
             SceneNode *mesh = *(SceneNode **)(rec + 4);
-            int ax = *(int *)(rec + 8);
-            int ay = -*(int *)(rec + 0xc);
-            int az = -*(int *)(rec + 0x10);
+            int ax = *(int *)(rec + 12);
+            int ay = -*(int *)(rec + 16);
+            int az = -*(int *)(rec + 20);
             if (pList->apObjs[0] == 0) {
                 if (mesh != 0) sceneObjSetPos(mesh, ax, ay, az, 2);
             } else {
@@ -665,13 +682,13 @@ int sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop) /* @0x434540 */
                     k++;
                 }
             }
-            rec += 0x14;
+            rec += 0x18;
             break;
         }
         case 4: {
-            short sx = *(short *)(rec + 8);
-            short sy = *(short *)(rec + 10);
-            short sz = *(short *)(rec + 0xc);
+            short sx = *(short *)(rec + 12);
+            short sy = *(short *)(rec + 14);
+            short sz = *(short *)(rec + 16);
             if (pList->apObjs[0] == 0) {
                 SceneNode *mesh = *(SceneNode **)(rec + 4);
                 sceneObjSetPosOrient(mesh, sx, (short)-sy, (short)-sz, 2);
@@ -682,7 +699,7 @@ int sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop) /* @0x434540 */
                     k++;
                 }
             }
-            rec += 0x10;
+            rec += 0x14; /* writer stride (native mesh pointer) */
             break;
         }
         case 5: {
@@ -731,7 +748,7 @@ int sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop) /* @0x434540 */
         st->pCurTrack = st->pLoopBase;
         return 1;
     }
-    st->pCurTrack = (AnmTrack *)((char *)st->pCurTrack + 8);
+    st->pCurTrack = (AnmTrack *)((char *)st->pCurTrack + sizeof(AnmTrack));
     return 0;
 }
 
@@ -746,7 +763,7 @@ int sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop) /* @0x434540 */
 void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop) /* @0x4347c0 */
 {
     SceneObjAnimState *st;
-    int *pCur;
+    AnmTrack *pTrk;
     byte *rec;
     int n, i;
 
@@ -757,9 +774,10 @@ void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop) /* @0x4347c0
         if ((bLoop & 1) == 0) return;
         st->nFrame = 0;
     }
-    pCur = (int *)st->pCurTrack;
-    n = pCur[0];
-    rec = (byte *)pCur[1];
+    /* Typed track read (the int* view truncated 64-bit pRecs). */
+    pTrk = st->pCurTrack;
+    n = pTrk->nRecs;
+    rec = (byte *)pTrk->pRecs;
     for (i = 0; i < n; i++) {
         byte tp = rec[0];
         switch (tp) {
@@ -785,9 +803,11 @@ void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop) /* @0x4347c0
                 memcpy(&curY, &out[1], sizeof(int));
                 memcpy(&curZ, &out[2], sizeof(int));
                 {
-                    int tx = *(int *)(rec + 8);
-                    int ty = *(int *)(rec + 0xc);
-                    int tz = *(int *)(rec + 0x10);
+                    /* Widened layout: native mesh pointer at +4 pushes the
+                     * int targets to +12/+16/+20 (matches the writer). */
+                    int tx = *(int *)(rec + 12);
+                    int ty = *(int *)(rec + 16);
+                    int tz = *(int *)(rec + 20);
                     /* Asymmetric midpoint per disasm 0x43485e-0x4348bd. */
                     int nx = curX + (tx - curX) / 2;
                     int ny = (ty + curY) / 2 - curY;
@@ -795,18 +815,18 @@ void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop) /* @0x4347c0
                     sceneObjSetPos(mesh, nx, -ny, -nz, 2);
                 }
             }
-            rec += 0x14;
+            rec += 0x18;
             break;
         }
         case 4: {
             SceneNode *mesh = *(SceneNode **)(rec + 4);
             if (mesh != 0) {
-                short sx = *(short *)(rec + 8);
-                short sy = *(short *)(rec + 10);
-                short sz = *(short *)(rec + 0xc);
+                short sx = *(short *)(rec + 12);
+                short sy = *(short *)(rec + 14);
+                short sz = *(short *)(rec + 16);
                 sceneObjSetSubOrient(mesh, 0, sx, (short)-sy, (short)-sz);
             }
-            rec += 0x10;
+            rec += 0x14;
             break;
         }
         case 5: {

@@ -1,7 +1,7 @@
 #ifndef POOL_H
 #define POOL_H
 
-#include <windows.h>
+#include "compat_types.h"
 
 /* memPool cluster — reimplementation of maniac memPool* @0x4197a0-0x419bb0.
  *

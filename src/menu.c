@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
@@ -10,6 +10,7 @@
 #include "util.h"
 #include "font.h"
 #include "menu.h"
+#include "platform_sdl2.h"
 #include "options.h"
 #include "record.h"
 #include "charselect.h"
@@ -47,8 +48,8 @@ extern HWND g_hWnd;
  * stateCharacterSelect @0x41efa0 lives in charselect.c;
  * stateHighScoreTable @0x41dfd0 lives in record.c. Menu sound cues
  * (sndPlaySfx @0x437cf0)
- * play through src/sound.c, which uses the same DirectSound streaming
- * path as the original (docs/09-sound.md).
+ * play through src/sound.c, which keeps the original streaming-mixer
+ * path on an SDL2 device (docs/09-sound.md).
  * ===================================================================== */
 
 PStateFunc g_pStateFunc;          /* @0x45a6f8 */
@@ -82,12 +83,11 @@ int     g_nGameMode;       /* @0x458120 game mode id (1 quiz, 2 varujakten,
 int     g_nPlayerCount;    /* @0x458108 player count (0 = auto-derive) */
 
 /* Fling/sign background textures (loaded by menuInit @0x419c20). Handles are
- * the texture nodes returned by gxLoadTpgFile, stored as void* like the
- * menu fonts. */
-void   *g_hMenuTexFling;   /* @0x45a6b4 menu\fling00.tpg */
-void   *g_hMenuTexSign100; /* @0x45a6e0 menu\sign100.tpg */
-void   *g_hMenuTexSign200; /* @0x45a6e4 menu\sign200.tpg */
-void   *g_hMenuTexSign300; /* @0x45a6e8 menu\sign300.tpg */
+ * the texture nodes returned by gxLoadTpgFile, stored as int backend handles. */
+int g_hMenuTexFling;   /* @0x45a6b4 menu\fling00.tpg */
+int g_hMenuTexSign100; /* @0x45a6e0 menu\sign100.tpg */
+int g_hMenuTexSign200; /* @0x45a6e4 menu\sign200.tpg */
+int g_hMenuTexSign300; /* @0x45a6e8 menu\sign300.tpg */
 
 /* Decor + fling vertex region. The original layout places the 16x16 decor
  * grid at g_menuDecorVerts @0x45c3a0 and the 15x15 fling vertex grid at
@@ -146,7 +146,13 @@ PStateFunc g_kGameModeInit[4] = {
 };
 
 /* imageLoadByMode @0x4102e0 — dispatcher: tgaLoad16Pal (3dfx) or tgaLoad16
- * (software) based on g_nGfxMode. Kept faithful to original dispatch. */
+ * (software) based on g_nGfxMode. Kept faithful to original dispatch.
+ * SDL/GL port deviation: the software branch also expands through the
+ * file's own palette (tgaLoad16Pal) into an RGB555 640x480 buffer. The
+ * original returned raw 8-bit indices for GXSOFT to resolve through its
+ * live DirectDraw palette; this backend has no live palette (per-texture
+ * RGBA), so the file palette is authoritative. tgaLoad16 stays intact
+ * for reference. */
 unsigned short *imageLoadByMode(LPCSTR path) /* @0x4102e0 */
 {
     extern int g_nGfxMode;
@@ -154,7 +160,7 @@ unsigned short *imageLoadByMode(LPCSTR path) /* @0x4102e0 */
         return (unsigned short *)tgaLoad16Pal(path);
     }
     if (g_nGfxMode == 2) {
-        return tgaLoad16(path);
+        return (unsigned short *)tgaLoad16Pal(path);
     }
     return NULL;
 }
@@ -164,14 +170,14 @@ unsigned short *imageLoadByMode(LPCSTR path) /* @0x4102e0 */
  * returns to menuUpdate. */
 int stateQuitConfirm(int nType, int nKey, int nKeyType)
 {
-    presentFrame((int)(size_t)g_hMenuQuitTex);
+    presentFrame(g_hMenuQuitTex);
     if (nType == 1) {
         if (nKeyType == 0 &&
             (nKey == 'J' || nKey == 'Y' || nKey == 'j' || nKey == 'y')) {
             /* Original stateQuitConfirm @0x4200b0 accepts J/Y character
-             * events; src/maniac.c supplies them through WM_CHAR. */
+             * events; SDL_TEXTINPUT supplies them (see platformPumpEvents). */
             appLog("[menu] quit confirmed");
-            PostQuitMessage(0);
+            platformRequestQuit();
             return 0;
         }
         appLog("[menu] quit-confirm: key %d returns to menu", nKey);
@@ -515,7 +521,7 @@ int introUpdate(int nType, int nKey, int nKeyType)
      * g_introFade_2 by the elapsed wall time so the intro does not stall. */
     if ((g_menuMode & 0x100) != 0) {
         int t0 = getGameTime();
-        mciPlayCdaudio(g_hWnd, 8);
+        mciPlayCdaudio(8);
         int t1 = getGameTime();
         g_menuMode &= ~0x100;
         g_introFade_2 -= (float)(t1 - t0);
@@ -527,7 +533,7 @@ int introUpdate(int nType, int nKey, int nKeyType)
             return 0;
         }
         if (nKey == 4) {               /* original: Space/fire skips -> LAB_0041b082 */
-            mciPlayCdaudio(g_hWnd, 7);
+            mciPlayCdaudio(7);
             appLog("[intro] skipped to menu by key @%.0f ms", g_introFade_2);
             g_pStateFunc = menuUpdate;
             return 0;
@@ -543,21 +549,21 @@ int introUpdate(int nType, int nKey, int nKeyType)
         return 0;
     }
 
-    if (g_introFade_2 < 2500.0f)  { presentFrame((int)(size_t)g_hIntroTex[0]); return 0; }
+    if (g_introFade_2 < 2500.0f)  { presentFrame(g_hIntroTex[0]); return 0; }
     if (g_introFade_2 < 2590.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
-    if (g_introFade_2 < 3590.0f)  { presentFrame((int)(size_t)g_hIntroTex[1]); return 0; }
+    if (g_introFade_2 < 3590.0f)  { presentFrame(g_hIntroTex[1]); return 0; }
     if (g_introFade_2 < 3680.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
-    if (g_introFade_2 < 6180.0f)  { presentFrame((int)(size_t)g_hIntroTex[2]); return 0; }
+    if (g_introFade_2 < 6180.0f)  { presentFrame(g_hIntroTex[2]); return 0; }
     if (g_introFade_2 < 6270.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
-    if (g_introFade_2 < 7270.0f)  { presentFrame((int)(size_t)g_hIntroTex[3]); return 0; }
+    if (g_introFade_2 < 7270.0f)  { presentFrame(g_hIntroTex[3]); return 0; }
     if (g_introFade_2 < 7360.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
-    if (g_introFade_2 < 9860.0f)  { presentFrame((int)(size_t)g_hIntroTex[4]); return 0; }
+    if (g_introFade_2 < 9860.0f)  { presentFrame(g_hIntroTex[4]); return 0; }
     if (g_introFade_2 < 9950.0f)  { gxClearScreen(1, 0); gxFlip(); return 0; }
-    if (g_introFade_2 < 17450.0f) { presentFrame((int)(size_t)g_hIntroTex[5]); return 0; }
+    if (g_introFade_2 < 17450.0f) { presentFrame(g_hIntroTex[5]); return 0; }
 
     /* Timeline done (>= 17450 ms): original sets g_pStateFunc = menuUpdate and
      * plays the menu CD track (introUpdate @0x41ae50 LAB_0041b082). */
-    mciPlayCdaudio(g_hWnd, 7);
+    mciPlayCdaudio(7);
     appLog("[intro] timeline complete (%.0f ms) -> menuUpdate", g_introFade_2);
     g_pStateFunc = menuUpdate;
     return 0;
@@ -660,27 +666,27 @@ void menuInit(int nRestartMode)
     /* Audio init (menuInit @0x419c20 load block order: winmmInitTimerRes(),
      * then sndInitSystem(2,4,10) @0x437a30, then the menu sfx bank
      * sndLoadBankFromDir(1,"sound\\menu\\") @0x437170). The rebuild keeps the
-     * same calls; playback uses the original DirectSound streaming path in
+     * same calls; playback uses the SDL2 streaming-mixer path in
      * src/sound.c. */
     sndInitSystem(2, 4, 10);
     sndLoadBankFromDir(1, "sound\\menu\\");
     appLog("[assets] sound bank loaded (sound\\menu\\)");
 
     g_hMenuFontTiny   = fontLoad("menu\\tinyfont.txt",
-                                 (void *)(unsigned int)gxLoadTpgFile("menu\\tiny00.tpg"),
-                                 0, 0, NULL);
+                                 gxLoadTpgFile("menu\\TINY00.TPG"),
+                                 0, 0, 0);
     g_hMenuFontSmall  = fontLoad("menu\\menysmallfont.txt",
-                                 (void *)(unsigned int)gxLoadTpgFile("menu\\msfont00.tpg"),
-                                 0, 0, NULL);
+                                 gxLoadTpgFile("menu\\MSFONT00.TPG"),
+                                 0, 0, 0);
     g_hMenuFont       = fontLoad("menu\\menyfont.txt",
-                                 (void *)(unsigned int)gxLoadTpgFile("menu\\mfont00.tpg"),
-                                 0, 0, NULL);
+                                 gxLoadTpgFile("menu\\MFONT00.TPG"),
+                                 0, 0, 0);
     g_hMenuMsfnt      = fontLoad("menu\\menysmallfont.txt",
-                                 (void *)(unsigned int)gxLoadTpgFile("menu\\msfnt200.tpg"),
-                                 0, 0, NULL);
+                                 gxLoadTpgFile("menu\\MSFNT200.TPG"),
+                                 0, 0, 0);
     g_hMenuMfnt       = fontLoad("menu\\menyfont.txt",
-                                 (void *)(unsigned int)gxLoadTpgFile("menu\\mfnt200.tpg"),
-                                 0, 0, NULL);
+                                 gxLoadTpgFile("menu\\MFNT200.TPG"),
+                                 0, 0, 0);
     if (g_hMenuFontTiny && g_hMenuFontSmall && g_hMenuFont &&
         g_hMenuMsfnt && g_hMenuMfnt) {
         appLog("[assets] menu fonts loaded (tiny/small/normal/200 variants)");
@@ -697,24 +703,24 @@ void menuInit(int nRestartMode)
     /* Fling + sign background textures (menuInit @0x419c20 load block:
      * fling00.tpg @0x450630, sign100 @0x450530, sign200 @0x45051c,
      * sign300 @0x450508). The first .tpg load already installed the palette,
-     * so the handle values are directly usable as GxColorUv.pTexture. */
-    g_hMenuTexFling   = (void *)(unsigned int)gxLoadTpgFile("menu\\fling00.tpg");
-    g_hMenuTexGfx     = (void *)(unsigned int)gxLoadTpgFile("menu\\gfx00.tpg");
-    g_hMenuTexChar    = (void *)(unsigned int)gxLoadTpgFile("menu\\char00.tpg");
-    g_hMenuTexLevel   = (void *)(unsigned int)gxLoadTpgFile("menu\\level00.tpg");
-    g_hMenuTexSmal    = (void *)(unsigned int)gxLoadTpgFile("menu\\smal00.tpg");
-    g_hMenuTexWood    = (void *)(unsigned int)gxLoadTpgFile("menu\\wood00.tpg");
-    g_hMenuTexOrie    = (void *)(unsigned int)gxLoadTpgFile("menu\\orie00.tpg");
-    g_hMenuTexAqua    = (void *)(unsigned int)gxLoadTpgFile("menu\\aqua00.tpg");
-    g_hMenuTexRock    = (void *)(unsigned int)gxLoadTpgFile("menu\\rock00.tpg");
-    g_hMenuTexSec100  = (void *)(unsigned int)gxLoadTpgFile("menu\\sec100.tpg");
-    g_hMenuTexSec200  = (void *)(unsigned int)gxLoadTpgFile("menu\\sec200.tpg");
-    g_hMenuTexSec300  = (void *)(unsigned int)gxLoadTpgFile("menu\\sec300.tpg");
-    g_hMenuTexSec400  = (void *)(unsigned int)gxLoadTpgFile("menu\\sec400.tpg");
-    g_hMenuTexSec500  = (void *)(unsigned int)gxLoadTpgFile("menu\\sec500.tpg");
-    g_hMenuTexSign100 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign100.tpg");
-    g_hMenuTexSign200 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign200.tpg");
-    g_hMenuTexSign300 = (void *)(unsigned int)gxLoadTpgFile("menu\\sign300.tpg");
+     * so the handle values are directly usable as GxColorUv.nTexture. */
+    g_hMenuTexFling   = gxLoadTpgFile("menu\\FLING00.TPG");
+    g_hMenuTexGfx     = gxLoadTpgFile("menu\\GFX00.TPG");
+    g_hMenuTexChar    = gxLoadTpgFile("menu\\CHAR00.TPG");
+    g_hMenuTexLevel   = gxLoadTpgFile("menu\\LEVEL00.TPG");
+    g_hMenuTexSmal    = gxLoadTpgFile("menu\\SMAL00.TPG");
+    g_hMenuTexWood    = gxLoadTpgFile("menu\\WOOD00.TPG");
+    g_hMenuTexOrie    = gxLoadTpgFile("menu\\ORIE00.TPG");
+    g_hMenuTexAqua    = gxLoadTpgFile("menu\\AQUA00.TPG");
+    g_hMenuTexRock    = gxLoadTpgFile("menu\\ROCK00.TPG");
+    g_hMenuTexSec100  = gxLoadTpgFile("menu\\SEC100.TPG");
+    g_hMenuTexSec200  = gxLoadTpgFile("menu\\SEC200.TPG");
+    g_hMenuTexSec300  = gxLoadTpgFile("menu\\SEC300.TPG");
+    g_hMenuTexSec400  = gxLoadTpgFile("menu\\SEC400.TPG");
+    g_hMenuTexSec500  = gxLoadTpgFile("menu\\SEC500.TPG");
+    g_hMenuTexSign100 = gxLoadTpgFile("menu\\SIGN100.TPG");
+    g_hMenuTexSign200 = gxLoadTpgFile("menu\\SIGN200.TPG");
+    g_hMenuTexSign300 = gxLoadTpgFile("menu\\SIGN300.TPG");
     if (g_hMenuTexFling && g_hMenuTexSign100 && g_hMenuTexSign200 &&
         g_hMenuTexSign300) {
         appLog("[assets] fling + sign textures loaded");
@@ -733,14 +739,14 @@ void menuInit(int nRestartMode)
         };
         int ci;
         for (ci = 0; ci < 10; ci++) {
-            g_anMenuCharTex[ci] = (void *)(unsigned int)gxLoadTpgFile(kCharTpg[ci]);
-            if (g_anMenuCharTex[ci] == NULL) {
+            g_anMenuCharTex[ci] = gxLoadTpgFile(kCharTpg[ci]);
+            if (g_anMenuCharTex[ci] == 0) {
                 char fallback[64];
-                snprintf(fallback, sizeof(fallback), "menu\\char%02d.tpg", ci);
-                g_anMenuCharTex[ci] = (void *)(unsigned int)gxLoadTpgFile(fallback);
+                snprintf(fallback, sizeof(fallback), "menu\\CHAR%02d.TPG", ci);
+                g_anMenuCharTex[ci] = gxLoadTpgFile(fallback);
             }
         }
-        g_hMenuTexTom = (void *)(unsigned int)gxLoadTpgFile("menu\\tom00.tpg");
+        g_hMenuTexTom = gxLoadTpgFile("menu\\TOM00.TPG");
         appLog("[assets] char/tom textures loaded (%d/10 chars)", ci);
     }
 
@@ -777,9 +783,9 @@ void menuInit(int nRestartMode)
         appLog("[menu] anim\\s_run.anm loaded");
     }
     scenSetDir("WWWWEND");
-    sceneLoadSen("menu\\end\\endscene.sen", NULL);       /* @0x4504e8 */
+    sceneLoadSen("menu\\end\\ENDSCENE.SEN", NULL);       /* @0x4504e8 */
     scenSetDir("");
-    sceneLoadSen("menu\\characters.sen", NULL);          /* @0x4504d4 */
+    sceneLoadSen("menu\\CHARACTERS.SEN", NULL);          /* @0x4504d4 */
     appLog("[menu] scene files loaded (endscene + characters)");
     /* Original order @0x41a24e..0x41a2xx: camera alloc, position + facing,
      * then hide every node the loads instantiated — sceneFindByName
@@ -821,7 +827,7 @@ void menuInit(int nRestartMode)
     pollKeyboard(dispatchKeyEvent, (int)g_nLastFrameTime);
     g_introFade_2     = 0.0f;
     if (nRestartMode != 0) {
-        mciPlayCdaudio(g_hWnd, 7);
+        mciPlayCdaudio(7);
     }
 
     /* Original state selection: initial mode byte selects the intro; after
@@ -847,8 +853,8 @@ void menuInit(int nRestartMode)
             GxColorUv *rec = (GxColorUv *)(g_anMenuFlingQuads + col * 0x1c + row * 0x1a4);
             int v = (row * 0x100 / 15) << 8;
             int hv = ((row * 0x100 / 15) + 0x10) << 8;
-            rec->pTexture = g_hMenuTexFling;
-            rec->pParam5 = NULL;
+            rec->nTexture = g_hMenuTexFling;
+            rec->nParam5 = 0;
             rec->pad = 0;
             rec->U = (unsigned short)u;
             rec->V = (unsigned short)v;
@@ -917,8 +923,7 @@ void menuInit(int nRestartMode)
  * @0x41ade0 and g_nLastFrameTime) and ticks the DSOUND mixer (sndMixTick
  * @0x437c50). The rebuild keeps the pollKeyboard -> dispatchKeyEvent path
  * (reading the window-message key state from input.c); the mixer is
- * deferred. Timing uses timeGetTime() in place of the original getGameTime
- * @0x40dfe0. */
+ * deferred. Timing uses getGameTime @0x40dfe0 (SDL2 clock source). */
 void gameFrameUpdate(void)
 {
     GxColorUv uv;
@@ -955,7 +960,7 @@ void gameFrameUpdate(void)
             now = (DWORD)getGameTime();
             g_flFrameDelta = (float)(now - g_nLastFrameTime) * 0.04f;
             g_nLastFrameTime = (DWORD)getGameTime();
-            /* sndMixTick(0) @0x437c50 — lock DirectSound write regions,
+            /* sndMixTick(0) @0x437c50 — lock SDL ring regions,
              * render the active voices, and recycle finished ones
              * (src/sound.c). */
             sndMixTick(0);
@@ -1016,8 +1021,8 @@ void gameFrameUpdate(void)
                 g_nMenuFadeCur = iVar2;
                 if (uVar1 >= 0) {
                     /* Sign100: top-left panel while the fade is >= 0x100. */
-                    uv.pTexture = g_hMenuTexSign100;
-                    uv.pParam5 = NULL;
+                    uv.nTexture = g_hMenuTexSign100;
+                    uv.nParam5 = 0;
                     uv.pad = 0;
                     uv.U = (unsigned short)((0xff - uVar1) << 8);
                     uv.V = 0;
@@ -1041,8 +1046,8 @@ void gameFrameUpdate(void)
                     int u = (iVar2 < 0xb9) ? 0xb8 - iVar2 : 0;
                     int minx = (uVar1 < 0) ? 0 : uVar1;  /* max(uVar1, 0), the original
                                                             ((uVar1<0)-1)&uVar1 @0x41abc5 */
-                    uv.pTexture = g_hMenuTexSign200;
-                    uv.pParam5 = NULL;
+                    uv.nTexture = g_hMenuTexSign200;
+                    uv.nParam5 = 0;
                     uv.pad = 0;
                     uv.U = (unsigned short)(u << 8);
                     uv.V = 0;
@@ -1068,8 +1073,8 @@ void gameFrameUpdate(void)
                     int xl = g_nMenuFadeCur - 0x13e;
                     if (xl < 0) xl = 0;   /* max(xl, 0), the original
                                              ((fade-0x13e)<0)-1 & (fade-0x13e) @0x41ac21 */
-                    uv.pTexture = g_hMenuTexSign300;
-                    uv.pParam5 = NULL;
+                    uv.nTexture = g_hMenuTexSign300;
+                    uv.nParam5 = 0;
                     uv.pad = 0;
                     uv.U = (unsigned short)(u << 8);
                     uv.V = 0;

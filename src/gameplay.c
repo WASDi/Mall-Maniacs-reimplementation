@@ -47,7 +47,7 @@ int g_nObjUpdateTime = 25; /* @0x4580d0 */
 int g_nRoundStartTime;   /* @0x4580cc */
 int g_nRoundTimeLimit;   /* @0x4588f0 */
 int g_nRoundElapsedTicks;/* @0x455e94 */
-int g_anRoundPhaseIds[8];/* @0x458390 */
+SceneNode *g_anRoundPhaseIds[8];/* @0x458390 */
 int g_nRoundSpareFlag;   /* @0x4583b4 */
 int g_nSpawnTimer;       /* @0x458950 */
 int g_nMusicModuleHandle;/* @0x4580bc */
@@ -93,8 +93,8 @@ void roundStartInit(void) /* @0x40a4d0 */
     mode.width = 0x280;                           /* @0x40a505: 640x480x16 */
     mode.height = 0x1e0;
     mode.bpp = 0x10;
-    mode.hInstance = (unsigned int)(size_t)g_hAppInstance;  /* [0x459cdc] @0x40a4f6 */
-    mode.hwnd = (unsigned int)(size_t)g_hWnd;     /* [0x459cd0] win-handle twin of g_hWnd @0x459ce0 @0x40a4fb */
+    mode.hInstance = NULL;  /* ignored (GL backend) [0x459cdc] @0x40a4f6 */
+    mode.hwnd = NULL;     /* ignored (GL backend) [0x459cd0] @0x40a4fb */
     gxInit(&mode);                                /* @0x40a521 */
     nopDebugStub();                               /* "Memory init" @0x44f3b4, ch 1 @0x40a52d */
     memPoolSystemInit();                          /* @0x40a532 */
@@ -110,7 +110,7 @@ void roundStartInit(void) /* @0x40a4d0 */
     fmtSprintf(szPath, "%s\\hud\\load.tga", g_aszLevelDirs[g_nLevelIdx]);  /* @0x44f3a4 @0x40a599 */
     pImg = imageLoadByMode(szPath);               /* @0x40a5a6 */
     if (pImg != NULL) {
-        presentFrame((int)pImg);                  /* @0x40a5b7 */
+        presentFrame(pImg);                  /* @0x40a5b7 */
         memPoolFree(0, pImg);                     /* @0x40a5be */
     }
     nopDebugStub();                               /* "Spitfire init" @0x44f394, ch 1 @0x40a5cf */
@@ -148,13 +148,13 @@ void roundStartInit(void) /* @0x40a4d0 */
             pIn = objFindById(*(int *)szName, 0); /* @0x40a6a2 */
             if (pIn == NULL) {
                 nopDebugStub();                   /* " AR%02.2d found." @0x44f2dc @0x40a6e4 */
-                pConn = (ZoneConn *)malloc(0x1c); /* operator_new @0x43dd42 @0x40a6eb */
+                pConn = (ZoneConn *)malloc(sizeof(ZoneConn)); /* operator_new @0x43dd42 @0x40a6eb */
                 if (pConn != NULL) {
                     zoneConnCtor(pConn, pAr, pAr, g_pSceneDetailGrid); /* @0x42b410 @0x40a711 */
                 }
             } else {
                 nopDebugStub();                   /* " AR%02.2d found and linked with..." @0x44f2f0 @0x40a6b0 */
-                pConn = (ZoneConn *)malloc(0x1c); /* operator_new @0x43dd42 @0x40a6b7 */
+                pConn = (ZoneConn *)malloc(sizeof(ZoneConn)); /* operator_new @0x43dd42 @0x40a6b7 */
                 if (pConn != NULL) {
                     zoneConnCtor(pConn, pIn, pAr, g_pSceneDetailGrid); /* @0x42b410 @0x40a711 */
                 }
@@ -171,18 +171,18 @@ void roundStartInit(void) /* @0x40a4d0 */
     {
         char szPath[124];
 
-        fmtSprintf(szPath, "%s\\hud\\font00.tpg",           /* @0x44f2c8 @0x40a744 */
+        fmtSprintf(szPath, "%s\\hud\\FONT00.TPG",           /* @0x44f2c8 @0x40a744 */
                    g_aszLevelDirs[g_nLevelIdx]);
         g_hHudFont = fontLoad("scene_ica\\hud\\font.txt",   /* @0x44f2b0 @0x40a765 */
-                              (void *)gxLoadTpgFile(szPath), 0, 0, 0);
-        fmtSprintf(szPath, "%s\\hud\\hfont00.tpg",          /* @0x44f29c @0x40a786 */
+                              gxLoadTpgFile(szPath), 0, 0, 0);
+        fmtSprintf(szPath, "%s\\hud\\HFONT00.TPG",          /* @0x44f29c @0x40a786 */
                    g_aszLevelDirs[g_nLevelIdx]);
         g_hHudFontDigits = fontLoad("scene_ica\\hud\\hudfont.txt", /* @0x44f280 @0x40a7a7 */
-                                    (void *)gxLoadTpgFile(szPath), 0, 0, 0);
-        fmtSprintf(szPath, "%s\\hud\\tfont00.tpg",          /* @0x44f26c @0x40a7c9 */
+                                    gxLoadTpgFile(szPath), 0, 0, 0);
+        fmtSprintf(szPath, "%s\\hud\\TFONT00.TPG",          /* @0x44f26c @0x40a7c9 */
                    g_aszLevelDirs[g_nLevelIdx]);
         g_hHudFontTiny = fontLoad("menu\\tinyfont.txt",     /* @0x44f258 @0x40a7ea */
-                                  (void *)gxLoadTpgFile(szPath), 0, 0, 0);
+                                  gxLoadTpgFile(szPath), 0, 0, 0);
     }
     hudLoadGraphics();                                     /* @0x412700 @0x40a7f7 */
     /* Per-object item slot pass (@0x40a7fc..0x40a8bd): for slot ids 1..30
@@ -259,7 +259,7 @@ void roundStartInit(void) /* @0x40a4d0 */
         (int)(size_t)musicModuleInit(g_pMusicSlotAlloc);   /* @0x437b10 @0x40a9a1 */
     sndLoadBankFromDir(1, "sound\\");                      /* @0x437170 @0x40a9b2 */
     levelDirectorInits();                                  /* @0x40bdf0 @0x40a9b7 */
-    mciPlayCdaudio(g_hWnd, g_bMusicTrack);                 /* @0x416cc0 @0x40a9c9 */
+    mciPlayCdaudio(g_bMusicTrack);                 /* @0x416cc0 @0x40a9c9 */
     cameraFollowUpdate(&g_camFollowBlock);                 /* @0x4020d0 @0x40a9d3 */
     winmmInitTimerRes();                                   /* @0x40dfd0 @0x40a9db */
     g_nRoundStartTime = getGameTime();                     /* @0x40dfe0 @0x40a9e5 */
@@ -285,8 +285,8 @@ void levelDirectorInits(void) /* @0x40bdf0 */
 
     g_nRoundElapsedTicks = 0;                              /* @0x40bdff */
     for (j = 0, i = 2; i < 0x12; i += 2, j++) {            /* @0x40be0a..0x40be34 */
-        wsprintfA(szName, "GRIND%d", i);                   /* "GRIND%d" @0x44f4bc */
-        g_anRoundPhaseIds[j] = scenNameToIdEx(szName);     /* @0x431e20 @0x40be21 */
+        snprintf(szName, sizeof(szName), "GRIND%d", i);                   /* "GRIND%d" @0x44f4bc */
+        g_anRoundPhaseIds[j] = (SceneNode *)scenNameToIdEx(szName);     /* @0x431e20 @0x40be21 */
     }
     g_nGamePhase = 0;                                      /* @0x40be41 */
     g_nResultsScreen = 0;                                  /* @0x40be47 */
@@ -319,12 +319,12 @@ static const int kGoalObjNameId = 0x6C616F67; /* *(int *)"goal" @0x44f4e4 */
  * call site. */
 #define ROUND_WIN_TAIL(nWinner)                                          \
     do {                                                                 \
-        int nNameId = scenNameToId("KUNDKORT");      /* @0x431ed0 */     \
+        void *nNameId = scenNameToId("KUNDKORT");      /* @0x431ed0 */     \
         SceneNode *pCardHost =                                             \
             g_playerRecords[(nWinner)].pCharSceneObj; /* +0x30 */          \
         nopDebugStub();                                /* @0x40c1dc */     \
         sceneryObjAlloc(pCardHost, 8, 0, 150, 0, 32000, 0, 0,              \
-                        (void *)(size_t)nNameId);      /* @0x430200 */     \
+                        nNameId);      /* @0x430200 */     \
         sndPlaySfx(0, 1, 8, 0xffff, 0, 0x400);         /* @0x437cf0 */     \
         g_nResultsScreen = 1;                          /* @0x40c465 */     \
         g_nWinnerIdx = (nWinner);                      /* @0x40c46f */     \
@@ -359,12 +359,12 @@ static const int kGoalObjNameId = 0x6C616F67; /* *(int *)"goal" @0x44f4e4 */
         if (pGoal == NULL) {                                             \
             break;                                                       \
         }                                                                \
-        {   float *pfPos = (float *)pRec->pSubObjC; /* +0x2a4 @0x40c16a */\
+        {   WorldNode *pPosNode = (WorldNode *)pRec->pSubObjC; /* +0x2a4 @0x40c16a: vPos.x/vPos.y at +0x20/+0x24 orig; struct access (64-bit-safe) */\
             /* original truncates the node coords (roundFloat @0x43dd10 +  \
              * FILD @0x40c170..0x40c197) before the zone test. */          \
             (void)(nAnnounce);                                           \
-            if (objContainsPoint(pGoal, (float)(int)pfPos[8],              \
-                                 (float)(int)pfPos[9])) {                 \
+            if (objContainsPoint(pGoal, (float)(int)pPosNode->vPos.x,              \
+                                 (float)(int)pPosNode->vPos.y)) {                 \
                 ROUND_WIN_TAIL((nIdx));                                  \
                 return;                                                  \
             }                                                            \
@@ -435,7 +435,7 @@ void roundLogicUpdate(void) /* @0x40beb0 */
                 if (g_anRoundPhaseIds[j] != 0) {
                     /* pitch = ftol(objUpdate * (even: +56.603775f,
                      * odd: -56.603775f)) — consts @0x44b488/@0x44b48c. */
-                    sceneObjSetPosOrient((SceneNode *)(size_t)g_anRoundPhaseIds[j],
+                    sceneObjSetPosOrient(g_anRoundPhaseIds[j],
                                          0,
                                          (short)(int)((float)g_nObjUpdateTime *
                                                       ((j & 1) == 0 ? 56.603775f
@@ -500,7 +500,7 @@ void roundLogicUpdate(void) /* @0x40beb0 */
         for (i = 0; i < g_nPlayerCount; i++) {             /* @0x40c53e */
             PlayerRecord *pRec = &g_playerRecords[i];
             EventObject *pRail;
-            float *pfPos;
+            WorldNode *pPosNode;
             int k;
 
             if (g_nResultsScreen != 0) {
@@ -514,11 +514,11 @@ void roundLogicUpdate(void) /* @0x40beb0 */
                 if (pRail == NULL) {
                     continue;
                 }
-                pfPos = (float *)pRec->pSubObjA;           /* +0x224 @0x40c577 */
+                pPosNode = (WorldNode *)pRec->pSubObjA;           /* +0x224 @0x40c577: vPos.x/vPos.y at +0x20/+0x24 orig; struct access (64-bit-safe) */
             } else {                                       /* @0x40c60a */
                 pRail = objFindById(pRec->anListIds[0], 0);    /* @0x40c60f */
                 if (pRail != NULL) {
-                    pfPos = (float *)pRec->pSubObjC;       /* +0x2a4 @0x40c621 */
+                    pPosNode = (WorldNode *)pRec->pSubObjC;       /* +0x2a4 @0x40c621 */
                 } else {
                     /* rail list exhausted: the checkout zone ends the
                      * round (@0x40c6b1..0x40c6fe). */
@@ -526,11 +526,11 @@ void roundLogicUpdate(void) /* @0x40beb0 */
                     if (pGoal == NULL) {
                         continue;
                     }
-                    pfPos = (float *)pRec->pSubObjC;
+                    pPosNode = (WorldNode *)pRec->pSubObjC;
                     /* original truncates the node coords (roundFloat      */
                     /* @0x43dd10 + FILD @0x40c6cd..0x40c6f4). */
-                    if (objContainsPoint(pGoal, (float)(int)pfPos[8],
-                                         (float)(int)pfPos[9])) {
+                    if (objContainsPoint(pGoal, (float)(int)pPosNode->vPos.x,
+                                         (float)(int)pPosNode->vPos.y)) {
                         nopDebugStub();                    /* @0x40c722 */
                         ROUND_WIN_TAIL(i);                 /* @0x40c75b..0x40c79a */
                         return;
@@ -541,10 +541,10 @@ void roundLogicUpdate(void) /* @0x40beb0 */
             /* rail proximity: |origin - char node pos| <= 1500 on both
              * axes (double 1500.0 @0x44b480, verified from the image bytes
              * 2026-09-13; origin +0x38/+0x3c vs node +0x20/+0x24). */
-            if (!((float)pRail->flPosX - (int)pfPos[8] <= 1500.0 &&
-                  (float)pRail->flPosX - (int)pfPos[8] >= -1500.0 &&
-                  (float)pRail->flPosZ - (int)pfPos[9] <= 1500.0 &&
-                  (float)pRail->flPosZ - (int)pfPos[9] >= -1500.0)) {
+            if (!((float)pRail->flPosX - (int)pPosNode->vPos.x <= 1500.0 &&
+                  (float)pRail->flPosX - (int)pPosNode->vPos.x >= -1500.0 &&
+                  (float)pRail->flPosZ - (int)pPosNode->vPos.y <= 1500.0 &&
+                  (float)pRail->flPosZ - (int)pPosNode->vPos.y >= -1500.0)) {
                 continue;                                  /* @0x40c59d @0x40c5c3 */
             }
             for (k = 0; k < 3; k++) {                      /* @0x40c5d0 */
@@ -571,7 +571,7 @@ void roundLogicUpdate(void) /* @0x40beb0 */
 
 /* runCmd @0x4084c0 — parse "run <level>", initialize its round, then select
  * the game frame driver. */
-int runCmd(int nContext, LPCSTR pszArgs)
+int runCmd(intptr_t nContext, LPCSTR pszArgs)
 {
     char *end;
     long level;
@@ -651,7 +651,7 @@ void roundTeardown(void) /* @0x40aa10 */
     }
     g_pZoneConnHead = NULL;                          /* @0x45e5e8 @0x40aaa2 */
     g_pZoneConnTail = NULL;                          /* @0x45e5ec @0x40aaaa */
-    memPoolFree(0, (void *)(size_t)g_nTexHudFlingbjorn); /* @0x419a60 @0x40aab0 */
+    memPoolFree(0, g_nTexHudFlingbjorn); /* @0x419a60 @0x40aab0 */
     fontPoolDestroy();                               /* @0x408fc0 @0x40aab8 */
     switch (g_nLevelIdx) {                           /* @0x458100 @0x40aabd, jump table @0x40ad60 */
     case 0: levelEventDirector_L0_Cleanup(); break;  /* @0x416f70 @0x40aace */
@@ -781,7 +781,7 @@ void unloadGameWorld(void) /* @0x41a670 */
  * round: roundTeardown (gameplay.c) then g_bGameActive = 0 +
  * g_nReturnToMenu = 1. Dispatched by commandDispatch (stubs.c) for
  * gameKeyHandler's quit-confirm and results-screen tails. */
-int killCmd(int nContext, LPCSTR pszArgs) /* @0x407870 */
+int killCmd(intptr_t nContext, LPCSTR pszArgs) /* @0x407870 */
 {
     (void)nContext;
     (void)pszArgs;
@@ -887,7 +887,7 @@ void gameKeyHandler(int nKey, int nKeyType) /* @0x40db80 */
         pRec->flInputAccel = -1.0f;                /* @0x40dc7d */
         return;                                    /* @0x40dc87 */
     case 4:                                        /* Space @0x40dc8e */
-        commandDispatch((int)(size_t)pRec, "action smart");  /* @0x44f5b8 @0x40dc9a */
+        commandDispatch((intptr_t)pRec, "action smart");  /* @0x44f5b8 @0x40dc9a */
         return;                                    /* @0x40dca2 */
     case 6:                                        /* Enter @0x40dcaa */
         if (g_nResultsScreen == 0) {               /* @0x458130 @0x40dcaf */
@@ -980,7 +980,7 @@ void gameWorldUpdate(void)
     if (pLocalRec->nAiPhase == 0 && (g_nWorldFrameTick & 1) == 0) {
         if (playerCheckBlocked(pLocalRec) != 0 &&
             !(pLocalRec->nControlType == 2 && g_bAiEnabled != 0)) {
-            commandDispatch((int)pLocalRec, SZ_ACTION_GET_ITEM);   /* @0x408b60 @0x40b49f */
+            commandDispatch((intptr_t)pLocalRec, SZ_ACTION_GET_ITEM);   /* @0x408b60 @0x40b49f */
         }
     }
     playerUpdateAI();                                   /* @0x40b510 @0x40b4a7 */
@@ -1203,9 +1203,9 @@ void gameObjectUpdate(void)
         int nSlotZ; /* base+0x58: Z-ish = +0x38 / objPolarPosLookup2(+0x20) */
         EventObject *pCartZone = NULL;
 
-        nSlotX = objPolarPosLookup((WorldNode *)pRec->pSubObjB, (int)(size_t)pRec->pCartSceneObj);
-        (void)nodeChannelAvgFloat((WorldNode *)pRec->pSubObjB, (int)(size_t)pRec->pCartSceneObj);
-        nSlotZ = objPolarPosLookup2((WorldNode *)pRec->pSubObjB, (int)(size_t)pRec->pCartSceneObj);
+        nSlotX = objPolarPosLookup((WorldNode *)pRec->pSubObjB, (intptr_t)pRec->pCartSceneObj);
+        (void)nodeChannelAvgFloat((WorldNode *)pRec->pSubObjB, (intptr_t)pRec->pCartSceneObj);
+        nSlotZ = objPolarPosLookup2((WorldNode *)pRec->pSubObjB, (intptr_t)pRec->pCartSceneObj);
 
         /* zone re-resolution on the CART pos */
         if (g_nLevelIdx == 4) {
@@ -1619,7 +1619,7 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
                     pRec->pSndEmitterStep = NULL;
                 }
             } else if (pRec->pSndEmitterStep == NULL) {         /* @0x40ccf1 */
-                void *pEmitter = malloc(0x1c);                  /* operator_new @0x43dd42 @0x40ccfb */
+                void *pEmitter = malloc(sizeof(SndEmitter));                  /* operator_new @0x43dd42 @0x40ccfb */
                 if (pEmitter != NULL) {
                     sndPlaySfx3D((SndEmitter *)pEmitter, 1, 10, 65000, 0xff, /* @0x42bcd0 @0x40cd2b */
                                  pRec->pCharSceneNode, 0, 0, 0, 0, 0x11);
@@ -1635,7 +1635,7 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
                 if (flSpeed > g_flEngineSpeedHi || flSpeed < g_flEngineSpeedLo ||
                     flTurn > g_dblEngineTurnHi || flTurn < g_dblEngineTurnLo) {
                     if (pRec->pSndEmitterEngine == NULL) {       /* @0x40ce2f */
-                        void *pEmitter = malloc(0x1c);           /* operator_new @0x40ce3d */
+                        void *pEmitter = malloc(sizeof(SndEmitter));           /* operator_new @0x40ce3d */
                         if (pEmitter != NULL) {
                             sndPlaySfx3D((SndEmitter *)pEmitter, 1, 11, 65000, 0xff, /* @0x40ce6d */
                                          pRec->pCartSceneObj, 0, 0, 0, 0, 0x11);

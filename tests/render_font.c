@@ -15,9 +15,9 @@
  * Defaults: menu/tinyfont.txt, menu/TINY00.TPG in the shipped game dir, and
  * font_all_chars.bmp in the tests/ directory.
  *
- * Build (from repo root):
- *   i686-w64-mingw32-gcc -m32 -O2 -I src \
- *       tests/render_font.c src/font.c src/pool.c src/util.c -o /tmp/render_font
+ * Build (from repo root, native 64-bit):
+ *   cmake --build build --target render_font
+ *   (legacy MinGW line retired with the CMake port).
  */
 
 #include <stdio.h>
@@ -29,13 +29,9 @@
 #include "pool.h"
 #include "util.h"
 
-/* textDraw's external (gxDrawPolygon) is never reached here; provide a stub so
- * font.c links without pulling in the GXSOFT driver stack. */
-void gxDrawPolygon(GxVert *v0, GxVert *v1, GxVert *v2, GxVert *v3, int flags,
-                   GxColorUv *colorUv)
-{
-    (void)v0; (void)v1; (void)v2; (void)v3; (void)flags; (void)colorUv;
-}
+/* textDraw's external (gxDrawPolygon) is never reached here; the real
+ * wrapper from maniac_lib is linked (its driver slot is NULL in this tool,
+ * so the wrapper returns without drawing). */
 
 #define TPG_INDEX_BYTES  0x10000   /* 256*256 8-bit palette indices */
 #define TPG_PALETTE_BYTES 0x400    /* 256 RGBA entries */
@@ -190,7 +186,7 @@ int main(int argc, char **argv)
     memPoolSystemInit();
     fontPoolCreate();
 
-    font = fontLoad((char *)descPath, NULL, 0, 0, NULL);
+    font = fontLoad((char *)descPath, 0, 0, 0, 0);
     if (font == NULL) {
         fprintf(stderr, "render_font: cannot load descriptor '%s'\n", descPath);
         return 1;

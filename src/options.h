@@ -1,7 +1,7 @@
 #ifndef OPTIONS_H
 #define OPTIONS_H
 
-#include <windows.h>
+#include "compat_types.h"
 
 #include "menu.h"
 
@@ -13,7 +13,7 @@ extern float g_optionsVol;      /* @0x45d458 anim accumulator */
 extern int   g_nModeSel;        /* @0x4580fc difficulty 0=Lätt,1=Medium,2=Svårt */
 extern int   g_nGfxMode;        /* @0x4580c4 driver selection (1=Glide,2=Software) */
 extern int   g_nRendererMode;   /* @0x45a390 active renderer mode */
-extern void *g_hMenuTexGfx;     /* @0x45a6bc menu\gfx00.tpg */
+extern int g_hMenuTexGfx;     /* @0x45a6bc menu\gfx00.tpg */
 
 /* gotoOptions @0x41d300 — "Alternativ" gate: copies g_nGfxMode into
  * g_nRendererMode then enters stateOptions. */

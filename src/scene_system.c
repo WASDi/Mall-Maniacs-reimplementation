@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -95,11 +95,13 @@ int mathAtan2Deg(float y, float x)
     return (int)(atan2((double)y, (double)x) * g_dblRadToBdg);
 }
 /* mathSinTreeBuild @0x42efb0
- * Original stores right-child pointer as raw bits in tree[1] (float slot
- * holds address). Rebuild keeps same bitwise intent: store pointer value
- * via memcpy to avoid strict-alias, not (float)(right-tree) distance.
+ * Original stores the right-child POINTER as raw bits in tree[1] (float
+ * slot holds address). 64-bit port: store the right-child float OFFSET
+ * from the tree base as a uint32 instead (0 = none) — same 8-byte node
+ * layout and 0x3ff8 buffer, no pointer truncation. No reconstructed
+ * consumer walks this tree yet (trig uses g_pSinTable/mathSinDeg).
  * TODO: original used x87 fsin via float10; sin(double) is numerically close. */
-void mathSinTreeBuild(int a, int b, float *tree) /* @0x42efb0 */
+static void mathSinTreeBuildRec(int a, int b, float *tree, float *base)
 {
     int middle;
     int leftNodes;
@@ -107,18 +109,24 @@ void mathSinTreeBuild(int a, int b, float *tree) /* @0x42efb0 */
 
     if (a + 1 == b) {
         tree[0] = (float)(((double)a + 0.5) * g_dblTrigStep);
-        /* tree[1] = 0 (NULL ptr as float bits) */
+        /* tree[1] = 0 (no right child) */
         memset(&tree[1], 0, sizeof(float));
         return;
     }
     middle = a + (b - a) / 2;
     tree[0] = (float)sin((double)middle * g_dblTrigStep); /* TODO: fsin(float10) */
     leftNodes = 2 * (middle - a) - 1;
-    mathSinTreeBuild(a, middle, tree + 2);
+    mathSinTreeBuildRec(a, middle, tree + 2, base);
     right = tree + 2 + leftNodes * 2;
-    /* Original: *(float*)((int)tree+4) = (float)right; store pointer bits */
-    memcpy(&tree[1], &right, sizeof(right)); /* bitwise, not numeric */
-    mathSinTreeBuild(middle, b, right);
+    {
+        uint32_t off = (uint32_t)(right - base);
+        memcpy(&tree[1], &off, sizeof(off));
+    }
+    mathSinTreeBuildRec(middle, b, right, base);
+}
+void mathSinTreeBuild(int a, int b, float *tree) /* @0x42efb0 */
+{
+    mathSinTreeBuildRec(a, b, tree, tree);
 }
 
 /* ===================================================================
@@ -133,7 +141,7 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
                     int nMeshPoolSize, unsigned int nFlags) /* @0x42ed40 */
 {
     /* TODO: original uses _malloc (CRT thunk) and checks each pool individually */
-    g_pSortBuffer = malloc(nSortBufCount * 0x14); /* @0x45e914 */
+    g_pSortBuffer = malloc(nSortBufCount * 5 * sizeof(uintptr_t)); /* @0x45e914 (5 native slots/entry) */
     g_pNodePool   = malloc(nNodePoolSize << 4);   /* @0x45e604 */
     g_pNodePool2  = malloc(nNodePoolSize << 4);   /* @0x45e648 */
     g_pMeshPool   = malloc(nMeshPoolSize * 8);    /* @0x45e610 */

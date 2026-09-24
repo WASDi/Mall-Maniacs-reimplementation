@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -905,7 +905,7 @@ int sceneObjResetFlags(SceneNode *pNode, int nRecursive) /* @0x430620 */
  * grid +4. Called from playerSetupSceneObjects with g_pSceneRoot. */
 void sceneDetailGridSetRoot(SceneDetailGrid *pGrid, SceneNode *pRootNode) /* @0x42b350 */
 {
-    pGrid->nRootNode = (int)(size_t)pRootNode;
+    pGrid->pRootNode = pRootNode;
 }
 
 /* sceneDetailGridAddRow @0x42b000 — register one row (detail level) of
@@ -915,7 +915,7 @@ void sceneDetailGridSetRoot(SceneDetailGrid *pGrid, SceneNode *pRootNode) /* @0x
  * last handle, then the first mesh's world position is read into the row
  * buffer (+0x18, stride 0x14: 3 pos ints + 0 / 1) and the row counter is
  * bumped. */
-void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount) /* @0x42b000 */
+void sceneDetailGridAddRow(SceneDetailGrid *pGrid, SceneNode **pHandles, int nCount) /* @0x42b000 */
 {
     int col;
 
@@ -928,7 +928,7 @@ void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount) /*
     for (col = 0; col < nCount; col++) {                  /* @0x42b020 */
         pGrid->pCells[col * pGrid->nRows + pGrid->nColsFilled] = pHandles[col]; /* @0x42b027 */
         if (col > 0) {
-            sceneNodeSetHiddenFlag((SceneNode *)(uintptr_t)pHandles[col], 1);     /* @0x4305c0 @0x42b038 */
+            sceneNodeSetHiddenFlag(pHandles[col], 1);     /* @0x4305c0 @0x42b038 */
         }
     }
     for (col = nCount; col < pGrid->nCols; col++) {       /* pad with last handle @0x42b04d */
@@ -937,7 +937,7 @@ void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount) /*
     {
         SceneDetailCell *pCell = &((SceneDetailCell *)pGrid->pRowBuf)[pGrid->nColsFilled];
 
-        sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->pCells[pGrid->nColsFilled], /* @0x42b07d */
+        sceneNodeGetPosWorld(pGrid->pCells[pGrid->nColsFilled], /* @0x42b07d */
                              (float *)pCell, 4);
         pCell->nLevel = 0;                                /* @0x42b096 */
         pCell->bPosValid = 1;                             /* @0x42b09f */
@@ -956,22 +956,26 @@ void sceneDetailGridAddRow(SceneDetailGrid *pGrid, int *pHandles, int nCount) /*
  * threshold[level] <= dist or dist <= threshold[level-1]). The new level is
  * the first whose threshold exceeds dist (clamped to the last level): the
  * old level's mesh is hidden (sceneNodeSetHiddenFlag 1) and the new level's
- * mesh is reset visible (sceneObjResetFlags 2). */
+ * mesh is reset visible (sceneObjResetFlags 2).
+ * PORT DEVIATION (cross-platform): all rows are pinned to level 0 (best
+ * LOD) regardless of camera distance — when the row is not already at
+ * level 0 the old level mesh is hidden and the level-0 mesh is shown.
+ * Level -1 (zone-culled by zoneConnUpdateCulling @0x42b8f0) is still
+ * respected so room-interior hiding keeps working. No new callees; call
+ * hierarchy unchanged. */
 void sceneDetailGridUpdate(SceneDetailGrid *pGrid) /* @0x42b1d0 */
 {
     int anViewer[3];
     int i;
 
-    if (pGrid->nRootNode == 0 || pGrid->nFailed != 0) {   /* @0x42b1d7 */
+    if (pGrid->pRootNode == 0 || pGrid->nFailed != 0) {   /* @0x42b1d7 */
         return;
     }
-    sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->nRootNode, /* @0x42b1f3 */
+    sceneNodeGetPosWorld(pGrid->pRootNode, /* @0x42b1f3 */
                          (float *)anViewer, 4);
     for (i = 0; i < pGrid->nColsFilled; i++) {            /* @0x42b200 */
         SceneDetailCell *pCell = &((SceneDetailCell *)pGrid->pRowBuf)[i];
-        float flDist;
         int nLevel;
-        int nNew;
 
         if (pCell->nLevel == -1) {                        /* @0x42b213 */
             continue;
@@ -980,34 +984,16 @@ void sceneDetailGridUpdate(SceneDetailGrid *pGrid) /* @0x42b1d0 */
             sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->pCells[i],
                                  (float *)pCell, 4);      /* @0x42b22e */
         }
+        /* PORT DEVIATION: pin every row to best LOD (level 0). */
         nLevel = pCell->nLevel;                           /* @0x42b25c */
-        flDist = (float)(anViewer[0] - pCell->nX) * (float)(anViewer[0] - pCell->nX) +
-                 (float)(anViewer[1] - pCell->nY) * (float)(anViewer[1] - pCell->nY) +
-                 (float)(anViewer[2] - pCell->nZ) * (float)(anViewer[2] - pCell->nZ);
-        if (nLevel == 0) {                                /* @0x42b287 */
-            if (pGrid->pColScales[0] > flDist) {          /* @0x42b2ba */
-                continue;
-            }
-        } else if (pGrid->pColScales[nLevel] > flDist &&  /* @0x42b298 */
-                   flDist > pGrid->pColScales[nLevel - 1]) {  /* @0x42b2a9 */
+        if (nLevel == 0) {
             continue;
         }
-        if (pGrid->nCols <= 0) {                          /* @0x42b2c6 */
-            continue;
-        }
-        nNew = 0;
-        do {                                              /* @0x42b2cf */
-            if (pGrid->pColScales[nNew] > flDist ||
-                nNew == pGrid->nCols - 1) {
-                break;
-            }
-            nNew++;
-        } while (nNew < pGrid->nCols);
         sceneNodeSetHiddenFlag((SceneNode *)(size_t)
             pGrid->pCells[pGrid->nRows * nLevel + i], 1); /* @0x42b308 */
         sceneObjResetFlags((SceneNode *)(size_t)
-            pGrid->pCells[pGrid->nRows * nNew + i], 2);   /* @0x42b31e */
-        pCell->nLevel = nNew;                             /* @0x42b326 */
+            pGrid->pCells[i], 2);                     /* level 0: 0*nRows+i */
+        pCell->nLevel = 0;                            /* @0x42b326 */
     }
 }
 
@@ -1035,10 +1021,8 @@ void sceneDetailGridFree(SceneDetailGrid *pGrid) /* @0x42b190 */
  * nMode low nibble 2 returns 0 without changes. Then stores the mesh idx
  * at *(obj+0x14)+0xc. Returns 0 when nMode&0xf0 == 0x10, the mesh idx is
  * negative or out of the node's channel range (+3 byte). */
-int sceneObjSetClassMesh(int pObj, SceneNode *pClassNode, int nMeshIdx, int nMode) /* @0x430db0 */
+int sceneObjSetClassMesh(SceneNode *pObjNode, SceneNode *pClassNode, int nMeshIdx, int nMode) /* @0x430db0 */
 {
-    SceneNode *pObjNode = (SceneNode *)(size_t)pObj;
-
     if (pClassNode == NULL) {
         pClassNode = &g_rootNode;
     }

@@ -1,6 +1,7 @@
 #ifndef OBJ_WORLD_H
 #define OBJ_WORLD_H
 
+#include <stdint.h>
 #include "gx.h"
 #include "obj_event.h"
 
@@ -31,20 +32,30 @@ typedef struct WorldNode {
                                  * as passed by playerSetupRound) */
 } WorldNode;                    /* 0x48 */
 
+#if MANIAC_32BIT_RUNTIME_LAYOUT /* runtime struct: native pointers widen it on 64-bit */
 typedef char WorldNodeSizeMustBe0x48[(sizeof(WorldNode) == 0x48) ? 1 : -1];
+#endif
+
 
 /* ObjTurret is the 0x1c-byte turret entry built by objTurretAdd @0x405280
  * (levelObjectsCartsCameraInit collision cluster for each player's cart and
  * body). Layout from the objTurretAdd disassembly. */
+/* 64-bit port (Phase 1.3): nTypeId/nChannelKey carry native scene-node /
+ * mesh pointers as runtime keys (truncated ints in the 32-bit original).
+ * They are runtime-only (malloc'd, never serialized), so they use
+ * intptr_t to preserve full pointer bits on 64-bit hosts. */
 typedef struct ObjTurret {
-    int nTypeId;         /* +0x00 caller id (the owning record's scene node) */
+    intptr_t nTypeId;    /* +0x00 caller id (the owning record's scene node) */
     float flAngle;       /* +0x04 nAngle*g_flPi*g_dblAngleScale (radians) */
     GxVec2 vPolar;       /* +0x08 polar({flZ, flX}) of the position */
     GxVec2 vPos;         /* +0x10 {flZ, flX} copy */
     struct ObjTurret *pNext; /* +0x18 head at WorldNode.pTurretHead (+0x0c) */
 } ObjTurret;             /* 0x1c */
 
+#if MANIAC_32BIT_RUNTIME_LAYOUT /* runtime struct: native pointers widen it on 64-bit */
 typedef char ObjTurretSizeMustBe0x1c[(sizeof(ObjTurret) == 0x1c) ? 1 : -1];
+#endif
+
 
 /* ObjChildMesh is the 0x4c-byte child-mesh/collision entry built by
  * nodeAddChildMesh @0x4053a0 and updated by nodeSetTransformFromChannels
@@ -53,7 +64,7 @@ typedef struct ObjChildMesh {
     int nMeshId;         /* +0x00 caller mesh tag (1 in the player clusters) */
     int nValue1;         /* +0x04 written by objTurretSetValue */
     int nValue2;         /* +0x08 written by objTurretSetValue */
-    int nChannelKey;     /* +0x0c match key for objTurretSetValue (owner node) */
+    intptr_t nChannelKey; /* +0x0c match key for objTurretSetValue (owner node) */
     float flExtentB;     /* +0x10 raw arg5 (75.0/A/B per row) */
     float flExtentA;     /* +0x14 raw arg4 (270/300/230/20 per row) */
     float flExtentC;     /* +0x18 raw arg7 (240.0/300.0) */
@@ -68,7 +79,10 @@ typedef struct ObjChildMesh {
     struct ObjChildMesh *pNext; /* +0x48 head at WorldNode.pChildMeshHead (+0x08) */
 } ObjChildMesh;          /* 0x4c */
 
+#if MANIAC_32BIT_RUNTIME_LAYOUT /* runtime struct: native pointers widen it on 64-bit */
 typedef char ObjChildMeshSizeMustBe0x4c[(sizeof(ObjChildMesh) == 0x4c) ? 1 : -1];
+#endif
+
 
 extern WorldNode *g_pObjHead;  /* @0x4550d4 world-object list head */
 
@@ -101,11 +115,11 @@ void objUpdateAll(void);
 /* objTurretAdd @0x405280 — allocate a turret entry for pNode, polarize
  * {flPosZ, flPosX}, scale nAngle to radians and head-insert at +0x0c. */
 void objTurretAdd(WorldNode *pNode, int nPosX, int nPosY, int nPosZ,
-                  short nAngle, int nTypeId);
+                  short nAngle, intptr_t nTypeId);
 
 /* objTurretSetValue @0x405370 — for every child mesh of pNode whose
  * nChannelKey matches nKey, write nValue1/nValue2 over +0x04/+0x08. */
-void objTurretSetValue(WorldNode *pNode, int nKey, int nValue1, int nValue2);
+void objTurretSetValue(WorldNode *pNode, intptr_t nKey, int nValue1, int nValue2);
 
 /* objDistToPoint @0x405050 — Euclidean ground-plane distance from the
  * node's vPos to {flA, flB} (components pair in vPos order: flA vs the
@@ -114,11 +128,11 @@ float objDistToPoint(WorldNode *pNode, float flA, float flB);
 
 /* nodeChannelAvgFloat @0x4050c0 — average flHeight over the child-mesh
  * entries whose nChannelKey matches nChannelKey; 0.0f when none match. */
-float nodeChannelAvgFloat(WorldNode *pNode, int nChannelKey);
+float nodeChannelAvgFloat(WorldNode *pNode, intptr_t nChannelKey);
 
 /* objFindTurret @0x405120 — first child-mesh entry whose nChannelKey
  * matches nChannelKey (walks the +0x08 ObjChildMesh list), or NULL. */
-ObjChildMesh *objFindTurret(WorldNode *pNode, int nChannelKey);
+ObjChildMesh *objFindTurret(WorldNode *pNode, intptr_t nChannelKey);
 
 /* objDistTo @0x404fe0 — Euclidean ground-plane distance between the two
  * nodes' vPos. */
@@ -142,23 +156,23 @@ void objSetAngle(WorldNode *pNode, float flAngle);
 /* objPolarPosLookup @0x405140 — turret entry keyed by nTypeId; return the
  * (int) world x component of fromPolar({vPolar.x, flScaleA + vPolar.y})
  * + vPos. */
-int objPolarPosLookup(WorldNode *pNode, int nTypeId);
+int objPolarPosLookup(WorldNode *pNode, intptr_t nTypeId);
 
 /* objPolarPosLookup2 @0x4051c0 — same as objPolarPosLookup but returns the
  * world z component. */
-int objPolarPosLookup2(WorldNode *pNode, int nTypeId);
+int objPolarPosLookup2(WorldNode *pNode, intptr_t nTypeId);
 
 /* objListFindFloat @0x405240 — turret entry keyed by nTypeId; return its
  * absolute heading as a 15-bit binary angle
  * (int)((flScaleA + flAngle) * (65536/π) * 0.5). */
-int objListFindFloat(WorldNode *pNode, int nTypeId);
+int objListFindFloat(WorldNode *pNode, intptr_t nTypeId);
 
 /* nodeAddChildMesh @0x4053a0 — allocate a 0x4c child-mesh entry for pNode:
  * polarized {flKeyZ, flX} position, raw extents, channel key and mesh tag,
  * plus the fromPolar world coords offset by pNode->flScaleA; head-insert
  * at +0x08. */
 void nodeAddChildMesh(WorldNode *pNode, int nX, int nY, int nKeyZ,
-                      float flExtentA, float flExtentB, int nChannelKey,
+                      float flExtentA, float flExtentB, intptr_t nChannelKey,
                       float flExtentC, int nMeshId);
 
 /* nodeSetTransformFromChannels @0x404e00 — place pNode at {nPosZ, nPosX}

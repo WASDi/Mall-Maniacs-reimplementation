@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <math.h>
 
 #include "gx.h"
@@ -25,16 +25,16 @@ int g_nLevelSel = 0;             /* @0x45d44c */
 int g_nLevelIdx = 0;             /* gameplay level index */
 float g_endSceneT = 0.0f;        /* @0x45a768 */
 
-void *g_hMenuTexSmal = NULL;     /* @0x45a68c */
-void *g_hMenuTexWood = NULL;     /* @0x45a690 */
-void *g_hMenuTexOrie = NULL;     /* @0x45a694 */
-void *g_hMenuTexAqua = NULL;     /* @0x45a698 */
-void *g_hMenuTexRock = NULL;     /* @0x45a69c */
-void *g_hMenuTexSec100 = NULL;   /* @0x45a6a0 */
-void *g_hMenuTexSec200 = NULL;   /* @0x45a6a4 */
-void *g_hMenuTexSec300 = NULL;   /* @0x45a6a8 */
-void *g_hMenuTexSec400 = NULL;   /* @0x45a6ac */
-void *g_hMenuTexSec500 = NULL;   /* @0x45a6b0 */
+int g_hMenuTexSmal = 0;     /* @0x45a68c */
+int g_hMenuTexWood = 0;     /* @0x45a690 */
+int g_hMenuTexOrie = 0;     /* @0x45a694 */
+int g_hMenuTexAqua = 0;     /* @0x45a698 */
+int g_hMenuTexRock = 0;     /* @0x45a69c */
+int g_hMenuTexSec100 = 0;   /* @0x45a6a0 */
+int g_hMenuTexSec200 = 0;   /* @0x45a6a4 */
+int g_hMenuTexSec300 = 0;   /* @0x45a6a8 */
+int g_hMenuTexSec400 = 0;   /* @0x45a6ac */
+int g_hMenuTexSec500 = 0;   /* @0x45a6b0 */
 
 /* stateLevelInit0 @0x41b810 — select level 0 and enter the original run command. */
 int stateLevelInit0(int nType, int nKey, int nKeyType)
@@ -98,7 +98,7 @@ int stateLevelSelect(int nType, int nKey, int nKeyType)
         stateLevelInit0, stateLevelInit1, stateLevelInit2,
         stateLevelInit3, stateLevelInit4
     };
-    static void *sectionTextures[5];
+    static int sectionTextures[5];
     GxVert v0;
     GxVert v1;
     GxVert v2;
@@ -142,7 +142,7 @@ int stateLevelSelect(int nType, int nKey, int nKeyType)
 
     g_endSceneT += g_flFrameDelta * 0.3f;
 
-    if (g_hMenuTexGfx != NULL) {
+    if (g_hMenuTexGfx != 0) {
         v0.x = 0x9800; v0.y = 0x3800;
         v1.x = 0xd700; v1.y = 0x3800;
         v2.x = 0xd700; v2.y = 0x5f00;
@@ -152,13 +152,13 @@ int stateLevelSelect(int nType, int nKey, int nKeyType)
         v1.r = v1.g = v1.b = 0xff;
         v2.r = v2.g = v2.b = 0xff;
         v3.r = v3.g = v3.b = 0xff;
-        uv.pTexture = g_hMenuTexGfx; uv.pParam5 = NULL; uv.pad = 0;
+        uv.nTexture = g_hMenuTexGfx; uv.nParam5 = 0; uv.pad = 0;
         uv.U = 0xb000; uv.V = 0x3300; uv.gwU = 0xef00;
         uv.V2 = 0x3300; uv.gwU2 = 0xef00; uv.hV = 0x5b00;
         uv.U2 = 0xb000; uv.hV2 = 0x5b00;
         gxDrawPolygon(&v0, &v1, &v2, &v3, 0x2004, &uv);
     }
-    if (g_hMenuTexLevel != NULL) {
+    if (g_hMenuTexLevel != 0) {
         v0.x = 0xe800; v0.y = 0x3200;
         v1.x = 0x1e700; v1.y = 0x3200;
         v2.x = 0x1e700; v2.y = 0x6500;
@@ -168,7 +168,7 @@ int stateLevelSelect(int nType, int nKey, int nKeyType)
         v1.r = v1.g = v1.b = 0xff;
         v2.r = v2.g = v2.b = 0xff;
         v3.r = v3.g = v3.b = 0xff;
-        uv.pTexture = g_hMenuTexLevel; uv.pParam5 = NULL; uv.pad = 0;
+        uv.nTexture = g_hMenuTexLevel; uv.nParam5 = 0; uv.pad = 0;
         uv.U = 0; uv.V = (unsigned short)(selected * 0x3300);
         uv.gwU = 0xff00; uv.V2 = uv.V; uv.gwU2 = 0xff00;
         uv.hV = (unsigned short)((selected + 1) * 0x3300);
@@ -188,7 +188,7 @@ int stateLevelSelect(int nType, int nKey, int nKeyType)
         sectionTextures[3] = g_hMenuTexAqua;
         sectionTextures[4] = g_hMenuTexRock;
     }
-    if (sectionTextures[selected] != NULL) {
+    if (sectionTextures[selected] != 0) {
         v0.x = 0xc000; v0.y = 0x9700;
         v1.x = 0x1bf00; v1.y = 0x9700;
         v2.x = 0x1bf00; v2.y = 0x19600;
@@ -198,13 +198,13 @@ int stateLevelSelect(int nType, int nKey, int nKeyType)
         v1.r = v1.g = v1.b = 0xff;
         v2.r = v2.g = v2.b = 0xff;
         v3.r = v3.g = v3.b = 0xff;
-        uv.pTexture = sectionTextures[selected]; uv.pParam5 = NULL; uv.pad = 0;
+        uv.nTexture = sectionTextures[selected]; uv.nParam5 = 0; uv.pad = 0;
         uv.U = 0; uv.V = 0; uv.gwU = 0xff00; uv.V2 = 0;
         uv.gwU2 = 0xff00; uv.hV = 0xff00; uv.U2 = 0; uv.hV2 = 0xff00;
         gxDrawPolygon(&v0, &v1, &v2, &v3, 0x2004, &uv);
     }
 
-    if (g_hMenuTexGfx != NULL) {
+    if (g_hMenuTexGfx != 0) {
         if (selected == 4) {
             float arrowOffset = sinf(g_endSceneT) * 5.0f;
             int x = (int)(arrowOffset + 132.0f) << 8;
@@ -217,7 +217,7 @@ int stateLevelSelect(int nType, int nKey, int nKeyType)
             v1.r = v1.g = v1.b = 0xff;
             v2.r = v2.g = v2.b = 0xff;
             v3.r = v3.g = v3.b = 0xff;
-            uv.pTexture = g_hMenuTexGfx; uv.pParam5 = NULL; uv.pad = 0;
+            uv.nTexture = g_hMenuTexGfx; uv.nParam5 = 0; uv.pad = 0;
             uv.U = 0; uv.V = 0x3300; uv.gwU = 0x2b00;
             uv.V2 = 0x3300; uv.gwU2 = 0x2b00; uv.hV = 0x5e00;
             uv.U2 = 0; uv.hV2 = 0x5e00;

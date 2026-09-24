@@ -1,7 +1,7 @@
 #ifndef GAMEPLAY_H
 #define GAMEPLAY_H
 
-#include <windows.h>
+#include "compat_types.h"
 #include "player.h"
 
 /* Gameplay entry and frame driver. The original WinMain @0x4160a0 calls
@@ -17,7 +17,7 @@ extern int g_nObjUpdateTime;    /* @0x4580d0 */
 extern int g_nRoundStartTime;   /* @0x4580cc */
 extern int g_nRoundTimeLimit;   /* @0x4588f0 round length in ms (levelDirectorInits sets 7000) */
 extern int g_nRoundElapsedTicks;/* @0x455e94 elapsed logic ticks (Ghidra label g_flRoundTimer; int) */
-extern int g_anRoundPhaseIds[8];/* @0x458390 GRIND2..GRIND16 name-table ids spun at round end */
+extern SceneNode *g_anRoundPhaseIds[8];/* @0x458390 GRIND name-table nodes spun at round end */
 extern int g_nRoundSpareFlag;   /* @0x4583b4 zeroed by levelDirectorInits; never read */
 extern int g_nSpawnTimer;       /* @0x458950 mode 3 loose-item spawn timer (ms) */
 extern int g_nMusicModuleHandle;/* @0x4580bc music module handle from musicModuleInit */
@@ -32,8 +32,8 @@ extern int g_nGameUpdateTick;   /* @0x45e5dc gameUpdate tick (cart 5-tick snap g
 extern int g_nMovieRecord;      /* @0x455e8c */
 extern int g_nMoviePlay;        /* @0x455e90 */
 
-int runCmd(int nContext, LPCSTR pszArgs); /* @0x4084c0 */
-int killCmd(int nContext, LPCSTR pszArgs); /* @0x407870 */
+int runCmd(intptr_t nContext, LPCSTR pszArgs); /* @0x4084c0 */
+int killCmd(intptr_t nContext, LPCSTR pszArgs); /* @0x407870 */
 void roundTeardown(void);                 /* @0x40aa10 */
 void unloadGameWorld(void);               /* @0x41a670 */
 void shutdownRenderer(void);              /* @0x40a490 (defined in game.c) */

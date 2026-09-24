@@ -1,7 +1,7 @@
 #ifndef NAV_H
 #define NAV_H
 
-#include <windows.h>
+#include "compat_types.h"
 #include "zone.h"
 #include "scene.h"
 

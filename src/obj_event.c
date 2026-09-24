@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -417,7 +417,7 @@ void sceneObjCtor4(EventObject *pObj, int nId, float flX, float flY,
 void eventObjAddLine(EventObject *pObj, float flX1, float flY1,
                      float flX2, float flY2) /* @0x4147c0 */
 {
-    ObjLine *pLine = (ObjLine *)malloc(0x20);        /* operator_new @0x43dd42 */
+    ObjLine *pLine = (ObjLine *)malloc(sizeof(ObjLine));        /* operator_new @0x43dd42 */
     if (pLine == NULL) {
         return;
     }
@@ -491,7 +491,7 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
         }
 
         pFields = configNodeGetId(pNode);               /* @0x406e59 */
-        pEvent = (EventObject *)malloc(0x50);        /* operator_new @0x43dd42 */
+        pEvent = (EventObject *)malloc(sizeof(EventObject));        /* operator_new @0x43dd42 */
         if (pEvent != NULL) {
             float flH2 = (float)configEnvGetDouble2(&env, pFields, "h2");
             float flH  = (float)configEnvGetDouble2(&env, pFields, "h");
@@ -524,11 +524,21 @@ int eloadCmd(int nContext, LPCSTR pszArgs) /* @0x406cb0 */
 
         {
             ConfigNode *pValue = configEnvGetValue(&env, pFields, "values");
-            int *pnOut = (pEvent != NULL) ? &pEvent->nValue0 : NULL;
+            /* 64-bit port: values[0..4] are 4-byte ints in the file
+             * (nValue0/nValue1/nValue2/nValue3/nReserved20); nValue1 is
+             * intptr_t here (pointer union), so assign per-field instead
+             * of walking an int* across the struct (pointer stride +
+             * padding would misplace values[1..4]). */
             for (i = 0; i < 5 && pValue != NULL; i++) {
-                if (pnOut != NULL) {
-                    *pnOut = (int)configEnvGetDouble(pValue);    /* @0x4369f0 + __ftol @0x4070a4 */
-                    pnOut++;
+                int v = (int)configEnvGetDouble(pValue);    /* @0x4369f0 + __ftol @0x4070a4 */
+                if (pEvent != NULL) {
+                    switch (i) {
+                    case 0: pEvent->nValue0 = v; break;
+                    case 1: pEvent->nValue1 = (intptr_t)v; break;
+                    case 2: pEvent->nValue2 = v; break;
+                    case 3: pEvent->nValue3 = v; break;
+                    default: pEvent->nReserved20 = v; break;
+                    }
                 }
                 pValue = configNextNode(&env, pValue);
             }

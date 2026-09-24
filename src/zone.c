@@ -1,4 +1,4 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdlib.h>
 #include "zone.h"
 #include "scene.h"
@@ -662,7 +662,7 @@ void zoneConnUpdateCulling(void) /* @0x42b8f0 */
         SceneDetailGrid *pGrid = (SceneDetailGrid *)pConn->pDetailLevels;
         int anPos[3];
 
-        sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->nRootNode,
+        sceneNodeGetPosWorld(pGrid->pRootNode,
                              (float *)anPos, 4);          /* @0x42b916 */
         if (objContainsPoint3D(pConn->pInZone, (float)anPos[2], /* @0x42b938 */
                                (float)anPos[0], (float)anPos[1]) == 0) {
@@ -684,7 +684,7 @@ void zoneConnUpdateCulling(void) /* @0x42b8f0 */
         SceneDetailGrid *pGrid = (SceneDetailGrid *)pConn->pDetailLevels;
         int anPos[3];
 
-        sceneNodeGetPosWorld((SceneNode *)(size_t)pGrid->nRootNode,
+        sceneNodeGetPosWorld(pGrid->pRootNode,
                              (float *)anPos, 4);          /* @0x42b9b2 */
         if (objContainsPoint3D(pConn->pInZone, (float)anPos[2], /* @0x42b9d4 */
                                (float)anPos[0], (float)anPos[1]) != 0) {

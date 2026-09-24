@@ -1,6 +1,7 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "compat_types.h"
 #include "stubs.h"
 #include "time.h"
 #include "menu.h"
@@ -12,6 +13,7 @@
 #include "nav.h"
 #include "sen.h"
 #include "font.h"
+#include "record.h"
 #include "scene_system.h"
 #include "sound.h"
 #include "custom_helpers.h"
@@ -41,12 +43,14 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType)
  * reconstructed and not called: networking is out of scope for the offline
  * rebuild, and the offline branches no longer reference them. */
 
-/* commandDispatch — original command/config query contract. Returning NULL
- * is safe for callers that only use the result as optional text. The level
- * startup scripts run "eload <file>.eo" (EventObject zones) and "nload
- * <file>.ai" (AI nav buoys). The original dispatches through a name table
- * @0x44b3xx; the rebuild hardcodes the commands in use. */
-unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
+/* commandDispatch — original command/config query contract. Query replies
+ * ("get fshi/vahi<lvl>time<slot>", "get toplevel") return a static text
+ * buffer; every other command returns NULL, which is safe for callers
+ * that only use the result as optional text (fmtAtoi is NULL-guarded).
+ * The level startup scripts run "eload <file>.eo" (EventObject zones)
+ * and "nload <file>.ai" (AI nav buoys). The original dispatches through
+ * a name table @0x44b3xx; the rebuild hardcodes the commands in use. */
+unsigned char *commandDispatch(intptr_t nCommand, LPCSTR pszCommand)
 {
     if (pszCommand != NULL && strncmp(pszCommand, "action ", 7) == 0) {
         actionCmd(nCommand, pszCommand + 7); /* @0x4067c0 (table @0x44b308) */
@@ -62,6 +66,41 @@ unsigned char *commandDispatch(int nCommand, LPCSTR pszCommand)
     }
     else if (pszCommand != NULL && strncmp(pszCommand, "nload ", 6) == 0) {
         nloadCmd(0, pszCommand + 6);     /* @0x407e10 */
+    }
+    /* Record-table queries for the results-screen HUD (hud.c @0x412993
+     * "get fshi/vahi<lvl>time<slot>", @0x412e72 "request fshi/vahiscore",
+     * @0x412b26/@0x412b4c "get/set toplevel"): the original served these
+     * from its live config tree; the rebuild serves record.c's decoded
+     * config.mm table. Replies use one static buffer (callers consume the
+     * text immediately via fmtAtoi). Anything else still returns NULL. */
+    if (pszCommand != NULL &&
+        (strncmp(pszCommand, "get fshi", 8) == 0 ||
+         strncmp(pszCommand, "get vahi", 8) == 0)) {
+        static unsigned char szRecReply[32];
+        int isVahi = (pszCommand[4] == 'v');
+        const char *pTime = strstr(pszCommand + 8, "time");
+        int nLvl = atoi(pszCommand + 8);                 /* "get vahi<lvl>time<slot>" */
+        int nSlot = (pTime != NULL) ? atoi(pTime + 4) : 0;
+        snprintf((char *)szRecReply, sizeof(szRecReply), "%d",
+                 recordGetTime(isVahi, nLvl, nSlot));
+        return szRecReply;
+    }
+    if (pszCommand != NULL && strcmp(pszCommand, "get toplevel") == 0) {
+        static unsigned char szTopReply[16];
+        snprintf((char *)szTopReply, sizeof(szTopReply), "%d", recordGetTopLevel());
+        return szTopReply;
+    }
+    if (pszCommand != NULL && strncmp(pszCommand, "set toplevel ", 13) == 0) {
+        recordSetTopLevel(atoi(pszCommand + 13));
+    }
+    if (pszCommand != NULL &&
+        (strncmp(pszCommand, "request fshiscore ", 18) == 0 ||
+         strncmp(pszCommand, "request vahiscore ", 18) == 0)) {
+        int nTime, nSlot, nFace, nLvl;
+        if (sscanf(pszCommand + 18, "%d %d %d %d",
+                   &nTime, &nSlot, &nFace, &nLvl) == 4) {
+            recordSubmitScore((pszCommand[8] == 'v'), nTime, nSlot, nFace, nLvl);
+        }
     }
     return NULL;
 }

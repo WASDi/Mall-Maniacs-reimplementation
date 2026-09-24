@@ -28,10 +28,10 @@
 #include "util.h"
 
 /* --- HUD textures @0x458980..0x45898c --- */
-void *g_hHudListTpg;   /* @0x458980 hud/list00.tpg */
-void *g_hHudCharTpg;   /* @0x458984 hud/char00.tpg */
-void *g_hHudGfx2Tpg;   /* @0x458988 hud/gfx2200.tpg */
-void *g_hHudFrogeTpg;  /* @0x45898c hud/froge00.tpg */
+int g_hHudListTpg;   /* @0x458980 hud/list00.tpg */
+int g_hHudCharTpg;   /* @0x458984 hud/char00.tpg */
+int g_hHudGfx2Tpg;   /* @0x458988 hud/gfx2200.tpg */
+int g_hHudFrogeTpg;  /* @0x45898c hud/froge00.tpg */
 
 /* --- HUD draw state @0x458990..0x4589a4 --- */
 int g_nScoreDisplay;         /* @0x458990 */
@@ -93,7 +93,7 @@ char g_acScratchText[256];
  * the right arrow's x order (phase -1 "Gå!!" block @0x4142a0). */
 #define HUD_COUNTDOWN_ARROWS(u0, u1, nMirror)                                    \
     memset(&cu, 0, sizeof(cu));                                                  \
-    cu.pTexture = g_hHudGfx2Tpg;                                                 \
+    cu.nTexture = g_hHudGfx2Tpg;                                                 \
     cu.U = (u0);  cu.U2 = (u0);                                                  \
     cu.gwU = (u1); cu.gwU2 = (u1);                                               \
     cu.V = 0x9700; cu.V2 = 0x9700;                                               \
@@ -122,24 +122,24 @@ void hudLoadGraphics(void)
 {
     char szPath[124];
 
-    fmtSprintf(szPath, "%s\\hud\\list00.tpg", g_aszLevelDirs[g_nLevelIdx]); /* @0x44fe1c? see note */
-    g_hHudListTpg = (void *)gxLoadTpgFile(szPath);
-    if (g_hHudListTpg == NULL) {
+    fmtSprintf(szPath, "%s\\hud\\LIST00.TPG", g_aszLevelDirs[g_nLevelIdx]); /* @0x44fe1c? see note */
+    g_hHudListTpg = gxLoadTpgFile(szPath);
+    if (g_hHudListTpg == 0) {
         fatalError("HUD graphics not found!");               /* @0x44fe04 @0x412741 */
     }
-    fmtSprintf(szPath, "%s\\hud\\char00.tpg", g_aszLevelDirs[g_nLevelIdx]); /* @0x44fdf0 @0x412766 */
-    g_hHudCharTpg = (void *)gxLoadTpgFile(szPath);
-    if (g_hHudCharTpg == NULL) {
+    fmtSprintf(szPath, "%s\\hud\\CHAR00.TPG", g_aszLevelDirs[g_nLevelIdx]); /* @0x44fdf0 @0x412766 */
+    g_hHudCharTpg = gxLoadTpgFile(szPath);
+    if (g_hHudCharTpg == 0) {
         fatalError("HUD graphics not found!");               /* @0x41277b */
     }
-    fmtSprintf(szPath, "%s\\hud\\gfx2200.tpg", g_aszLevelDirs[g_nLevelIdx]); /* @0x44fddc @0x41278b */
-    g_hHudGfx2Tpg = (void *)gxLoadTpgFile(szPath);
-    if (g_hHudGfx2Tpg == NULL) {
+    fmtSprintf(szPath, "%s\\hud\\GFX2200.TPG", g_aszLevelDirs[g_nLevelIdx]); /* @0x44fddc @0x41278b */
+    g_hHudGfx2Tpg = gxLoadTpgFile(szPath);
+    if (g_hHudGfx2Tpg == 0) {
         fatalError("HUD graphics not found!");               /* @0x4127a0 */
     }
-    fmtSprintf(szPath, "%s\\hud\\froge00.tpg", g_aszLevelDirs[g_nLevelIdx]); /* @0x44fdc8 @0x4127b0 */
-    g_hHudFrogeTpg = (void *)gxLoadTpgFile(szPath);
-    if (g_hHudGfx2Tpg == NULL) {                             /* sic — re-tests gfx2 @0x4127c2 */
+    fmtSprintf(szPath, "%s\\hud\\FROGE00.TPG", g_aszLevelDirs[g_nLevelIdx]); /* @0x44fdc8 @0x4127b0 */
+    g_hHudFrogeTpg = gxLoadTpgFile(szPath);
+    if (g_hHudGfx2Tpg == 0) {                             /* sic — re-tests gfx2 @0x4127c2 */
         fatalError("HUD graphics not found!");               /* @0x4127c7 */
     }
 }
@@ -267,7 +267,7 @@ void renderGameHud(void)
                 textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x44,
                                  HUD_ITEM_NAME(g_nCurrentItemId)); /* @0x412fc0 */
                 memset(&cu, 0, sizeof(cu));
-                cu.pTexture = g_hHudGfx2Tpg;                 /* @0x413068 */
+                cu.nTexture = g_hHudGfx2Tpg;                 /* @0x413068 */
                 cu.V = 0x7d00;  cu.V2 = 0x7d00;              /* @0x412fe1 */
                 cu.gwU = 0x6400; cu.gwU2 = 0x6400;
                 cu.hV = 0xd600; cu.hV2 = 0xd600;
@@ -304,7 +304,7 @@ void renderGameHud(void)
         gxDrawQuadColor(g_hHudGfx2Tpg, 0xc0, 0x32, 0x1bf, 0x65, 0, 0, 0xff, 0x32);
         textDrawCentered(g_hHudFontTiny, 0x2004, 0, 0x44, SZ_MOT_KASSORNA); /* @0x41323d */
         memset(&cu, 0, sizeof(cu));
-        cu.pTexture = g_hHudGfx2Tpg;                         /* @0x4132d7 */
+        cu.nTexture = g_hHudGfx2Tpg;                         /* @0x4132d7 */
         cu.V = 0x7d00;  cu.V2 = 0x7d00;
         cu.gwU = 0x6400; cu.gwU2 = 0x6400;
         cu.hV = 0xd600; cu.hV2 = 0xd600;
@@ -333,7 +333,7 @@ void renderGameHud(void)
         }
         if (g_nInvBarCur != 0) {                             /* @0x413390 */
             memset(&cu, 0, sizeof(cu));
-            cu.pTexture = g_hHudListTpg;                     /* @0x413412 */
+            cu.nTexture = g_hHudListTpg;                     /* @0x413412 */
             cu.V = (0xff - g_nInvBarCur) * 0x100;            /* @0x413398 */
             cu.V2 = cu.V;
             cu.gwU = 0xc800; cu.gwU2 = 0xc800;
@@ -368,7 +368,7 @@ void renderGameHud(void)
 
     if (g_playerRecords[g_nLocalPlayerIdx].pQuestMessage != NULL) { /* @0x4135ae */
         memset(&cu, 0, sizeof(cu));
-        cu.pTexture = g_hHudFrogeTpg;                        /* @0x413634 */
+        cu.nTexture = g_hHudFrogeTpg;                        /* @0x413634 */
         cu.gwU = 0xff00; cu.gwU2 = 0xff00;                   /* @0x4135bb */
         cu.hV = 0xff00;  cu.hV2 = 0xff00;
         memset(&v0, 0, sizeof(v0)); memset(&v1, 0, sizeof(v1));
@@ -388,7 +388,7 @@ void renderGameHud(void)
     /* local player face @0x4136f0 */
     i = g_playerRecords[g_nLocalPlayerIdx].nCharIdx;
     memset(&cu, 0, sizeof(cu));
-    cu.pTexture = g_hHudCharTpg;                             /* @0x4137ac */
+    cu.nTexture = g_hHudCharTpg;                             /* @0x4137ac */
     cu.U = (i & 3) * 0x40 * 0x100;                           /* @0x413731 */
     cu.U2 = cu.U;
     cu.V = (i / 4) * 0x40 * 0x100;                           /* @0x413737 */
@@ -409,7 +409,7 @@ void renderGameHud(void)
     /* checkout progress bar frame @0x4137e1 */
     nTmp = g_playerRecords[g_nLocalPlayerIdx].nCheckoutProgress; /* @0x413832 */
     memset(&cu, 0, sizeof(cu));
-    cu.pTexture = g_hHudCharTpg;                             /* @0x41387a */
+    cu.nTexture = g_hHudCharTpg;                             /* @0x41387a */
     cu.V = 0xc000;  cu.V2 = 0xc000;
     cu.gwU = 0xff00; cu.gwU2 = 0xff00;
     cu.hV = 0xd800;  cu.hV2 = 0xd800;
@@ -427,7 +427,7 @@ void renderGameHud(void)
         int nWide = (nTmp * 0xe9) / 100 + 0xe3;              /* @0x413913 */
 
         memset(&cu, 0, sizeof(cu));
-        cu.pTexture = g_hHudCharTpg;                         /* @0x41397d */
+        cu.nTexture = g_hHudCharTpg;                         /* @0x41397d */
         cu.V = 0xd800;  cu.V2 = 0xd800;
         cu.gwU = nFill * 0x100; cu.gwU2 = cu.gwU;
         cu.hV = 0xdd00;  cu.hV2 = 0xdd00;
@@ -441,7 +441,7 @@ void renderGameHud(void)
         gxDrawPolygon(&v0, &v1, &v2, &v3, 0x2004, &cu);      /* @0x4139ad */
 
         memset(&cu, 0, sizeof(cu));
-        cu.pTexture = g_hHudCharTpg;                         /* @0x413a31 */
+        cu.nTexture = g_hHudCharTpg;                         /* @0x413a31 */
         cu.U = 0x8000;  cu.U2 = 0x8000;
         cu.V = 0x8000;  cu.V2 = 0x8000;
         cu.gwU = 0xbf00; cu.gwU2 = 0xbf00;

@@ -1,36 +1,41 @@
-#include <windows.h>
+/* test_quit_input.c — SDL2 port: the quit-confirm SDL_QUIT path.
+ * stateQuitConfirm @0x4200b0 confirms J/Y character events (routed from
+ * SDL_TEXTINPUT by platformPumpEvents); confirmation pushes an SDL_QUIT
+ * event via platformRequestQuit. Other keys return to menuUpdate with no
+ * quit event. Needs only the SDL events subsystem (headless-safe). */
 
-#include "../src/maniac.c"
+#include <SDL2/SDL.h>
+
+#include "../src/menu.h"
+#include "../src/platform_sdl2.h"
+
+static int drainQuit(void)
+{
+    SDL_Event ev;
+    int found = 0;
+    while (SDL_PeepEvents(&ev, 1, SDL_GETEVENT, SDL_QUIT, SDL_QUIT) == 1)
+        found = 1;
+    return found;
+}
 
 int main(void)
 {
-    MSG msg;
+    if (SDL_Init(SDL_INIT_EVENTS) != 0) return 100;
 
-    g_bRunning = 1;
-    g_pendingKey = 0;
     g_pStateFunc = stateQuitConfirm;
     g_hMenuQuitTex = NULL;
 
-    /* A physical J produces WM_KEYDOWN followed by WM_CHAR. */
-    WindowProc(NULL, WM_KEYDOWN, 'J', 0);
-    if (g_pStateFunc != stateQuitConfirm) return 1;
-    WindowProc(NULL, WM_CHAR, 'j', 0);
-    if (!PeekMessageA(&msg, NULL, WM_QUIT, WM_QUIT, PM_REMOVE)) return 2;
+    /* A physical J produces keydown + text input; the character confirms. */
+    if (drainQuit()) return 1;
+    stateQuitConfirm(1, 'j', 0);
+    if (!drainQuit()) return 2;
 
-    /* Enter selects Avsluta through the deferred keydown path. Its translated
-     * character is processed while menuUpdate is still active, so it must
-     * not immediately cancel the newly displayed quit screen. */
-    g_pStateFunc = menuUpdate;
-    g_nMenuRow = 4;
-    WindowProc(NULL, WM_KEYDOWN, VK_RETURN, 0);
-    WindowProc(NULL, WM_CHAR, '\r', 0);
+    /* 'n' returns to the menu with no quit event. */
+    g_pStateFunc = stateQuitConfirm;
+    stateQuitConfirm(1, 'n', 0);
     if (g_pStateFunc != menuUpdate) return 3;
-    if (g_pendingKey) {
-        int key = g_pendingKeyId;
-        g_pendingKey = 0;
-        if (g_pStateFunc != NULL) g_pStateFunc(1, key, 2);
-    }
-    if (g_pStateFunc != stateQuitConfirm) return 4;
-    if (PeekMessageA(&msg, NULL, WM_QUIT, WM_QUIT, PM_REMOVE)) return 5;
+    if (drainQuit()) return 4;
+
+    SDL_Quit();
     return 0;
 }

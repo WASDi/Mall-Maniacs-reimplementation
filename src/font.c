@@ -1,10 +1,11 @@
-#include <windows.h>
+#include "compat_types.h"
 #include <stdlib.h>
 #include <string.h>
 
 #include "font.h"
 #include "gx.h"
 #include "pool.h"
+#include "quest.h"
 #include "util.h"
 
 /* =====================================================================
@@ -109,7 +110,7 @@ char *fontParseSkipSpaces(char *p)
  *   positions{ <byte> <glyph> ... }
  *   widths{    <byte> <width> ... }
  * Keys are located via strstr from the start of text each time. */
-gxFont *fontParse(char *text, void *texture, int posX, int posY, void *param5)
+gxFont *fontParse(char *text, int texture, int posX, int posY, int param5)
 {
     gxFont *font;
     char   *p;
@@ -119,9 +120,9 @@ gxFont *fontParse(char *text, void *texture, int posX, int posY, void *param5)
     int     bLowerA = 0, bUpperA = 0;
     int     atlasPitch;
 
-    font = (gxFont *)memPoolAlloc(g_fontPool, 0x510);
-    font->pTexture = texture;
-    font->pParam5 = param5;
+    font = (gxFont *)memPoolAlloc(g_fontPool, sizeof(gxFont));
+    font->nTexture = texture;
+    font->nParam5 = param5;
 
     /* fmtParseInt @0x43e860 is the original static-library decimal parser;
      * strtol preserves its result for the shipped descriptor grammar. */
@@ -229,7 +230,7 @@ gxFont *fontParse(char *text, void *texture, int posX, int posY, void *param5)
 }
 
 /* fontLoad @0x409070 — read descriptor file (pool 0) and parse it. */
-gxFont *fontLoad(char *path, void *texture, int posX, int posY, void *param5)
+gxFont *fontLoad(char *path, int texture, int posX, int posY, int param5)
 {
     char   *text;
     gxFont *font;
@@ -361,8 +362,8 @@ int textDraw(gxFont *font, unsigned int color, int x, int y, char *text)
         v2.b = (unsigned char)g_textColor;
         v3.r = v2.r; v3.g = v2.g; v3.b = v2.b;
         v0.a = v1.a = v2.a = v3.a = 0;
-        cuv.pTexture = font->pTexture;
-        cuv.pParam5 = font->pParam5;
+        cuv.nTexture = font->nTexture;
+        cuv.nParam5 = font->nParam5;
         cuv.pad = 0;
         cuv.U = (unsigned short)U;
         cuv.V = (unsigned short)V;
@@ -433,13 +434,16 @@ int textIntWidth(void *font, int value)
     return textWidth((gxFont *)font, buf);
 }
 
-/* textDrawWrappedCentered @0x4101d0 — word-wrap a message block's text
- * (block +0x10 holds the char*) to nMaxWidth px measured with g_hHudFontTiny
- * and draw each line centered at nY, stepping 0xf per line. Wraps on spaces
- * (backtracking to the last space) and hard newlines; the wrap point is
- * temporarily NUL-terminated in place. Called from renderGameHud's frog
- * message panel @0x413692. */
-void textDrawWrappedCentered(void *pMsgBlock, int nX, int nY, int nMaxWidth)
+/* textDrawWrappedCentered @0x4101d0 — word-wrap a quest record's question
+ * (QuestRecord.pszQuestion, +0x10 in the 32-bit original) to nMaxWidth px
+ * measured with g_hHudFontTiny and draw each line centered at nY, stepping
+ * 0xf per line. Wraps on spaces (backtracking to the last space) and hard
+ * newlines; the wrap point is temporarily NUL-terminated in place. Called
+ * from renderGameHud's frog message panel @0x413692.
+ * 64-bit port: the text is read via QuestRecord.pszQuestion, not the raw
+ * +0x10 offset (pointer widening moves it to +0x20 on 64-bit; the raw read
+ * fetched pPrev instead, so quiz questions never rendered). */
+void textDrawWrappedCentered(QuestRecord *pMsg, int nX, int nY, int nMaxWidth)
 {
     char *text;
     char cSave;
@@ -451,8 +455,8 @@ void textDrawWrappedCentered(void *pMsgBlock, int nX, int nY, int nMaxWidth)
     char *p;
 
     (void)nX;
-    if (pMsgBlock == NULL) return;
-    text = *(char **)((char *)pMsgBlock + 0x10);         /* @0x4101e4 */
+    if (pMsg == NULL) return;
+    text = pMsg->pszQuestion;                                  /* +0x10 orig @0x4101e4 */
     y = nY;
     if (text == NULL || *text == '\0') return;
     acOne[1] = '\0';   /* original zero-fills the 1-char measure slot @0x4101f5 */

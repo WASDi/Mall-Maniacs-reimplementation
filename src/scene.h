@@ -23,7 +23,8 @@ typedef unsigned int   uint;
  * returns its raw bytes (see sen.c). The SceneNode is a 0xa8 (+subobj*0x70) record. */
 
 /* --- shared mesh registry (defined in sen.c) --- */
-extern void *g_pMeshTable;     /* @0x45e930 8-byte entries {char*name, void*meshData} */
+struct MeshTableEntry;
+extern struct MeshTableEntry *g_pMeshTable; /* @0x45e930 {name,data} entries */
 extern int   g_nMeshTableCount;/* @0x45e994 */
 
 /* --- SceneObjTypeDef: a MESH chunk (serialized in a .sen). sceneMeshFixup
@@ -202,11 +203,11 @@ extern int        g_nSceneCurrentObj; /* @0x45e608 channel index of current obj 
  * header node ids, rows 1..nCols-1 the "_<level><col>" detail nodes. */
 typedef struct SceneDetailGrid {
     int   nFailed;      /* +0x00 1 = setup failed -> fatalError */
-    int   nRootNode;    /* +0x04 root scene node */
+    struct SceneNode *pRootNode; /* +0x04 root scene node (id in 32-bit original) */
     int   nColsFilled;  /* +0x08 column entries registered */
     int   nRows;        /* +0x0c row stride (0x400) */
     int   nCols;        /* +0x10 detail-level count (4) */
-    int  *pCells;       /* +0x14 nCols*nRows node ids (memPool) */
+    struct SceneNode **pCells; /* +0x14 nCols*nRows scene nodes (ids in 32-bit original) */
     void *pRowBuf;      /* +0x18 nColsFilled * 0x14 mesh bboxes (memPool) */
     float *pColScales;  /* +0x1c nCols squared-distance detail thresholds */
 } SceneDetailGrid;      /* 0x20 */
@@ -225,30 +226,38 @@ typedef struct SceneDetailCell {
     int bPosValid;  /* +0x10 nonzero = refresh nX/nY/nZ this frame */
 } SceneDetailCell;      /* 0x14 */
 
-/* camera/root block passed to sceneRender (mode==2 @+0, viewport rect @+0x20)
- * Layout verified vs disasm 0x4318e0 / 0x42f1c0: +0 mode (short, ==2),
- * +0x20 vx/vy/vw/vh (short), +0x28 nWidth (float), +0x2c nHeight (float),
- * +0x30 renderT (float/int bits, used as float via FILD). The original
- * repurposes a SceneNode (0xa8 bytes) as this block — fields at +0x20..+0x30
- * overlap SceneNode.nId/bType/pTypeDef region but sceneRender only reads
- * mode and the viewport fields. For type safety nWidth/nHeight are float. */
+/* camera/root block passed to sceneRender (mode==2 @+0, viewport fields).
+ * Layout verified vs disasm 0x4318e0 / 0x42f1c0. The original repurposes a
+ * SceneNode as this block: the viewport fields reuse storage the camera
+ * node never needs (mesh pointer, cache/morph fields).
+ * 64-bit port: the reuse is by FIELD IDENTITY, not by byte offset — the
+ * struct mirrors SceneNode's prefix exactly so list linkage (pParent/
+ * pNextSib/pChild/pPrevLink), pChannels, radii and the embedded channel
+ * sit at identical offsets, and the viewport fields overlay the unused
+ * tail (pTypeDef, nCacheFlag, morph indices, flMorphT). The original
+ * numeric offsets (+0x20..+0x30) are 32-bit-only. sceneRender reads mode
+ * and the viewport fields through this same struct. */
 typedef struct __attribute__((packed)) SceneCameraBlock {
-    short mode;         /* +0  == 2 */
-    short unk2;
-    int   unk4;
-    int   unk8;
-    int   unkC;
-    int   unk10;
-    int   unk14;
-    int   unk18;
-    int   unk1c;
-    short vx;           /* +0x20 virtual rect x (short) */
-    short vy;           /* +0x22 */
-    short vw;           /* +0x24 */
-    short vh;           /* +0x26 */
-    float nWidth;       /* +0x28 float (bits moved via int in disasm) */
-    float nHeight;      /* +0x2c float */
-    float renderT;      /* +0x30 float (stored via int, FILD in sceneNodeRender) */
+    unsigned short mode;         /* overlays nId; == 2 */
+    unsigned char  bType;        /* overlays bType */
+    unsigned char  nChannelCount;/* overlays nChannelCount */
+    struct SceneNode *pParent;   /* mirrored linkage */
+    struct SceneNode *pNextSib;
+    struct SceneNode *pChild;
+    struct SceneNode *pPrevLink;
+    SceneChannel *pChannels;     /* mirrored (-> embedded ch) */
+    int  nBoundingRadiusA;       /* mirrored */
+    int  nBoundingRadiusB;       /* mirrored */
+    short vx;           /* overlays pTypeDef (unused for camera) */
+    short vy;
+    short vw;
+    short vh;
+    float nWidth;       /* overlays nCacheFlag (unused for camera) */
+    float nHeight;      /* overlays nMorphIdxA (unused for camera) */
+    float renderT;      /* overlays nMorphIdxB (int bits via FILD) */
+    int   nReservedFlMorphT; /* overlays flMorphT */
+    int   nField_34;    /* mirrored */
+    SceneChannel ch;    /* mirrored embedded channel */
 } SceneCameraBlock;
 
 /* --- globals --- */

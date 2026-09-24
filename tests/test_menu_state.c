@@ -1,4 +1,5 @@
-#include "../src/maniac.c"
+#include "../src/menu.h"
+#include "../src/gx.h"
 
 extern int g_menuMode;
 extern void *g_hIntroTex[6];

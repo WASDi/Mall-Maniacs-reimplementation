@@ -227,8 +227,6 @@ Document behavior when a device cannot be opened. No
   investigation discovers original-binary facts (types, structures, names,
   comments, or behavior); document intentional SDL/OpenGL port deviations
   separately rather than treating them as original behavior.
-- Docs: use `docs/17-cross-platform.md` for future documentation in addition
-  to this file. Do not document what this file already says.
 
 ## Suggested order (every numbered phase and integration subphase compiles and links)
 

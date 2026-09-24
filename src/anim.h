@@ -1,7 +1,9 @@
 #ifndef ANIM_H
 #define ANIM_H
 
-#include <windows.h>
+#include "compat_types.h"
+
+#include <stddef.h>
 
 /* anim.h — .anm animation cluster (maniac.exe 0x433xxx/0x434xxx).
  * Reimplementation of the full loader + playback chain, verified against
@@ -21,8 +23,9 @@
  *   sceneObjectAnimStep  @0x434540  multi-obj list step
  *   sceneObjectAnimStepInterp @0x4347c0  interpolation variant (results screen)
  *
- * AnmFile is a 0x38-byte header followed by nTrack*8 track table then record
- * data, all in one memPoolAlloc arena. See anmLoad disassembly for layout.
+ * AnmFile is a native-size header followed by nTrack*sizeof(AnmTrack) track
+ * table then record data, all in one memPoolAlloc arena (0x38 + nTrack*8 in
+ * the 32-bit original). See anmLoad disassembly for layout.
  */
 
 #ifndef byte
@@ -50,18 +53,26 @@ typedef struct AnmFile {
     int   nFaceX, nFaceY, nFaceZ;/* +0x2c facing target (op2) */
 } AnmFile; /* 0x38 */
 
-/* Track: 8 bytes {int nRecs; void *pRecs} — pRecs points into arena record data */
+/* Track: {int nRecs; void *pRecs} — 8 bytes in the 32-bit original, native
+ * sizeof(AnmTrack) here; pRecs points into arena record data */
 typedef struct AnmTrack {
     int   nRecs;
     void *pRecs;
 } AnmTrack;
 
-/* AnmSet holder: 0x18 bytes. Mesh slots at +0,+4,+8, padding at +0xc,+0x10, pAnm at +0x14 */
+/* AnmSet holder. The original is 0x18 bytes (slots at +0,+4,+8, ints at
+ * +0xc/+0x10, pAnm at +0x14). sceneObjectAnimStep/Interp take AnmSet* AS
+ * SceneObjAnimList* (gameplay.c:240,1495ff): the list reader sees
+ * apObjs[0..2]=pMesh slots, apObjs[3]=(nUnkC,nUnk10)=NULL terminator, and
+ * pState=pAnm (AnmFile mirrors SceneObjAnimState). 64-bit port: explicit
+ * padding keeps pAnm at the pState offset; the apObjs[3] NULL overlap is
+ * preserved. See the AnmAliasCheck asserts in anim.c. */
 typedef struct AnmSet {
-    void   *pMesh[3];      /* +0x00, +0x04, +0x08 */
-    int     nUnkC;         /* +0x0c */
-    int     nUnk10;        /* +0x10 */
-    AnmFile *pAnm;         /* +0x14 */
+    void   *pMesh[3];      /* +0x00/+0x08/+0x10 mesh slots (was +0/+4/+8) */
+    int     nUnkC;         /* +0x18 (was +0x0c) */
+    int     nUnk10;        /* +0x1c (was +0x10) */
+    int     _pad20;        /* +0x20 padding (always 0) */
+    AnmFile *pAnm;         /* +0x28 (was +0x14): aliases SceneObjAnimList.pState */
 } AnmSet;
 
 /* Owning pool globals — mirrors original g_pAnmCacheList @0x45ebc8 / g_nAnmCacheCount @0x45ebcc */
@@ -75,7 +86,8 @@ byte  dataReadU8(byte *pData);                          /* @0x433ee0 */
 unsigned short dataReadU16(byte *pData);                /* @0x433ef0 */
 unsigned int   dataReadU32(byte *pData);                /* @0x433f10 */
 
-/* sizing pass — computes arena size = 0x38 + nTrack*8 + recordBytes, allocates via pPool */
+/* sizing pass — computes arena size = sizeof(AnmFile) + nTrack*sizeof(AnmTrack)
+ * + recordBytes (0x38 + nTrack*8 in the original), allocates via pPool */
 void anmCalcSize(void *pPool, byte *pData, AnmFile **ppOut, void **ppTrackData, void **ppRecordData); /* @0x433f40 */
 
 /* loader — validates "ANM" + version 1|2, builds track/record tables via scenNameToIdEx, returns AnmFile* */
@@ -94,33 +106,57 @@ void eventAnimReset(AnmFile *pAnm);                            /* @0x434270 */
 int  eventAnimStep(AnmFile *pAnm, byte bLoop);                 /* @0x434090 */
 void eventAnimApply(AnmFile *pAnm, byte bLoop);                /* @0x434290 (void in Ghidra, takes AnmFile*) */
 
-/* --- Multi-object anim state (sceneObjectAnimStep @0x434540). Mirrors the
- * AnmFile header layout; slots +0x10/+0x14/+0x18 are unused by the list
- * variant. Lives inside the player record, state pointer held at list+0x14.
+/* --- Multi-object anim state (sceneObjectAnimStep @0x434540). This struct is
+ * NEVER allocated standalone: sceneObjectAnimStep/Interp receive an AnmSet*
+ * as a SceneObjAnimList*, so pState IS the AnmFile* (see AnmSet above) and
+ * every field below must sit at the same offset as its AnmFile counterpart
+ * (verified by the AnmStateCheck asserts below). The 32-bit original used
+ * one 0x38 layout for both; the 64-bit port widens the pointer fields, so
+ * this struct mirrors AnmFile's widened layout field-for-field. A previous
+ * revision kept the 32-bit offsets here (pMasterNode at +0x1c), which made
+ * the steppers read AnmFile.pObj as pMasterNode and AnmFile.pMasterNode/
+ * nPosX as nPosX/nPosY/nPosZ: every frame stomped character LOD slot 0's
+ * local position with heap-pointer low bits (frustum-culled → invisible)
+ * and broke the detail-grid distance for that row (stuck at lowest LOD).
  * Field roles verified vs disasm 0x434540: EBP+0x00 frame, +0x04 frameCount,
  * +0x08 loop reset target for +0x0c (pCurTrack, advances +8 per frame),
- * +0x1c pMasterNode, +0x20 pos target, +0x2c facing target. --- */
+ * +0x1c pMasterNode, +0x20 pos target, +0x2c facing target (32-bit). --- */
 typedef struct SceneObjAnimState {
-    int        nFrame;       /* +0x00 current frame index */
+    int        nFrame;       /* +0x00 current frame index (aliases AnmFile.nFrame) */
     int        nFrameCount;  /* +0x04 total frames */
-    void      *pLoopBase;    /* +0x08 track-table base (pCurTrack reset target) */
-    AnmTrack  *pCurTrack;    /* +0x0c current track pointer (advances +8/frame) */
-    int        nUnk10;       /* +0x10 unused by the steppers */
-    int        nUnk14;       /* +0x14 unused */
-    int        nUnk18;       /* +0x18 unused */
-    SceneNode *pMasterNode;  /* +0x1c pos/facing snap target (may be 0) */
-    int        nPosX, nPosY, nPosZ;     /* +0x20 pos target (op 1) */
-    int        nFaceX, nFaceY, nFaceZ;  /* +0x2c facing target (op 2) */
-} SceneObjAnimState; /* 0x38 */
+    void      *pLoopBase;    /* +0x08 track-table base (aliases AnmFile.pTrackBase) */
+    AnmTrack  *pCurTrack;    /* +0x10 current track pointer */
+    int        nUnk18;       /* +0x18 unused (aliases AnmFile.nLoopStart) */
+    int        _pad1c;       /* +0x1c alignment pad */
+    void      *pUnk20;       /* +0x20 unused (aliases AnmFile.pPool) */
+    void      *pUnk28;       /* +0x28 unused (aliases AnmFile.pObj) */
+    SceneNode *pMasterNode;  /* +0x30 pos/facing snap target (may be 0) */
+    int        nPosX, nPosY, nPosZ;     /* +0x38 pos target (op 1) */
+    int        nFaceX, nFaceY, nFaceZ;  /* +0x44 facing target (op 2) */
+} SceneObjAnimState;
+
+/* The steppers view AnmFile memory through SceneObjAnimState: every used
+ * field must alias exactly (C99 compile-time checks). */
+typedef char AnmStateCheckFrame[offsetof(SceneObjAnimState, nFrame) == offsetof(AnmFile, nFrame) ? 1 : -1];
+typedef char AnmStateCheckFrameCount[offsetof(SceneObjAnimState, nFrameCount) == offsetof(AnmFile, nFrameCount) ? 1 : -1];
+typedef char AnmStateCheckLoopBase[offsetof(SceneObjAnimState, pLoopBase) == offsetof(AnmFile, pTrackBase) ? 1 : -1];
+typedef char AnmStateCheckCurTrack[offsetof(SceneObjAnimState, pCurTrack) == offsetof(AnmFile, pCurTrack) ? 1 : -1];
+typedef char AnmStateCheckMaster[offsetof(SceneObjAnimState, pMasterNode) == offsetof(AnmFile, pMasterNode) ? 1 : -1];
+typedef char AnmStateCheckPosX[offsetof(SceneObjAnimState, nPosX) == offsetof(AnmFile, nPosX) ? 1 : -1];
+typedef char AnmStateCheckPosY[offsetof(SceneObjAnimState, nPosY) == offsetof(AnmFile, nPosY) ? 1 : -1];
+typedef char AnmStateCheckPosZ[offsetof(SceneObjAnimState, nPosZ) == offsetof(AnmFile, nPosZ) ? 1 : -1];
+typedef char AnmStateCheckFaceX[offsetof(SceneObjAnimState, nFaceX) == offsetof(AnmFile, nFaceX) ? 1 : -1];
+typedef char AnmStateCheckFaceY[offsetof(SceneObjAnimState, nFaceY) == offsetof(AnmFile, nFaceY) ? 1 : -1];
+typedef char AnmStateCheckFaceZ[offsetof(SceneObjAnimState, nFaceZ) == offsetof(AnmFile, nFaceZ) ? 1 : -1];
 
 /* Object list consumed by sceneObjectAnimStep/sceneObjectAnimStepInterp:
- * up to five scene nodes, 0-terminated, followed by the state pointer at
- * +0x14 (Ghidra view was int*; the entries are SceneNode* per the
- * sceneObjSetPos calls at 0x4345eb/0x43465a). Stored in the player record. */
+ * up to five scene nodes, 0-terminated, followed by the state pointer
+ * (0x14/0x18 in the 32-bit original; native offsets here, kept compatible
+ * with AnmSet above). Stored in the player record. */
 typedef struct SceneObjAnimList {
-    SceneNode         *apObjs[5]; /* +0x00 0-terminated object list */
-    SceneObjAnimState *pState;    /* +0x14 animation state */
-} SceneObjAnimList; /* 0x18 */
+    SceneNode         *apObjs[5]; /* 0-terminated object list */
+    SceneObjAnimState *pState;    /* animation state (aliases AnmSet.pAnm) */
+} SceneObjAnimList;
 
 int  sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop);            /* @0x434540 */
 void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop);      /* @0x4347c0 interpolation variant */

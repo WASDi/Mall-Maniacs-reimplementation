@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "compat_types.h"
 
 #include "player.h"
 #include "player_setup.h"
@@ -217,25 +217,25 @@ void playerSetupRound(void) /* @0x410e90 */
         memcpy(&pRec->flAccSpeed, &pRec->field_228_pad, 0x40);             /* +0x1e8 <- +0x228 @0x411136 */
         memcpy(&pRec->flCartAccSpeed, &pRec->field_228_pad, 0x40);         /* +0x268 <- +0x228 @0x411144 */
         {
-            void *pNew = malloc(0x48);                                     /* operator_new @0x43dd42 @0x411146 */
+            void *pNew = malloc(sizeof(WorldNode));                                     /* operator_new @0x43dd42 @0x411146 */
             pRec->pSubObjA = (pNew != NULL)                                /* +0x224 @0x41117f */
                 ? worldNodeCtor(pNew, 0, 0, 0, 0, &pRec->mstrCharacterName) /* @0x402a20 @0x41116a */
                 : NULL;                                                    /* @0x411171 */
         }
         {
-            void *pNew = malloc(0x48);                                     /* @0x411185 */
+            void *pNew = malloc(sizeof(WorldNode));                                     /* @0x411185 */
             pRec->pSubObjB = (pNew != NULL)                                /* +0x264 @0x4111ba */
                 ? worldNodeCtor(pNew, 0, 0, 0, 0, NULL)                    /* @0x4111a8 */
                 : NULL;                                                    /* @0x4111af */
         }
         {
-            void *pNew = malloc(0x48);                                     /* @0x4111bd */
+            void *pNew = malloc(sizeof(WorldNode));                                     /* @0x4111bd */
             pRec->pSubObjC = (pNew != NULL)                                /* +0x2a4 @0x4111ee */
                 ? worldNodeCtor(pNew, 0, 0, 0, 0, &pRec->mstrCharacterName) /* @0x4111e5 */
                 : NULL;                                                    /* @0x4111ec */
         }
         pRec->nCartMode = 1;                                               /* @0x4111f1 */
-        wsprintfA(szBuf, "characters[%d]", pRec->nCharIdx);           /* @0x44f9fc @0x411201 */
+        snprintf(szBuf, sizeof(szBuf), "characters[%d]", pRec->nCharIdx);           /* @0x44f9fc @0x411201 */
         pNode = configEnvGetValue(&g_configEnvMaster, pObjects, szBuf);    /* @0x436560 @0x411227 */
         if (pNode == NULL) {
             fatalError("'objects/characters[%d]' not found in cfg.",       /* @0x44f9d0 @0x41123e */
@@ -244,12 +244,12 @@ void playerSetupRound(void) /* @0x410e90 */
         configEnvGetString(&mstrValue, pNode, "object_name");              /* @0x44f9c4 @0x436990 @0x411256 */
         mStringAssignCopy(&pRec->mstrCharacterName, &mstrValue);           /* @0x435440 @0x41126f */
         mStringFree(&mstrValue);                                           /* @0x435430 @0x41127f */
-        lstrcpyA(pRec->szCharName, g_apCharNames[pRec->nCharIdx]);/* @0x45013c @0x41129b */
+        strcpy(pRec->szCharName, g_apCharNames[pRec->nCharIdx]);/* @0x45013c @0x41129b */
         pRec->nStatSpeed = g_kCharStatSpeed[pRec->nCharIdx];          /* @0x4501b4 @0x4112c5 */
         pRec->nStatStrength = g_kCharStatStrength[pRec->nCharIdx];    /* @0x4501b8 @0x4112db */
         pRec->nStatAgility = g_kCharStatAgility[pRec->nCharIdx];      /* @0x4501bc @0x4112f1 */
         pRec->nCheckoutProgress = 0;                                               /* @0x411302 */
-        wsprintfA(szBuf, "carts[%d]", pRec->nCartIdx);                     /* @0x44f9b8 @0x411313 */
+        snprintf(szBuf, sizeof(szBuf), "carts[%d]", pRec->nCartIdx);                     /* @0x44f9b8 @0x411313 */
         pNode = configEnvGetValue(&g_configEnvMaster, pObjects, szBuf);    /* @0x411331 */
         if (pNode == NULL) {
             fatalError("'objects/carts[%d]' not found in cfg.",            /* @0x44f990 @0x411348 */
@@ -301,19 +301,19 @@ void playerSetupSceneObjects(void) /* @0x411550 */
 {
     int i;
     char szBuf[0x80];
-    int nMesh;
+    void *nMesh;
 
     appLog("Creating objects...");                                         /* @0x44fbf4 @0x41155f */
     nMesh = scenNameToId("VAGNPIL");                                       /* @0x44fbec @0x431ed0 @0x41156a */
     if (nMesh == 0) {
         fatalError("Mesh 'VAGNPIL' not found.");                           /* @0x44fbd0 @0x41157d */
     }
-    g_pCartArrowObj = (SceneNode *)sceneryObjAlloc(NULL, 0, 0, 0, 0, 0, 0, 0, (void *)(size_t)nMesh); /* @0x430200 @0x41158e */
+    g_pCartArrowObj = (SceneNode *)sceneryObjAlloc(NULL, 0, 0, 0, 0, 0, 0, 0, nMesh); /* @0x430200 @0x41158e */
     nMesh = scenNameToId("VARUPIL");                                       /* @0x44fbc8 @0x41159d */
     if (nMesh == 0) {
         fatalError("Object 'VARUPIL' not found.");                         /* @0x44fbac @0x4115b0 */
     }
-    g_pGoodsArrowObj = (SceneNode *)sceneryObjAlloc(NULL, 0, 0, 0, 0, 0, 0, 0, (void *)(size_t)nMesh); /* @0x4115c1 */
+    g_pGoodsArrowObj = (SceneNode *)sceneryObjAlloc(NULL, 0, 0, 0, 0, 0, 0, 0, nMesh); /* @0x4115c1 */
 
     for (i = 0; i < g_nPlayerCount; i++) {
         PlayerRecord *pRec = &g_playerRecords[i];
@@ -326,20 +326,20 @@ void playerSetupSceneObjects(void) /* @0x411550 */
         if (nMesh == 0) {
             fatalError("SPLASH mesh not found.");                          /* @0x44fb8c @0x411617 */
         }
-        pShadow = (SceneNode *)sceneryObjAlloc(pRec->pCharSceneNode, 0, 0, -0x4b0, 0, 0, 0, 0, (void *)(size_t)nMesh); /* @0x411635 */
+        pShadow = (SceneNode *)sceneryObjAlloc(pRec->pCharSceneNode, 0, 0, -0x4b0, 0, 0, 0, 0, nMesh); /* @0x411635 */
         pRec->pCharShadowNode = pShadow;                                   /* @0x41164d */
-        sceneryObjAlloc(pShadow, 0, 0, 0, 0, 0, 16000, 0, (void *)(size_t)nMesh); /* result unused @0x411650 */
+        sceneryObjAlloc(pShadow, 0, 0, 0, 0, 0, 16000, 0, nMesh); /* result unused @0x411650 */
         sceneNodeSetHiddenFlag(pRec->pCharShadowNode, 2);             /* @0x4305c0 @0x41165e */
         nMesh = scenNameToId(mStringCStr(&pRec->mstrCharacterName));       /* @0x4351d0 @0x41166e */
         if (nMesh == 0) {
             fatalError("Character mesh '%s' for player %d not found.",     /* @0x44fb5c @0x41168e */
                        mStringCStr(&pRec->mstrCharacterName), i);
         }
-        pRec->pCharSceneObj = (SceneNode *)sceneryObjAlloc(pRec->pCharSceneNode, 0, 0, 0, 0, 0, 0, 0, (void *)(size_t)nMesh); /* @0x4116a9 */
+        pRec->pCharSceneObj = (SceneNode *)sceneryObjAlloc(pRec->pCharSceneNode, 0, 0, 0, 0, 0, 0, 0, nMesh); /* @0x4116a9 */
         pRec->pCharMeshSlots[0] = pRec->pCharSceneObj;                        /* @0x4116b1 */
         nCount = 1;                                                        /* @0x4116b6 */
         for (slot = 1; slot < 3; slot++) {                                 /* @0x4116be */
-            wsprintfA(szBuf, "_%d%s", slot, mStringCStr(&pRec->mstrCharacterName)); /* @0x44fb54 @0x4116d1 */
+            snprintf(szBuf, sizeof(szBuf), "_%d%s", slot, mStringCStr(&pRec->mstrCharacterName)); /* @0x44fb54 @0x4116d1 */
             nMesh = scenNameToId(szBuf);                                   /* @0x4116dc */
             if (nMesh == 0) {                                              /* @0x4116e6 */
                 if (slot < 3) {
@@ -351,11 +351,11 @@ void playerSetupSceneObjects(void) /* @0x411550 */
                 }
                 break;
             }
-            pRec->pCharMeshSlots[slot] = (SceneNode *)sceneryObjAlloc(pRec->pCharSceneNode, 0, 0, 0, 0, 0, 0, 0, (void *)(size_t)nMesh); /* @0x4116fb */
+            pRec->pCharMeshSlots[slot] = (SceneNode *)sceneryObjAlloc(pRec->pCharSceneNode, 0, 0, 0, 0, 0, 0, 0, nMesh); /* @0x4116fb */
             nCount = slot + 1;                                             /* @0x411709 */
         }
         sceneDetailGridAddRow((SceneDetailGrid *)g_pSceneDetailGrid, /* @0x42b000 @0x41173d */
-                              (int *)pRec->pCharMeshSlots, nCount);
+                              pRec->pCharMeshSlots, nCount);
         pRec->apAnmSets[0] = anmSetAlloc(anmLoadFile("anim\\s_pick1.anm", NULL, pRec->pCharSceneObj));   /* @0x44fb40 @0x411757 */
         pRec->apAnmSets[1] = anmSetAlloc(anmLoadFile("anim\\s_pick2.anm", NULL, pRec->pCharSceneObj));   /* @0x44fb2c @0x411772 */
         pRec->apAnmSets[2] = anmSetAlloc(anmLoadFile("anim\\s_flpick1.anm", NULL, pRec->pCharSceneObj)); /* @0x44fb18 @0x41178d */
@@ -379,14 +379,14 @@ void playerSetupSceneObjects(void) /* @0x411550 */
             fatalError("Cart mesh '%s' for player %d not found.",          /* @0x44fa5c @0x411966 */
                        mStringCStr(&pRec->mstrCartName), i);
         }
-        pRec->pCartSceneObj = (SceneNode *)sceneryObjAlloc(NULL, 0, 0, 0, 0, 0, 0, 0, (void *)(size_t)nMesh); /* @0x41197f */
+        pRec->pCartSceneObj = (SceneNode *)sceneryObjAlloc(NULL, 0, 0, 0, 0, 0, 0, 0, nMesh); /* @0x41197f */
         nMesh = scenNameToId("SPLASH");                                    /* @0x41198c */
         if (nMesh == 0) {
             fatalError("SPLASH mesh not found.");                          /* @0x41199f */
         }
-        pShadow = (SceneNode *)sceneryObjAlloc(pRec->pCartSceneObj, 0, 0, -0x4b0, 0, 0, 0, 0, (void *)(size_t)nMesh); /* @0x4119bd */
+        pShadow = (SceneNode *)sceneryObjAlloc(pRec->pCartSceneObj, 0, 0, -0x4b0, 0, 0, 0, 0, nMesh); /* @0x4119bd */
         pRec->pCartShadowNode = pShadow;                                   /* +0x24 @0x4119d5 */
-        sceneryObjAlloc(pShadow, 0, 0, 0, 0, 0, 16000, 0, (void *)(size_t)nMesh); /* result unused @0x4119d8 */
+        sceneryObjAlloc(pShadow, 0, 0, 0, 0, 0, 16000, 0, nMesh); /* result unused @0x4119d8 */
         sceneNodeSetHiddenFlag(pRec->pCartShadowNode, 2);             /* @0x4119e6 */
         pRec->pCartHandleL = (SceneNode *)sceneNodeAllocChild(pRec->pCartSceneObj, NULL, NULL, NULL, NULL); /* +0x44 @0x4319e0 @0x4119f7 */
         pRec->pCartHandleR = (SceneNode *)sceneNodeAllocChild(pRec->pCartSceneObj, NULL, NULL, NULL, NULL); /* +0x48 @0x411a0b */
@@ -399,10 +399,10 @@ void playerSetupSceneObjects(void) /* @0x411550 */
     g_pCamAimNode = (SceneNode *)sceneNodeAllocChild(NULL, NULL, NULL, NULL, NULL); /* @0x411a97 */
     g_pGoodsArrowMesh = (SceneNode *)sceneNodeAllocChild(g_pSceneRoot, NULL,  /* @0x411ab9 */
                                                          (void *)0xfffffce0, (void *)0x24e, (void *)0x4b0);
-    sceneObjSetClassMesh((int)g_pGoodsArrowObj, g_pGoodsArrowMesh, 0, 3);  /* @0x430db0 @0x411ace */
+    sceneObjSetClassMesh(g_pGoodsArrowObj, g_pGoodsArrowMesh, 0, 3);  /* @0x430db0 @0x411ace */
     g_pCartArrowMesh = (SceneNode *)sceneNodeAllocChild(g_pSceneRoot, NULL,   /* @0x411aee */
                                                         (void *)0x320, (void *)0x24e, (void *)0x4b0);
-    sceneObjSetClassMesh((int)g_pCartArrowObj, g_pCartArrowMesh, 0, 3);    /* @0x411b04 */
+    sceneObjSetClassMesh(g_pCartArrowObj, g_pCartArrowMesh, 0, 3);    /* @0x411b04 */
     g_pMenuSceneRoot = (SceneNode *)sceneNodeAlloc((void *)0x3f800000, (void *)0x41200000, /* @0x411b26 */
                                                    (void *)0x61a8, 0, 0, 0x400, 0x800);
     g_pMenuSceneChildA = (SceneNode *)sceneNodeAllocChild(NULL, NULL, NULL, NULL, NULL); /* @0x411b3d */
@@ -444,7 +444,7 @@ void levelObjectsCartsCameraInit(void) /* @0x411b70 */
         float flExtentA;
         float flExtentB;
 
-        wsprintfA(szKey, "objects/carts[%d]", pRec->nCartIdx);   /* @0x44fd84 @0x411bba */
+        snprintf(szKey, sizeof(szKey), "objects/carts[%d]", pRec->nCartIdx);   /* @0x44fd84 @0x411bba */
         pCfg = configEnvGetValue(&g_configEnvMaster, NULL, szKey);        /* @0x411b6a */
         if (pCfg == NULL) {
             fatalError("'objects/carts[%d]' not found in cfg.",           /* @0x44f990 */
@@ -474,44 +474,44 @@ void levelObjectsCartsCameraInit(void) /* @0x411b70 */
 
         /* cart body cluster on pSubObjB (parent = cart scene object) @0x411cd3 */
         objTurretAdd((WorldNode *)pRec->pSubObjB, 0, 0, 0, 0,             /* @0x405280 @0x411d09 */
-                     (int)pRec->pCartSceneObj);
+                     (intptr_t)pRec->pCartSceneObj);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjB, 0, 0, 150, 270.0f, 75.0f,      /* @0x4053a0 @0x411d31 */
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
+                         (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjB, 0, 0, -150, 300.0f, 75.0f,     /* @0x411d59 */
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
+                         (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjB, 190, 0, 300, 20.0f, 75.0f,     /* @0x411d84 */
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
+                         (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjB, -190, 0, 300, 20.0f, 75.0f,    /* @0x411daf */
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
+                         (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjB, 240, 0, -300, 20.0f, 75.0f,    /* @0x411dda */
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
+                         (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjB, -240, 0, -300, 20.0f, 75.0f,   /* @0x411e05 */
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
-        objTurretSetValue((WorldNode *)pRec->pSubObjB, (int)pRec->pCartSceneObj,     /* @0x405370 @0x411e17 */
+                         (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
+        objTurretSetValue((WorldNode *)pRec->pSubObjB, (intptr_t)pRec->pCartSceneObj,     /* @0x405370 @0x411e17 */
                           1, 2);
 
         /* cart world cluster on pSubObjC at carts[%d]/object_pos @0x411e39 */
         objTurretAdd((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],          /* @0x411e39 */
-                     anObjPos[2], anObjRot[1], (int)pRec->pCartSceneObj);
+                     anObjPos[2], anObjRot[1], (intptr_t)pRec->pCartSceneObj);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],      /* @0x411e6d */
                          anObjPos[2] + 150, 270.0f, flExtentB,
-                         (int)pRec->pCartSceneObj, 240.0f, 1);
+                         (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],      /* @0x411e9d */
                          anObjPos[2] - 150, 300.0f, flExtentB,
-                         (int)pRec->pCartSceneObj, 300.0f, 1);
+                         (intptr_t)pRec->pCartSceneObj, 300.0f, 1);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0] + 190, anObjPos[1],/* @0x411ed2 */
                           anObjPos[2] + 300, 5.0f, flExtentB,
-                          (int)pRec->pCartSceneObj, 240.0f, 1);
+                          (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0] - 190, anObjPos[1],/* @0x411f07 */
                           anObjPos[2] + 300, 5.0f, flExtentB,
-                          (int)pRec->pCartSceneObj, 240.0f, 1);
+                          (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0] + 240, anObjPos[1],/* @0x411f3d */
                           anObjPos[2] - 300, 5.0f, flExtentB,
-                          (int)pRec->pCartSceneObj, 240.0f, 1);
+                          (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0] - 240, anObjPos[1],/* @0x411f72 */
                           anObjPos[2] - 300, 5.0f, flExtentB,
-                          (int)pRec->pCartSceneObj, 240.0f, 1);
-        objTurretSetValue((WorldNode *)pRec->pSubObjC, (int)pRec->pCartSceneObj,     /* @0x411f84 */
+                          (intptr_t)pRec->pCartSceneObj, 240.0f, 1);
+        objTurretSetValue((WorldNode *)pRec->pSubObjC, (intptr_t)pRec->pCartSceneObj,     /* @0x411f84 */
                           1, 2);
 
         /* carts[%d]/handle_pos — two {x,y,z} triples onto the cart children @0x411f89 */
@@ -536,7 +536,7 @@ void levelObjectsCartsCameraInit(void) /* @0x411b70 */
         sceneNodeSetPos(pRec->pCartHandleL, anObjPos, 2);                  /* @0x412093 */
 
         /* objects/characters[nCharIdx]/object_pos @0x412098 */
-        wsprintfA(szKey, "objects/characters[%d]", pRec->nCharIdx);       /* @0x44fcec @0x412098 */
+        snprintf(szKey, sizeof(szKey), "objects/characters[%d]", pRec->nCharIdx);       /* @0x44fcec @0x412098 */
         pCfg = configEnvGetValue(&g_configEnvMaster, NULL, szKey);        /* @0x4120ba */
         if (pCfg == NULL) {
             fatalError("'objects/characters[%d]' not found in cfg.",      /* @0x44f9d0 */
@@ -558,14 +558,14 @@ void levelObjectsCartsCameraInit(void) /* @0x411b70 */
 
         /* character body cluster on pSubObjA + world cluster on pSubObjC @0x4121a0 */
         objTurretAdd((WorldNode *)pRec->pSubObjA, 0, 0, 0, 0,             /* @0x4121b7 */
-                     (int)pRec->pCharSceneNode);
+                     (intptr_t)pRec->pCharSceneNode);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjA, 0, 0, 0, flExtentA, 230.0f,    /* @0x4121dd */
-                         (int)pRec->pCharSceneNode, 300.0f, 1);
+                         (intptr_t)pRec->pCharSceneNode, 300.0f, 1);
         objTurretAdd((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],          /* @0x412200 */
-                     anObjPos[2], anObjRot[1], (int)pRec->pCharSceneNode);
+                     anObjPos[2], anObjRot[1], (intptr_t)pRec->pCharSceneNode);
         nodeAddChildMesh((WorldNode *)pRec->pSubObjC, anObjPos[0], anObjPos[1],      /* @0x41222b */
                          anObjPos[2], 230.0f, flExtentA,
-                         (int)pRec->pCharSceneNode, 300.0f, 1);
+                         (intptr_t)pRec->pCharSceneNode, 300.0f, 1);
 
         if (pRec->nCartMode == 0) {                                           /* @0x412230 */
             ((WorldNode *)pRec->pSubObjA)->field_1c = 1;                      /* @0x412245 */
@@ -575,12 +575,12 @@ void levelObjectsCartsCameraInit(void) /* @0x411b70 */
         }
 
         /* levels[%d]/start_positions[nStartPosIdx] placement @0x412260 */
-        wsprintfA(szKey, "levels[%d]", g_nLevelIdx);                      /* @0x44f7b4 @0x412260 */
+        snprintf(szKey, sizeof(szKey), "levels[%d]", g_nLevelIdx);                      /* @0x44f7b4 @0x412260 */
         pCfg = configEnvGetValue(&g_configEnvMaster, NULL, szKey);        /* @0x412281 */
         if (pCfg == NULL) {
             fatalError("'levels[%d]' not found in cfg.", g_nLevelIdx);    /* @0x44f794 */
         }
-        wsprintfA(szKey, "start_positions[%d]", pRec->nStartPosIdx);      /* @0x44fcd8 @0x41229a */
+        snprintf(szKey, sizeof(szKey), "start_positions[%d]", pRec->nStartPosIdx);      /* @0x44fcd8 @0x41229a */
         pVal = configEnvGetValue(&g_configEnvMaster, pCfg, szKey);        /* @0x4122bb */
         if (pVal == NULL) {
             fatalError("'levels[%d]/start_positions[%d]' not found in cfg.", /* @0x44fca4 */
