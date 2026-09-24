@@ -154,7 +154,13 @@ int platformInit(int argc, char **argv)
         else
             appLog("[platform] GL multisampling unavailable; using non-MSAA rendering");
     }
-    SDL_GL_SetSwapInterval(1);
+    if (SDL_GL_SetSwapInterval(1) != 0) {
+        appLog("[platform] VSync unavailable: %s", SDL_GetError());
+    } else if (SDL_GL_GetSwapInterval() == 1) {
+        appLog("[platform] VSync enabled (swap interval=1)");
+    } else {
+        appLog("[platform] VSync request did not activate swap interval=1");
+    }
     g_hWnd = (void *)s_window;
     g_hAppInstance = (void *)s_window;
     s_fpsStart = 0;

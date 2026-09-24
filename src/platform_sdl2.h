@@ -20,6 +20,7 @@ void *platformGLContext(void);
  * focus lost/gained as WM_ACTIVATE @0x4161f6, and returns 0 when the
  * app should quit. */
 int platformPumpEvents(void);
+/* Count completed buffer swaps and update the title approximately once per second. */
 void platformUpdateFPS(void);
 
 /* Push a quit event (replaces PostQuitMessage(0) in stateQuitConfirm). */

@@ -447,7 +447,10 @@ static int glFlip(void)
     }
     batchFlush();
     SDL_Window *w = (SDL_Window *)platformWindow();
-    if (w) SDL_GL_SwapWindow(w);
+    if (w) {
+        SDL_GL_SwapWindow(w);
+        platformUpdateFPS();
+    }
     return 1;
 }
 
