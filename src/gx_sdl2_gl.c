@@ -77,6 +77,12 @@ extern int g_nGfxMode; /* @0x4580c4 */
 
 #define GL_BATCH_MAX_VERTS 65536
 
+typedef struct GLTexture {
+    GLuint nearest;
+    GLuint linear;
+    GLuint linearKeyed;
+} GLTexture;
+
 typedef struct GLVertex {
     float x, y;
     float u, v;
@@ -99,6 +105,7 @@ static GLuint s_vao, s_vbo;
 static GLint s_uMVP;
 static GLint s_uUseTex = -1;
 static GLint s_uKeyBlack = -1;
+static GLint s_uKeyAlpha = -1;
 static GLVertex s_batch[GL_BATCH_MAX_VERTS];
 static int s_batchCount;
 static GLuint s_boundTex;
@@ -115,8 +122,9 @@ static float s_outputScale = 1.0f;
 
 /* int handle (1-based) -> GLuint registry. */
 #define GL_TEX_MAX 4096
-static GLuint s_tex[GL_TEX_MAX];
+static GLTexture s_tex[GL_TEX_MAX];
 static int s_texCount;
+static int s_linearSceneTextures = 1;
 
 static const char *kVS =
     "#version 330 core\n"
@@ -136,6 +144,7 @@ static const char *kFS =
     "uniform sampler2D uTex;\n"
     "uniform int uUseTex;\n"
     "uniform int uKeyBlack;\n"
+    "uniform int uKeyAlpha;\n"
     "out vec4 oCol;\n"
     /* Near-black discard replicates the _g_abColorKey LUT built by
      * gxLoadTexture @0x100019b0 (palette RGB all < 8 keeps the
@@ -143,7 +152,7 @@ static const char *kFS =
      * opaque; NEAREST filtering yields exact texel values. Blend-path
      * tris arrive with vCol.a 0.5 to approximate the _g_abBlend
      * averaging LUT (uKeyBlack is 0 there, so black still contributes). */
-    "void main(){ vec4 t=texture(uTex,vUV); if(uUseTex!=0){ if(uKeyBlack!=0 && t.r*255.0<7.5 && t.g*255.0<7.5 && t.b*255.0<7.5) discard; oCol=vec4(t.rgb*vCol.rgb,t.a*vCol.a); } else oCol=vCol; }\n";
+    "void main(){ vec4 t=texture(uTex,vUV); if(uUseTex!=0){ if(uKeyBlack!=0){ if(uKeyAlpha!=0){ if(t.a<0.5) discard; t.rgb/=max(t.a,0.0001); } else if(t.r*255.0<7.5 && t.g*255.0<7.5 && t.b*255.0<7.5) discard; } oCol=vec4(t.rgb*vCol.rgb,(uKeyBlack!=0?1.0:t.a)*vCol.a); } else oCol=vCol; }\n";
 
 static GLuint compileShader(GLenum type, const char *src)
 {
@@ -188,6 +197,7 @@ static void useDrawState(GLuint tex, int blend, int key)
         glBindTexture(GL_TEXTURE_2D, tex ? tex : 0);
         glUniform1i(s_uUseTex, tex ? 1 : 0);
         glUniform1i(s_uKeyBlack, (tex && key) ? 1 : 0);
+        glUniform1i(s_uKeyAlpha, (tex && key == 2) ? 1 : 0);
         if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
     }
 }
@@ -289,17 +299,47 @@ static float normUv(int b, int half)
     return (float)b / 256.0f;
 }
 
-static int texAlloc(GLuint gl)
+static int texAlloc(GLTexture texture)
 {
     if (s_texCount >= GL_TEX_MAX) return 0;
-    s_tex[s_texCount] = gl;
+    s_tex[s_texCount] = texture;
     return ++s_texCount; /* 1-based handle */
 }
 
-static GLuint texLookup(int handle)
+static GLuint texLookup(int handle, int keyed, int *keyMode)
 {
+    GLTexture *texture;
+    if (keyMode) *keyMode = keyed ? 1 : 0;
     if (handle <= 0 || handle > s_texCount) return 0;
-    return s_tex[handle - 1];
+    texture = &s_tex[handle - 1];
+    if (s_linearSceneTextures) {
+        if (keyed && texture->linearKeyed) {
+            if (keyMode) *keyMode = 2;
+            return texture->linearKeyed;
+        }
+        if (!keyed && texture->linear) return texture->linear;
+    }
+    return texture->nearest;
+}
+
+static GLuint uploadTexture(const unsigned char *rgba, int linear)
+{
+    GLuint tex;
+    glGenTextures(1, &tex);
+    if (!tex) return 0;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                    linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                    linear ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, linear ? 8 : 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 256, 256, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    if (linear) glGenerateMipmap(GL_TEXTURE_2D);
+    return tex;
 }
 
 static void glApplyViewport(void)
@@ -465,6 +505,7 @@ static int glResetState(void)
     glBindTexture(GL_TEXTURE_2D, 0);
     glUniform1i(s_uUseTex, 0);
     glUniform1i(s_uKeyBlack, 0);
+    glUniform1i(s_uKeyAlpha, 0);
     glDisable(GL_BLEND);
     s_viewX = 0; s_viewY = 0; s_viewW = s_width; s_viewH = s_height;
     glApplyViewport();
@@ -476,9 +517,9 @@ static int glResetState(void)
  * by the origin flags (opaque direct copy vs near-black color-key vs
  * blend average, see the header note), not a baked texel property. The
  * .tpg 4th palette byte is padding (uniformly 0xcd), not alpha.
- * PORT DEVIATION (cross-platform): always highest texture LOD — full-res
- * RGBA8 upload, NEAREST sampling, mip levels clamped to base level 0 so
- * the sampler can never pick a downsampled level. */
+ * Shared/UI texture loads remain nearest sampled. Scene surfaces use a
+ * separate optional linear/mipmap path with a premultiplied color-key
+ * variant so filtering cannot create dark fringes at transparent texels. */
 static int glLoadTexture(int mode, int reserved, const char *name, void *data, void *palette)
 {
     (void)mode; (void)reserved; (void)name;
@@ -496,22 +537,19 @@ static int glLoadTexture(int mode, int reserved, const char *name, void *data, v
         rgba[i * 4 + 2] = pal[p * 4 + 2];
         rgba[i * 4 + 3] = 0xff;
     }
-    glGenTextures(1, &tex);
     batchFlush();
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    tex = uploadTexture(rgba, 0);
     free(rgba);
     /* Restore the cached draw binding (skip when the cache is the
      * unknown sentinel left by a pending presentFrame upload — the
      * flip-time useDrawState re-establishes it). */
     if (s_boundTex != 0xFFFFFFFFu) glBindTexture(GL_TEXTURE_2D, s_boundTex);
-    return texAlloc(tex);
+    if (!tex) return 0;
+    {
+        int handle = texAlloc((GLTexture){tex, 0, 0});
+        if (!handle) glDeleteTextures(1, &tex);
+        return handle;
+    }
 }
 
 static void glUpdate(void) { batchFlush(); }
@@ -536,6 +574,7 @@ static void glDrawPolygon(void *a0, void *a1, void *a2, void *a3, int flags, voi
     GxVert *v0 = (GxVert *)a0, *v1 = (GxVert *)a1, *v2 = (GxVert *)a2, *v3 = (GxVert *)a3;
     unsigned char *uv = (unsigned char *)uvRec;
     GLuint tex = 0;
+    int keyMode = 0;
     float r = 1, g = 1, b = 1;
     float u0 = 0, v00 = 0, u1 = 0, v1_ = 0, u2 = 0, v2_ = 0, u3 = 0, v3_ = 0;
     if (!v0 || !v1 || !v2 || !v3) return;
@@ -543,7 +582,7 @@ static void glDrawPolygon(void *a0, void *a1, void *a2, void *a3, int flags, voi
     if (uv && (flags & 4)) {
         int h = 0;
         memcpy(&h, uv + 0, 4);
-        tex = texLookup(h);
+        tex = texLookup(h, 1, &keyMode);
         /* Edges at byte/256 (see normUv): the implicit 0xd000 origin's
          * half-texel corner shift is folded in there. */
         u0 = normUv(uv[8], 1);  v00 = normUv(uv[9], 1);
@@ -566,7 +605,7 @@ static void glDrawPolygon(void *a0, void *a1, void *a2, void *a3, int flags, voi
          * use z 0 -> w 1, identical to the old affine path). */
         int z012 = v0->z + v1->z + v2->z;
         int z023 = v0->z + v2->z + v3->z;
-        int key = (tex != 0);
+        int key = tex ? keyMode : 0;
         queueTri(x0, y0, u0, v00, depthW(v0->z), x1, y1, u1, v1_, depthW(v1->z),
                  x2, y2, u2, v2_, depthW(v2->z), r, g, b, 1, tex, z012, 0, key);
         queueTri(x0, y0, u0, v00, depthW(v0->z), x2, y2, u2, v2_, depthW(v2->z),
@@ -656,12 +695,13 @@ static void glDrawTriUV(void *a0, void *a1, void *a2, void *color, void *uvRec)
     unsigned char *uv = (unsigned char *)uvRec;
     GLuint tex = 0;
     int h = 0;
+    int keyMode = 0;
     float r = 1, g = 1, b = 1;
     (void)color;
     if (!v0 || !v1 || !v2) return;
     if (backfaceCulled(v0, v1, v2)) return;
     r = v0->r / 255.0f; g = v0->g / 255.0f; b = v0->b / 255.0f;
-    if (uv) { memcpy(&h, uv + 0, 4); tex = texLookup(h); }
+    if (uv) memcpy(&h, uv + 0, 4);
     {
         /* Texture record is the 0x10-byte mesh/COLS record (verified
          * against gxSoft gxDrawTriUV @0x100021f0, see meshDrawPoly note
@@ -674,16 +714,21 @@ static void glDrawTriUV(void *a0, void *a1, void *a2, void *color, void *uvRec)
         float u0 = 0, v0_ = 0, u1 = 1, v1_ = 0, u2 = 0, v2_ = 1;
         float a = 1.0f;
         int blend = 0, key = 0;
-        if (uv && tex) {
-            u0 = normUv(uv[8], half);  v0_ = normUv(uv[9], half);
-            u1 = normUv(uv[10], half); v1_ = normUv(uv[11], half);
-            u2 = normUv(uv[12], half); v2_ = normUv(uv[13], half);
-            r = g = b = 1.0f;
+        if (uv && h) {
+            int blendWanted = (s_origin & 0x20) != 0;
+            int keyWanted = !blendWanted && (s_origin & 0x4000) != 0;
+            tex = texLookup(h, keyWanted, &keyMode);
             /* Rasterizer selection mirrors gxSetOrigin @0x10001f90: 0x20
              * blends (approximated with 0.5 vertex alpha, black included),
              * 0x4000 color-keys near-black, otherwise fully opaque. */
-            if (s_origin & 0x20) { blend = 1; a = 0.5f; }
-            else if (s_origin & 0x4000) { key = 1; }
+            if (tex) {
+                if (blendWanted) { blend = 1; a = 0.5f; }
+                else if (keyWanted) key = keyMode;
+                u0 = normUv(uv[8], half);  v0_ = normUv(uv[9], half);
+                u1 = normUv(uv[10], half); v1_ = normUv(uv[11], half);
+                u2 = normUv(uv[12], half); v2_ = normUv(uv[13], half);
+                r = g = b = 1.0f;
+            }
         }
         queueTri(fx8(v0->x), fx8(v0->y), u0, v0_, depthW(v0->z),
                  fx8(v1->x), fx8(v1->y), u1, v1_, depthW(v1->z),
@@ -709,26 +754,32 @@ static void glDrawQuad(void *a0, void *a1, void *a2, void *a3, void *color, void
     unsigned char *uv = (unsigned char *)uvRec;
     GLuint tex = 0;
     int h = 0;
+    int keyMode = 0;
     float r = 1, g = 1, b = 1;
     (void)color;
     if (!v0 || !v1 || !v2 || !v3) return;
     if (backfaceCulled(v0, v1, v2)) return;
     r = v0->r / 255.0f; g = v0->g / 255.0f; b = v0->b / 255.0f;
-    if (uv) { memcpy(&h, uv + 0, 4); tex = texLookup(h); }
+    if (uv) memcpy(&h, uv + 0, 4);
     {
         int half = (s_origin & 0x1000) != 0;
         float u0 = 0, v0_ = 0, u1 = 1, v1_ = 0, u2 = 0, v2_ = 1, u3 = 1, v3_ = 1;
         float a = 1.0f;
         int blend = 0, key = 0;
-        if (uv && tex) {
-            u0 = normUv(uv[8], half);  v0_ = normUv(uv[9], half);
-            u1 = normUv(uv[10], half); v1_ = normUv(uv[11], half);
-            u2 = normUv(uv[12], half); v2_ = normUv(uv[13], half);
-            u3 = normUv(uv[14], half); v3_ = normUv(uv[15], half);
-            r = g = b = 1.0f;
+        if (uv && h) {
+            int blendWanted = (s_origin & 0x20) != 0;
+            int keyWanted = !blendWanted && (s_origin & 0x4000) != 0;
+            tex = texLookup(h, keyWanted, &keyMode);
             /* Same rasterizer selection as glDrawTriUV (see note there). */
-            if (s_origin & 0x20) { blend = 1; a = 0.5f; }
-            else if (s_origin & 0x4000) { key = 1; }
+            if (tex) {
+                if (blendWanted) { blend = 1; a = 0.5f; }
+                else if (keyWanted) key = keyMode;
+                u0 = normUv(uv[8], half);  v0_ = normUv(uv[9], half);
+                u1 = normUv(uv[10], half); v1_ = normUv(uv[11], half);
+                u2 = normUv(uv[12], half); v2_ = normUv(uv[13], half);
+                u3 = normUv(uv[14], half); v3_ = normUv(uv[15], half);
+                r = g = b = 1.0f;
+            }
         }
         /* Queued with the GXSOFT z-sum keys; emitted sorted at flip.
          * Per-vertex w = az depth restores perspective-correct UVs. */
@@ -755,7 +806,8 @@ static int glCreateSurface(const char *path)
     unsigned char *idx;
     unsigned char *pal;
     unsigned char *rgba;
-    GLuint tex;
+    unsigned char *rgbaKeyed;
+    GLTexture texture = {0, 0, 0};
     size_t n;
     const char *texDir;
     if (!path) return 0;
@@ -789,33 +841,51 @@ static int glCreateSurface(const char *path)
     fclose(f);
     if (n != 256 * 4) { free(idx); free(pal); return 0; }
     rgba = (unsigned char *)malloc(256 * 256 * 4);
-    if (!rgba) { free(idx); free(pal); return 0; }
+    rgbaKeyed = s_linearSceneTextures ? (unsigned char *)malloc(256 * 256 * 4) : NULL;
+    if (!rgba) { free(idx); free(pal); free(rgbaKeyed); return 0; }
     for (int i = 0; i < 256 * 256; i++) {
         unsigned char p = idx[i];
-        rgba[i*4+0] = pal[p*4+0]; rgba[i*4+1] = pal[p*4+1];
-        rgba[i*4+2] = pal[p*4+2];
+        unsigned char red = pal[p*4+0], green = pal[p*4+1], blue = pal[p*4+2];
+        int keyed = (red < 8 && green < 8 && blue < 8);
+        rgba[i*4+0] = red; rgba[i*4+1] = green; rgba[i*4+2] = blue;
         /* Fully opaque upload (see glLoadTexture note): the color-key
          * discard happens per draw in the fragment shader. */
         rgba[i*4+3] = 0xff;
+        if (rgbaKeyed) {
+            /* Premultiplication makes linear and mip filtering combine
+             * only visible color; keyed fragments are discarded after
+             * sampling, avoiding dark halos at near-black texels. */
+            rgbaKeyed[i*4+0] = keyed ? 0 : red;
+            rgbaKeyed[i*4+1] = keyed ? 0 : green;
+            rgbaKeyed[i*4+2] = keyed ? 0 : blue;
+            rgbaKeyed[i*4+3] = keyed ? 0 : 0xff;
+        }
     }
     free(idx); free(pal);
-    glGenTextures(1, &tex);
     batchFlush();
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    /* Highest texture LOD: clamp to base level 0 (see glLoadTexture note). */
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-    free(rgba);
+    texture.nearest = uploadTexture(rgba, 0);
+    if (rgbaKeyed) {
+        texture.linear = uploadTexture(rgba, 1);
+        texture.linearKeyed = uploadTexture(rgbaKeyed, 1);
+    }
+    free(rgba); free(rgbaKeyed);
     /* Restore the cached draw binding (skip when the cache is the
      * unknown sentinel left by a pending presentFrame upload — the
      * flip-time useDrawState re-establishes it). */
     if (s_boundTex != 0xFFFFFFFFu) glBindTexture(GL_TEXTURE_2D, s_boundTex);
-    return texAlloc(tex);
+    if (!texture.nearest) {
+        GLuint textures[] = {texture.linear, texture.linearKeyed};
+        glDeleteTextures(2, textures);
+        return 0;
+    }
+    {
+        int handle = texAlloc(texture);
+        if (!handle) {
+            GLuint textures[] = {texture.nearest, texture.linear, texture.linearKeyed};
+            glDeleteTextures(3, textures);
+        }
+        return handle;
+    }
 }
 
 int gxGLBackendInstall(void)
@@ -832,6 +902,7 @@ int gxGLBackendInstall(void)
     s_uMVP = glGetUniformLocation(s_prog, "uMVP");
     s_uUseTex = glGetUniformLocation(s_prog, "uUseTex");
     s_uKeyBlack = glGetUniformLocation(s_prog, "uKeyBlack");
+    s_uKeyAlpha = glGetUniformLocation(s_prog, "uKeyAlpha");
     glGenVertexArrays(1, &s_vao);
     glGenBuffers(1, &s_vbo);
     glBindVertexArray(s_vao);
@@ -849,6 +920,7 @@ int gxGLBackendInstall(void)
     glUniform1i(glGetUniformLocation(s_prog, "uTex"), 0);
     glUniform1i(s_uUseTex, 0);
     glUniform1i(s_uKeyBlack, 0);
+    glUniform1i(s_uKeyAlpha, 0);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -864,6 +936,12 @@ int gxGLBackendInstall(void)
     s_pendingBlit = 0;
     s_texCount = 0;
     memset(s_tex, 0, sizeof(s_tex));
+    {
+        const char *filter = getenv("MANIAC_SCENE_TEXTURE_FILTER");
+        /* Scene surfaces default to linear/trilinear sampling. Set this to
+         * "nearest" to restore the original sampling path for comparison. */
+        s_linearSceneTextures = !(filter && strcmp(filter, "nearest") == 0);
+    }
 
     g_driver.api.pField_0 = NULL;
     g_driver.api.pSetMode = glSetMode;
@@ -909,8 +987,11 @@ void gxGLBackendUninstall(void)
     s_qCount = 0;
     s_qSeq = 0;
     s_pendingBlit = 0;
-    for (int i = 0; i < s_texCount; i++)
-        if (s_tex[i]) glDeleteTextures(1, &s_tex[i]);
+    for (int i = 0; i < s_texCount; i++) {
+        GLuint textures[] = {s_tex[i].nearest, s_tex[i].linear,
+                             s_tex[i].linearKeyed};
+        glDeleteTextures(3, textures);
+    }
     s_texCount = 0;
     if (s_streamTex) { glDeleteTextures(1, &s_streamTex); s_streamTex = 0; }
     if (s_vbo) { glDeleteBuffers(1, &s_vbo); s_vbo = 0; }
