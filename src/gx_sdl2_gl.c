@@ -26,10 +26,11 @@
  * - Vertices are 8.8 fixed-point x/y (/256.0f); nSoftwareMode stays 0 on
  *   this backend. UV bytes map per normUv (/256.0f, GL equivalent of the
  *   GXSOFT corner-minus-half + truncating rasterizer; see normUv note).
- * - Textured tris are unshaded (GXSOFT feeds the rasterizer texture + UVs
- *   only, so vertex colors are ignored); untextured quads use the vertex
- *   color. The 0x1000 origin bit needs no GL replication (normUv folds its
- *   effect into the byte/256 edge); other exotic
+ * - GXSOFT textured tris do not supply vertex tint, but this port uses the
+ *   positive-depth scene vertices' RGB for restrained mesh lighting; zero-
+ *   depth textured draws stay white-modulated and untextured quads use the
+ *   vertex color. The 0x1000 origin bit needs no GL replication (normUv
+ *   folds its effect into the byte/256 edge); other exotic
  *   pSetOrigin bits only gate the backface rule. pDrawTriangle/pDrawLine
  *   stay no-ops (as in GXSOFT).
  * - Ordering: gxDrawTriUV/gxDrawQuad/gxDrawPolygon only QUEUE 0x50-byte
@@ -227,7 +228,9 @@ static int s_pendingBlit; /* fullscreen present deferred past sorted emission */
 static void queueTri(float x0, float y0, float u0, float v0, float w0,
                      float x1, float y1, float u1, float v1, float w1,
                      float x2, float y2, float u2, float v2, float w2,
-                     float r, float g, float b, float a,
+                     float r0, float g0, float b0,
+                     float r1, float g1, float b1,
+                     float r2, float g2, float b2, float a,
                      GLuint tex, int zsum, int blend, int key)
 {
     if (s_qCount >= s_qCap) {
@@ -239,9 +242,9 @@ static void queueTri(float x0, float y0, float u0, float v0, float w0,
     }
     {
         QueuedTri *q = &s_queue[s_qCount++];
-        q->v[0] = (GLVertex){x0, y0, u0, v0, r, g, b, a, w0};
-        q->v[1] = (GLVertex){x1, y1, u1, v1, r, g, b, a, w1};
-        q->v[2] = (GLVertex){x2, y2, u2, v2, r, g, b, a, w2};
+        q->v[0] = (GLVertex){x0, y0, u0, v0, r0, g0, b0, a, w0};
+        q->v[1] = (GLVertex){x1, y1, u1, v1, r1, g1, b1, a, w1};
+        q->v[2] = (GLVertex){x2, y2, u2, v2, r2, g2, b2, a, w2};
         q->tex = tex;
         q->zsum = zsum;
         q->seq = s_qSeq++;
@@ -565,10 +568,9 @@ static int glCreateSurface(const char *path);
  * (U,V),(gwU,V2),(gwU2,hV) and (v0,v2,v3) with (U,V),(gwU2,hV),(U2,hV2)
  * (second tri repacks bytes 8,9,12,13,14,15). The path always ORs 0xd000
  * into the origin, so the 0x1000 half-texel rule applies (see normUv).
- * Textured tris carry no vertex color (gxDrawPolyRecords @0x10002670 feeds
- * the rasterizer texture + UVs only), so textured draws use white; without
- * bit 2 the driver ignores the UV fields and the quad renders untextured
- * with the vertex color. */
+ * This 2D polygon entry point retains white modulation for textured draws;
+ * without bit 2 the driver ignores UVs and uses the vertex color. Scene-mesh
+ * tint is handled by glDrawTriUV/glDrawQuad based on positive vertex depth. */
 static void glDrawPolygon(void *a0, void *a1, void *a2, void *a3, int flags, void *uvRec)
 {
     GxVert *v0 = (GxVert *)a0, *v1 = (GxVert *)a1, *v2 = (GxVert *)a2, *v3 = (GxVert *)a3;
@@ -607,9 +609,11 @@ static void glDrawPolygon(void *a0, void *a1, void *a2, void *a3, int flags, voi
         int z023 = v0->z + v2->z + v3->z;
         int key = tex ? keyMode : 0;
         queueTri(x0, y0, u0, v00, depthW(v0->z), x1, y1, u1, v1_, depthW(v1->z),
-                 x2, y2, u2, v2_, depthW(v2->z), r, g, b, 1, tex, z012, 0, key);
+                 x2, y2, u2, v2_, depthW(v2->z),
+                 r, g, b, r, g, b, r, g, b, 1, tex, z012, 0, key);
         queueTri(x0, y0, u0, v00, depthW(v0->z), x2, y2, u2, v2_, depthW(v2->z),
-                 x3, y3, u3, v3_, depthW(v3->z), r, g, b, 1, tex, z023, 0, key);
+                 x3, y3, u3, v3_, depthW(v3->z),
+                 r, g, b, r, g, b, r, g, b, 1, tex, z023, 0, key);
     }
 }
 
@@ -708,12 +712,16 @@ static void glDrawTriUV(void *a0, void *a1, void *a2, void *color, void *uvRec)
          * in scene_render.c): handle at +0, corner UV bytes at +8..+13.
          * Same byte convention as glDrawPolygon. Edges map via normUv
          * (byte/256), which already folds the origin 0x1000 corner shift.
-         * Textured tris are unshaded (see glDrawPolygon note). Queued
-         * with the GXSOFT z-sum key (z0+z1+z2); emitted sorted at flip. */
+         * Positive-depth scene tris carry per-vertex tint; zero-depth 2D
+         * textured draws remain white-modulated. Queued with the GXSOFT
+         * z-sum key (z0+z1+z2); emitted sorted at flip. */
         int half = (s_origin & 0x1000) != 0;
         float u0 = 0, v0_ = 0, u1 = 1, v1_ = 0, u2 = 0, v2_ = 1;
         float a = 1.0f;
         int blend = 0, key = 0;
+        float r0 = r, g0 = g, b0 = b;
+        float r1 = r, g1 = g, b1 = b;
+        float r2 = r, g2 = g, b2 = b;
         if (uv && h) {
             int blendWanted = (s_origin & 0x20) != 0;
             int keyWanted = !blendWanted && (s_origin & 0x4000) != 0;
@@ -728,11 +736,20 @@ static void glDrawTriUV(void *a0, void *a1, void *a2, void *color, void *uvRec)
                 u1 = normUv(uv[10], half); v1_ = normUv(uv[11], half);
                 u2 = normUv(uv[12], half); v2_ = normUv(uv[13], half);
                 r = g = b = 1.0f;
+                r0 = r1 = r2 = r;
+                g0 = g1 = g2 = g;
+                b0 = b1 = b2 = b;
+                if (v0->z > 0) {
+                    r0 = v0->r / 255.0f; g0 = v0->g / 255.0f; b0 = v0->b / 255.0f;
+                    r1 = v1->r / 255.0f; g1 = v1->g / 255.0f; b1 = v1->b / 255.0f;
+                    r2 = v2->r / 255.0f; g2 = v2->g / 255.0f; b2 = v2->b / 255.0f;
+                }
             }
         }
         queueTri(fx8(v0->x), fx8(v0->y), u0, v0_, depthW(v0->z),
                  fx8(v1->x), fx8(v1->y), u1, v1_, depthW(v1->z),
-                 fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z), r, g, b, a,
+                 fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z),
+                 r0, g0, b0, r1, g1, b1, r2, g2, b2, a,
                  tex, v0->z + v1->z + v2->z, blend, key);
     }
 }
@@ -747,8 +764,8 @@ static void glDrawQuad(void *a0, void *a1, void *a2, void *a3, void *color, void
      * the third. Kept separate from glDrawPolygon: here `color` is the
      * mesh color record (a pointer carried as int), not bit flags, so
      * routing it through the `flags & 4` test would key texturing off heap
-     * alignment. UV edges map via normUv (see glDrawTriUV);
-     * textured tris are unshaded (see glDrawPolygon note). */
+     * alignment. UV edges map via normUv (see glDrawTriUV); positive-depth
+     * scene vertices carry per-vertex tint while 2D draws stay white. */
     GxVert *v0 = (GxVert *)a0, *v1 = (GxVert *)a1,
            *v2 = (GxVert *)a2, *v3 = (GxVert *)a3;
     unsigned char *uv = (unsigned char *)uvRec;
@@ -766,6 +783,10 @@ static void glDrawQuad(void *a0, void *a1, void *a2, void *a3, void *color, void
         float u0 = 0, v0_ = 0, u1 = 1, v1_ = 0, u2 = 0, v2_ = 1, u3 = 1, v3_ = 1;
         float a = 1.0f;
         int blend = 0, key = 0;
+        float r0 = r, g0 = g, b0 = b;
+        float r1 = r, g1 = g, b1 = b;
+        float r2 = r, g2 = g, b2 = b;
+        float r3 = r, g3 = g, b3 = b;
         if (uv && h) {
             int blendWanted = (s_origin & 0x20) != 0;
             int keyWanted = !blendWanted && (s_origin & 0x4000) != 0;
@@ -779,17 +800,28 @@ static void glDrawQuad(void *a0, void *a1, void *a2, void *a3, void *color, void
                 u2 = normUv(uv[12], half); v2_ = normUv(uv[13], half);
                 u3 = normUv(uv[14], half); v3_ = normUv(uv[15], half);
                 r = g = b = 1.0f;
+                r0 = r1 = r2 = r3 = r;
+                g0 = g1 = g2 = g3 = g;
+                b0 = b1 = b2 = b3 = b;
+                if (v0->z > 0) {
+                    r0 = v0->r / 255.0f; g0 = v0->g / 255.0f; b0 = v0->b / 255.0f;
+                    r1 = v1->r / 255.0f; g1 = v1->g / 255.0f; b1 = v1->b / 255.0f;
+                    r2 = v2->r / 255.0f; g2 = v2->g / 255.0f; b2 = v2->b / 255.0f;
+                    r3 = v3->r / 255.0f; g3 = v3->g / 255.0f; b3 = v3->b / 255.0f;
+                }
             }
         }
         /* Queued with the GXSOFT z-sum keys; emitted sorted at flip.
          * Per-vertex w = az depth restores perspective-correct UVs. */
         queueTri(fx8(v0->x), fx8(v0->y), u0, v0_, depthW(v0->z),
                  fx8(v1->x), fx8(v1->y), u1, v1_, depthW(v1->z),
-                 fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z), r, g, b, a,
+                 fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z),
+                 r0, g0, b0, r1, g1, b1, r2, g2, b2, a,
                  tex, v0->z + v1->z + v2->z, blend, key);
         queueTri(fx8(v0->x), fx8(v0->y), u0, v0_, depthW(v0->z),
                  fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z),
-                 fx8(v3->x), fx8(v3->y), u3, v3_, depthW(v3->z), r, g, b, a,
+                 fx8(v3->x), fx8(v3->y), u3, v3_, depthW(v3->z),
+                 r0, g0, b0, r2, g2, b2, r3, g3, b3, a,
                  tex, v0->z + v2->z + v3->z, blend, key);
     }
 }

@@ -20,6 +20,14 @@
 /* camera basis derived from g_pSceneRoot channel for projection */
 static float g_camPos[3] = {0,0,0};
 static float g_camMat[9] = {1,0,0, 0,1,0, 0,0,1};   /* column-major view matrix */
+/* Temporary face tint set by meshDrawPoly @0x42e940 for its clip helpers. */
+static float g_sceneFaceLight = 1.0f;
+
+/* XYZ prefix in each 16-byte world slot written by sceneNodeRender @0x42f8c0. */
+typedef struct SceneWorldPosition {
+    int x, y, z;
+} SceneWorldPosition;
+
 float g_sceneCameraBasis = 0.0f;
 float g_sceneCameraBasis_2 = 0.0f;
 float g_sceneCameraBasis_3 = 0.0f;
@@ -397,6 +405,9 @@ void meshDrawTriClip(byte *pIdxList, byte *pVerts, byte *pNormals, void *pUV,
             out->r = (unsigned char)(int)((float)from->r + ((float)to->r - (float)from->r) * t);
             out->g = (unsigned char)(int)((float)from->g + ((float)to->g - (float)from->g) * t);
             out->b = (unsigned char)(int)((float)from->b + ((float)to->b - (float)from->b) * t);
+            out->r = (unsigned char)((float)out->r * g_sceneFaceLight);
+            out->g = (unsigned char)((float)out->g * g_sceneFaceLight);
+            out->b = (unsigned char)((float)out->b * g_sceneFaceLight);
             out->a = from->a;
             srcA[count] = (i + 2) % 3;
             srcB[count] = i;
@@ -405,6 +416,9 @@ void meshDrawTriClip(byte *pIdxList, byte *pVerts, byte *pNormals, void *pUV,
         }
         if (currentDepth >= 0) {
             memcpy(&clipped[count], (void *)(pVerts + current), sizeof(GxVert));
+            clipped[count].r = (unsigned char)((float)clipped[count].r * g_sceneFaceLight);
+            clipped[count].g = (unsigned char)((float)clipped[count].g * g_sceneFaceLight);
+            clipped[count].b = (unsigned char)((float)clipped[count].b * g_sceneFaceLight);
             srcA[count] = i;
             srcB[count] = i;
             srcT[count] = 0.0f;
@@ -508,6 +522,9 @@ void meshDrawQuadClip(byte *pIdxList, byte *pVerts, byte *pNormals, void *pUV,
             out->r = (unsigned char)(int)((float)from->r + ((float)to->r - (float)from->r) * t);
             out->g = (unsigned char)(int)((float)from->g + ((float)to->g - (float)from->g) * t);
             out->b = (unsigned char)(int)((float)from->b + ((float)to->b - (float)from->b) * t);
+            out->r = (unsigned char)((float)out->r * g_sceneFaceLight);
+            out->g = (unsigned char)((float)out->g * g_sceneFaceLight);
+            out->b = (unsigned char)((float)out->b * g_sceneFaceLight);
             out->a = from->a;
             srcA[count] = (i + 3) % 4;
             srcB[count] = i;
@@ -516,6 +533,9 @@ void meshDrawQuadClip(byte *pIdxList, byte *pVerts, byte *pNormals, void *pUV,
         }
         if (currentDepth >= 0) {
             memcpy(&clipped[count], (void *)(pVerts + current), sizeof(GxVert));
+            clipped[count].r = (unsigned char)((float)clipped[count].r * g_sceneFaceLight);
+            clipped[count].g = (unsigned char)((float)clipped[count].g * g_sceneFaceLight);
+            clipped[count].b = (unsigned char)((float)clipped[count].b * g_sceneFaceLight);
             srcA[count] = i;
             srcB[count] = i;
             srcT[count] = 0.0f;
@@ -592,6 +612,8 @@ void meshDrawQuadClip(byte *pIdxList, byte *pVerts, byte *pNormals, void *pUV,
 /* meshDrawPoly @0x42e940 — faithful to disassembly 0x42e940.
  * pPolyData layout: [0]=nCount|kind<<8, [1]=flags, [2]/[3]=header, pIdxList at +8.
  * bTex = (flags>>3)&1, bColor=(flags>>2)&1, bStride = low byte of [3].
+ * The port additionally applies a subtle flat face tint from transformed
+ * world vertices while preserving the mesh's original vertex RGB values.
  * pTexColors = td->pC (COLS, 4-byte entries, stride *4 for color)
  * pPalColors = td->pTex (MAPI, 16-byte entries, stride *0x10 for UV)
  * gxSetOrigin uses flags; kind 1=point,2=line,3=tri,4=quad.
@@ -653,6 +675,28 @@ void meshDrawPoly(ushort *pPolyData, byte *pNormals, byte *pVerts, byte *pTexCol
             int d0 = *(int *)(pNormals + o0 + 8);
             int d1 = *(int *)(pNormals + o1 + 8);
             int d2 = *(int *)(pNormals + o2 + 8);
+            float light = 1.0f;
+            {
+                SceneWorldPosition *world0 = (SceneWorldPosition *)(pNormals + o0);
+                SceneWorldPosition *world1 = (SceneWorldPosition *)(pNormals + o1);
+                SceneWorldPosition *world2 = (SceneWorldPosition *)(pNormals + o2);
+                float ax = (float)world1->x - (float)world0->x;
+                float ay = (float)world1->y - (float)world0->y;
+                float az = (float)world1->z - (float)world0->z;
+                float bx = (float)world2->x - (float)world0->x;
+                float by = (float)world2->y - (float)world0->y;
+                float bz = (float)world2->z - (float)world0->z;
+                float nx = ay * bz - az * by;
+                float ny = az * bx - ax * bz;
+                float nz = ax * by - ay * bx;
+                float normalLength = sqrtf(nx * nx + ny * ny + nz * nz);
+                if (normalLength > 0.0f) {
+                    float diffuse = fabsf((nx * 0.36f + ny * 0.48f + nz * 0.8f) / normalLength);
+                    if (diffuse > 1.0f) diffuse = 1.0f;
+                    light = 0.76f + 0.24f * diffuse;
+                }
+            }
+            g_sceneFaceLight = light;
             if (d0 < 0) {
                 if ((d1 >= 0) || (d2 >= 0)) {
                     if (d0 >= 0) goto tri_draw;
@@ -666,9 +710,19 @@ tri_clip:
                     meshDrawTriClip((byte *)pIdxList, pVerts, pNormals, pColorPtr, pvVar11, (int)nUnk, (int)bColor, (int)local8);
                 } else {
                     /* Original calls unconditionally (@0x42eb5d). */
-                    gxDrawTriUV((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (void *)pColorPtr, pvVar11);
+                    GxVert lit[3];
+                    memcpy(&lit[0], pVerts + o0, sizeof(GxVert));
+                    memcpy(&lit[1], pVerts + o1, sizeof(GxVert));
+                    memcpy(&lit[2], pVerts + o2, sizeof(GxVert));
+                    for (int v = 0; v < 3; v++) {
+                        lit[v].r = (unsigned char)((float)lit[v].r * light);
+                        lit[v].g = (unsigned char)((float)lit[v].g * light);
+                        lit[v].b = (unsigned char)((float)lit[v].b * light);
+                    }
+                    gxDrawTriUV(&lit[0], &lit[1], &lit[2], (void *)pColorPtr, pvVar11);
                 }
             }
+            g_sceneFaceLight = 1.0f;
             pIdxList = pIdxList + bStride;
             nCount--;
             if (nCount == 0) return;
@@ -688,6 +742,28 @@ tri_clip:
             int d1 = *(int *)(pNormals + o1 + 8);
             int d2 = *(int *)(pNormals + o2 + 8);
             int d3 = *(int *)(pNormals + o3 + 8);
+            float light = 1.0f;
+            {
+                SceneWorldPosition *world0 = (SceneWorldPosition *)(pNormals + o0);
+                SceneWorldPosition *world1 = (SceneWorldPosition *)(pNormals + o1);
+                SceneWorldPosition *world2 = (SceneWorldPosition *)(pNormals + o2);
+                float ax = (float)world1->x - (float)world0->x;
+                float ay = (float)world1->y - (float)world0->y;
+                float az = (float)world1->z - (float)world0->z;
+                float bx = (float)world2->x - (float)world0->x;
+                float by = (float)world2->y - (float)world0->y;
+                float bz = (float)world2->z - (float)world0->z;
+                float nx = ay * bz - az * by;
+                float ny = az * bx - ax * bz;
+                float nz = ax * by - ay * bx;
+                float normalLength = sqrtf(nx * nx + ny * ny + nz * nz);
+                if (normalLength > 0.0f) {
+                    float diffuse = fabsf((nx * 0.36f + ny * 0.48f + nz * 0.8f) / normalLength);
+                    if (diffuse > 1.0f) diffuse = 1.0f;
+                    light = 0.76f + 0.24f * diffuse;
+                }
+            }
+            g_sceneFaceLight = light;
             if (d0 < 0) {
                 if ((d1 >= 0) || (d2 >= 0) || (d3 >= 0)) {
                     if (d0 >= 0) goto quad_draw;
@@ -699,9 +775,20 @@ quad_draw:
 quad_clip:
                     meshDrawQuadClip((byte *)pIdxList, pVerts, pNormals, pColorPtr, pvVar11, (int)nUnk, (int)bColor, (int)local8);
                 } else {
-                    gxDrawQuad((void *)(pVerts + o0), (void *)(pVerts + o1), (void *)(pVerts + o2), (void *)(pVerts + o3), (void *)pColorPtr, pvVar11);
+                    GxVert lit[4];
+                    memcpy(&lit[0], pVerts + o0, sizeof(GxVert));
+                    memcpy(&lit[1], pVerts + o1, sizeof(GxVert));
+                    memcpy(&lit[2], pVerts + o2, sizeof(GxVert));
+                    memcpy(&lit[3], pVerts + o3, sizeof(GxVert));
+                    for (int v = 0; v < 4; v++) {
+                        lit[v].r = (unsigned char)((float)lit[v].r * light);
+                        lit[v].g = (unsigned char)((float)lit[v].g * light);
+                        lit[v].b = (unsigned char)((float)lit[v].b * light);
+                    }
+                    gxDrawQuad(&lit[0], &lit[1], &lit[2], &lit[3], (void *)pColorPtr, pvVar11);
                 }
             }
+            g_sceneFaceLight = 1.0f;
             pIdxList = pIdxList + bStride;
             nCount--;
         } while (nCount != 0);
