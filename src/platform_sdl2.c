@@ -30,6 +30,9 @@ static SDL_GLContext s_gl;
 static char s_assetDir[1024];
 static char s_prefDir[1024];
 static int s_textInputOn;
+static Uint32 s_fpsStart;
+static unsigned int s_fpsFrameCount;
+static int s_fpsStarted;
 
 static int scancodeToChannel(SDL_Scancode sc)
 {
@@ -154,6 +157,9 @@ int platformInit(int argc, char **argv)
     SDL_GL_SetSwapInterval(1);
     g_hWnd = (void *)s_window;
     g_hAppInstance = (void *)s_window;
+    s_fpsStart = 0;
+    s_fpsFrameCount = 0;
+    s_fpsStarted = 0;
     SDL_StartTextInput();
     s_textInputOn = 1;
     appLog("[platform] window 640x480 GL3.3 asset='%s' pref='%s'",
@@ -286,6 +292,28 @@ FILE *platformFopenCI(const char *path, const char *mode)
 
 unsigned int platformTicks(void) { return SDL_GetTicks(); }
 void platformSleep(unsigned int ms) { SDL_Delay(ms); }
+
+void platformUpdateFPS(void)
+{
+    Uint32 now = SDL_GetTicks();
+    if (!s_window) return;
+    if (!s_fpsStarted) {
+        s_fpsStart = now;
+        s_fpsFrameCount = 1;
+        s_fpsStarted = 1;
+        return;
+    }
+    s_fpsFrameCount++;
+    if (now - s_fpsStart >= 1000) {
+        char title[64];
+        Uint32 elapsed = now - s_fpsStart;
+        unsigned int fps = (unsigned int)((Uint64)s_fpsFrameCount * 1000 / elapsed);
+        snprintf(title, sizeof(title), "Mall Maniacs - %u FPS", fps);
+        SDL_SetWindowTitle(s_window, title);
+        s_fpsStart = now;
+        s_fpsFrameCount = 0;
+    }
+}
 
 void platformShowError(const char *title, const char *msg)
 {

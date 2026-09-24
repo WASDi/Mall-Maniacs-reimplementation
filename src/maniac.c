@@ -69,6 +69,7 @@ int main(int argc, char **argv)
         } else {
             gameFrameUpdate();
         }
+        platformUpdateFPS();
         platformSleep(10);
     }
 
