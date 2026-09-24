@@ -105,21 +105,51 @@ int platformInit(int argc, char **argv)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
-    s_window = SDL_CreateWindow("Mall Maniacs",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-    if (!s_window) {
-        fprintf(stderr, "[platform] SDL_CreateWindow failed: %s\n", SDL_GetError());
-        SDL_Quit();
-        return 0;
+    {
+        int attempt;
+        for (attempt = 0; attempt < 2; attempt++) {
+            int requestMultisampling = (attempt == 0);
+            SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, requestMultisampling ? 1 : 0);
+            SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, requestMultisampling ? 4 : 0);
+            s_window = SDL_CreateWindow("Mall Maniacs",
+                SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480,
+                SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+            if (!s_window) {
+                char error[256];
+                snprintf(error, sizeof(error), "%s", SDL_GetError());
+                if (requestMultisampling) {
+                    fprintf(stderr, "[platform] SDL_CreateWindow with MSAA failed (%s); retrying without MSAA\n", error);
+                    continue;
+                }
+                fprintf(stderr, "[platform] SDL_CreateWindow failed: %s\n", error);
+                SDL_Quit();
+                return 0;
+            }
+            s_gl = SDL_GL_CreateContext(s_window);
+            if (s_gl) break;
+            {
+                char error[256];
+                snprintf(error, sizeof(error), "%s", SDL_GetError());
+                SDL_DestroyWindow(s_window);
+                s_window = NULL;
+                if (requestMultisampling) {
+                    fprintf(stderr, "[platform] SDL_GL_CreateContext with MSAA failed (%s); retrying without MSAA\n", error);
+                    continue;
+                }
+                fprintf(stderr, "[platform] SDL_GL_CreateContext failed: %s\n", error);
+                SDL_Quit();
+                return 0;
+            }
+        }
     }
-    s_gl = SDL_GL_CreateContext(s_window);
-    if (!s_gl) {
-        fprintf(stderr, "[platform] SDL_GL_CreateContext failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(s_window);
-        s_window = NULL;
-        SDL_Quit();
-        return 0;
+    {
+        int sampleBuffers = 0, samples = 0;
+        SDL_GL_GetAttribute(SDL_GL_MULTISAMPLEBUFFERS, &sampleBuffers);
+        SDL_GL_GetAttribute(SDL_GL_MULTISAMPLESAMPLES, &samples);
+        if (sampleBuffers > 0 && samples > 0)
+            appLog("[platform] GL multisampling enabled (%d samples)", samples);
+        else
+            appLog("[platform] GL multisampling unavailable; using non-MSAA rendering");
     }
     SDL_GL_SetSwapInterval(1);
     g_hWnd = (void *)s_window;
