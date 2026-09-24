@@ -64,6 +64,12 @@
  *   deferred past the sorted emission as well. pClearScreen only fills
  *   the framebuffer (the record queue survives it); callers always flip
  *   (draining the queue) before clearing, so the GL clear needs no queue flush.
+ * - PORT DEVIATION (cross_platform_plan.md Phase 3): perspective-correct
+ *   UVs. GXSOFT gxRasterTextureTri @0x100050b0 walks UVs linearly in
+ *   screen space (affine, PS1-style warp on oblique floors/walls). The
+ *   port instead feeds each GxVert's az depth (z/16) as GL clip w, so the
+ *   GPU perspective-divides vUV/vCol. Screen positions are unchanged
+ *   (p.xy*w/w); 2D draws (z 0 -> w 1) render exactly as before.
  */
 
 extern int g_nGfxMode; /* @0x4580c4 */
@@ -74,7 +80,18 @@ typedef struct GLVertex {
     float x, y;
     float u, v;
     float r, g, b, a;
+    float w; /* clip w for perspective-correct UVs (az depth; 1.0 for 2D) */
 } GLVertex;
+
+/* GxVert z is (aspect + worldZ) * 16 (see sceneNodeRender @0x42f8c0); the
+ * projected screen pos already divides by that depth, so feeding it back
+ * as clip w restores perspective-correct UV interpolation. z <= 0 marks
+ * unprojected 2D draws (gxDrawQuadColor @0x414470, fonts, HUD) where every
+ * vert shares w = 1 (affine == perspective there). */
+static float depthW(int z)
+{
+    return (z > 0) ? ((float)z / 16.0f) : 1.0f;
+}
 
 static GLuint s_prog;
 static GLuint s_vao, s_vbo;
@@ -102,9 +119,13 @@ static const char *kVS =
     "layout(location=0) in vec2 aPos;\n"
     "layout(location=1) in vec2 aUV;\n"
     "layout(location=2) in vec4 aCol;\n"
+    "layout(location=3) in float aW;\n"
     "uniform mat4 uMVP;\n"
     "out vec2 vUV; out vec4 vCol;\n"
-    "void main(){ gl_Position=uMVP*vec4(aPos,0.0,1.0); vUV=aUV; vCol=aCol; }\n";
+    /* NDC xy stay identical (p.xy * w / w), but a varying w lets GL
+     * perspective-divide vUV/vCol instead of affine screen-lerping them.
+     * w == 1 reproduces the old path exactly (2D UI, fullscreen blit). */
+    "void main(){ vec4 p=uMVP*vec4(aPos,0.0,1.0); gl_Position=vec4(p.xy*aW,0.0,aW); vUV=aUV; vCol=aCol; }\n";
 static const char *kFS =
     "#version 330 core\n"
     "in vec2 vUV; in vec4 vCol;\n"
@@ -142,15 +163,15 @@ static void batchEnsure(int need)
     if (s_batchCount + need > GL_BATCH_MAX_VERTS) batchFlush();
 }
 
-static void batchTri(float x0, float y0, float u0, float v0,
-                     float x1, float y1, float u1, float v1,
-                     float x2, float y2, float u2, float v2,
+static void batchTri(float x0, float y0, float u0, float v0, float w0,
+                     float x1, float y1, float u1, float v1, float w1,
+                     float x2, float y2, float u2, float v2, float w2,
                       float r, float g, float b, float a)
 {
     batchEnsure(3);
-    s_batch[s_batchCount++] = (GLVertex){x0, y0, u0, v0, r, g, b, a};
-    s_batch[s_batchCount++] = (GLVertex){x1, y1, u1, v1, r, g, b, a};
-    s_batch[s_batchCount++] = (GLVertex){x2, y2, u2, v2, r, g, b, a};
+    s_batch[s_batchCount++] = (GLVertex){x0, y0, u0, v0, r, g, b, a, w0};
+    s_batch[s_batchCount++] = (GLVertex){x1, y1, u1, v1, r, g, b, a, w1};
+    s_batch[s_batchCount++] = (GLVertex){x2, y2, u2, v2, r, g, b, a, w2};
 }
 
 static void useDrawState(GLuint tex, int blend, int key)
@@ -189,9 +210,9 @@ static size_t s_qCount, s_qCap;
 static unsigned s_qSeq;
 static int s_pendingBlit; /* fullscreen present deferred past sorted emission */
 
-static void queueTri(float x0, float y0, float u0, float v0,
-                     float x1, float y1, float u1, float v1,
-                     float x2, float y2, float u2, float v2,
+static void queueTri(float x0, float y0, float u0, float v0, float w0,
+                     float x1, float y1, float u1, float v1, float w1,
+                     float x2, float y2, float u2, float v2, float w2,
                      float r, float g, float b, float a,
                      GLuint tex, int zsum, int blend, int key)
 {
@@ -204,9 +225,9 @@ static void queueTri(float x0, float y0, float u0, float v0,
     }
     {
         QueuedTri *q = &s_queue[s_qCount++];
-        q->v[0] = (GLVertex){x0, y0, u0, v0, r, g, b, a};
-        q->v[1] = (GLVertex){x1, y1, u1, v1, r, g, b, a};
-        q->v[2] = (GLVertex){x2, y2, u2, v2, r, g, b, a};
+        q->v[0] = (GLVertex){x0, y0, u0, v0, r, g, b, a, w0};
+        q->v[1] = (GLVertex){x1, y1, u1, v1, r, g, b, a, w1};
+        q->v[2] = (GLVertex){x2, y2, u2, v2, r, g, b, a, w2};
         q->tex = tex;
         q->zsum = zsum;
         q->seq = s_qSeq++;
@@ -326,10 +347,10 @@ static int glFlip(void)
     if (s_pendingBlit) {
         s_pendingBlit = 0;
         useDrawState(s_streamTex, 0, 0);
-        batchTri(0, 0, 0, 0, (float)s_width, 0, 1, 0,
-                 (float)s_width, (float)s_height, 1, 1, 1, 1, 1, 1);
-        batchTri(0, 0, 0, 0, (float)s_width, (float)s_height, 1, 1,
-                 0, (float)s_height, 0, 1, 1, 1, 1, 1);
+        batchTri(0, 0, 0, 0, 1, (float)s_width, 0, 1, 0, 1,
+                 (float)s_width, (float)s_height, 1, 1, 1, 1, 1, 1, 1);
+        batchTri(0, 0, 0, 0, 1, (float)s_width, (float)s_height, 1, 1, 1,
+                 0, (float)s_height, 0, 1, 1, 1, 1, 1, 1);
     }
     batchFlush();
     SDL_Window *w = (SDL_Window *)platformWindow();
@@ -483,12 +504,16 @@ static void glDrawPolygon(void *a0, void *a1, void *a2, void *a3, int flags, voi
         float x1 = fx8(v1->x), y1 = fx8(v1->y);
         float x2 = fx8(v2->x), y2 = fx8(v2->y);
         float x3 = fx8(v3->x), y3 = fx8(v3->y);
-        /* Queued with the GXSOFT z-sum key (z0+z1+z2); emitted sorted at flip. */
+        /* Queued with the GXSOFT z-sum key (z0+z1+z2); emitted sorted at flip.
+         * Per-vertex w = az depth restores perspective-correct UVs (2D draws
+         * use z 0 -> w 1, identical to the old affine path). */
         int z012 = v0->z + v1->z + v2->z;
         int z023 = v0->z + v2->z + v3->z;
         int key = (tex != 0);
-        queueTri(x0, y0, u0, v00, x1, y1, u1, v1_, x2, y2, u2, v2_, r, g, b, 1, tex, z012, 0, key);
-        queueTri(x0, y0, u0, v00, x2, y2, u2, v2_, x3, y3, u3, v3_, r, g, b, 1, tex, z023, 0, key);
+        queueTri(x0, y0, u0, v00, depthW(v0->z), x1, y1, u1, v1_, depthW(v1->z),
+                 x2, y2, u2, v2_, depthW(v2->z), r, g, b, 1, tex, z012, 0, key);
+        queueTri(x0, y0, u0, v00, depthW(v0->z), x2, y2, u2, v2_, depthW(v2->z),
+                 x3, y3, u3, v3_, depthW(v3->z), r, g, b, 1, tex, z023, 0, key);
     }
 }
 
@@ -603,9 +628,9 @@ static void glDrawTriUV(void *a0, void *a1, void *a2, void *color, void *uvRec)
             if (s_origin & 0x20) { blend = 1; a = 0.5f; }
             else if (s_origin & 0x4000) { key = 1; }
         }
-        queueTri(fx8(v0->x), fx8(v0->y), u0, v0_,
-                 fx8(v1->x), fx8(v1->y), u1, v1_,
-                 fx8(v2->x), fx8(v2->y), u2, v2_, r, g, b, a,
+        queueTri(fx8(v0->x), fx8(v0->y), u0, v0_, depthW(v0->z),
+                 fx8(v1->x), fx8(v1->y), u1, v1_, depthW(v1->z),
+                 fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z), r, g, b, a,
                  tex, v0->z + v1->z + v2->z, blend, key);
     }
 }
@@ -648,14 +673,15 @@ static void glDrawQuad(void *a0, void *a1, void *a2, void *a3, void *color, void
             if (s_origin & 0x20) { blend = 1; a = 0.5f; }
             else if (s_origin & 0x4000) { key = 1; }
         }
-        /* Queued with the GXSOFT z-sum keys; emitted sorted at flip. */
-        queueTri(fx8(v0->x), fx8(v0->y), u0, v0_,
-                 fx8(v1->x), fx8(v1->y), u1, v1_,
-                 fx8(v2->x), fx8(v2->y), u2, v2_, r, g, b, a,
+        /* Queued with the GXSOFT z-sum keys; emitted sorted at flip.
+         * Per-vertex w = az depth restores perspective-correct UVs. */
+        queueTri(fx8(v0->x), fx8(v0->y), u0, v0_, depthW(v0->z),
+                 fx8(v1->x), fx8(v1->y), u1, v1_, depthW(v1->z),
+                 fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z), r, g, b, a,
                  tex, v0->z + v1->z + v2->z, blend, key);
-        queueTri(fx8(v0->x), fx8(v0->y), u0, v0_,
-                 fx8(v2->x), fx8(v2->y), u2, v2_,
-                 fx8(v3->x), fx8(v3->y), u3, v3_, r, g, b, a,
+        queueTri(fx8(v0->x), fx8(v0->y), u0, v0_, depthW(v0->z),
+                 fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z),
+                 fx8(v3->x), fx8(v3->y), u3, v3_, depthW(v3->z), r, g, b, a,
                  tex, v0->z + v2->z + v3->z, blend, key);
     }
 }
@@ -760,6 +786,8 @@ int gxGLBackendInstall(void)
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GLVertex), (void *)8);
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(GLVertex), (void *)16);
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(GLVertex), (void *)32);
     glUseProgram(s_prog);
     glUniform1i(glGetUniformLocation(s_prog, "uTex"), 0);
     glUniform1i(s_uUseTex, 0);
