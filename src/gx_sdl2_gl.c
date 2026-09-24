@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #define GL_GLEXT_PROTOTYPES
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
@@ -108,6 +109,9 @@ static GLuint s_streamTex;
 static int s_viewX, s_viewY, s_viewW, s_viewH;
 static int s_origin;
 static int s_width = 640, s_height = 480;
+static int s_drawWidth = 640, s_drawHeight = 480;
+static int s_outputX, s_outputY, s_outputWidth = 640, s_outputHeight = 480;
+static float s_outputScale = 1.0f;
 
 /* int handle (1-based) -> GLuint registry. */
 #define GL_TEX_MAX 4096
@@ -298,6 +302,48 @@ static GLuint texLookup(int handle)
     return s_tex[handle - 1];
 }
 
+static void glApplyViewport(void)
+{
+    int left = s_outputX + (int)floorf(s_viewX * s_outputScale);
+    int bottom = s_outputY + (int)floorf(s_viewY * s_outputScale);
+    int right = s_outputX + (int)ceilf((s_viewX + s_viewW) * s_outputScale);
+    int top = s_outputY + (int)ceilf((s_viewY + s_viewH) * s_outputScale);
+    glViewport(left, bottom, right - left, top - bottom);
+    glScissor(left, bottom, right - left, top - bottom);
+}
+
+static void glUpdateDrawableSize(void)
+{
+    SDL_Window *window = (SDL_Window *)platformWindow();
+    int width, height;
+    float scaleX, scaleY;
+    if (!window) return;
+    SDL_GL_GetDrawableSize(window, &width, &height);
+    if (width <= 0 || height <= 0 ||
+        (width == s_drawWidth && height == s_drawHeight)) return;
+
+    batchFlush();
+    s_drawWidth = width;
+    s_drawHeight = height;
+    scaleX = (float)width / (float)s_width;
+    scaleY = (float)height / (float)s_height;
+    s_outputScale = (scaleX < scaleY) ? scaleX : scaleY;
+    s_outputWidth = (int)floorf(s_width * s_outputScale);
+    s_outputHeight = (int)floorf(s_height * s_outputScale);
+    if (s_outputWidth < 1) s_outputWidth = 1;
+    if (s_outputHeight < 1) s_outputHeight = 1;
+    s_outputX = (width - s_outputWidth) / 2;
+    s_outputY = (height - s_outputHeight) / 2;
+
+    /* Clear newly exposed letterbox areas before drawing the next frame. */
+    glDisable(GL_SCISSOR_TEST);
+    glViewport(0, 0, width, height);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glEnable(GL_SCISSOR_TEST);
+    glApplyViewport();
+}
+
 /* --- backend slot implementations --- */
 
 static int glSetMode(GxMode *mode)
@@ -307,13 +353,14 @@ static int glSetMode(GxMode *mode)
         if (mode->height) s_height = mode->height;
     }
     batchFlush();
-    /* Mode set restores the fullscreen viewport (driver power-on state);
+    /* Mode set restores the full logical viewport (driver power-on state);
      * s_view* must track it — gxGetViewport feeds sceneRender's clip/save
      * restore, and stale (zero-init) values would clip everything to a
      * 0-size scissor on the first scene render (frozen screen). */
     s_viewX = 0; s_viewY = 0; s_viewW = s_width; s_viewH = s_height;
-    glViewport(0, 0, s_width, s_height);
-    glScissor(0, 0, s_width, s_height);
+    s_drawWidth = 0; s_drawHeight = 0;
+    glUpdateDrawableSize();
+    glApplyViewport();
     glEnable(GL_SCISSOR_TEST);
     /* Ortho MVP for 640x480 (y-down to match software rasterizer). */
     float m[16] = {0};
@@ -341,6 +388,9 @@ static int glSnooze(void) { batchFlush(); return 1; }
 
 static int glFlip(void)
 {
+    /* Window size changes affect the drawable independently of GX's fixed
+     * 640x480 logical mode; scale that canvas on the next presentation. */
+    glUpdateDrawableSize();
     /* Sorted 3D/UI emission first, then a deferred fullscreen blit (if
      * any), then swap — mirroring gxFlip's sort/draw/blit order. */
     queueEmitSorted();
@@ -362,6 +412,15 @@ static int glClearScreen(int clearMode, int color)
 {
     (void)clearMode;
     batchFlush();
+    glUpdateDrawableSize();
+    if (s_outputX != 0 || s_outputY != 0 ||
+        s_outputWidth != s_drawWidth || s_outputHeight != s_drawHeight) {
+        glDisable(GL_SCISSOR_TEST);
+        glClearColor(0, 0, 0, 1);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glEnable(GL_SCISSOR_TEST);
+        glApplyViewport();
+    }
     float r = ((color >> 16) & 0xff) / 255.0f;
     float g = ((color >> 8) & 0xff) / 255.0f;
     float b = (color & 0xff) / 255.0f;
@@ -379,12 +438,10 @@ static int glSetViewport(void *rect)
         if (w < 0) w = 0;
         if (h < 0) h = 0;
         s_viewX = r[0]; s_viewY = s_height - r[3]; s_viewW = w; s_viewH = h;
-        glViewport(s_viewX, s_viewY, s_viewW, s_viewH);
-        glScissor(s_viewX, s_viewY, s_viewW, s_viewH);
+        glApplyViewport();
     } else {
         s_viewX = 0; s_viewY = 0; s_viewW = s_width; s_viewH = s_height;
-        glViewport(0, 0, s_width, s_height);
-        glScissor(0, 0, s_width, s_height);
+        glApplyViewport();
     }
     return 1;
 }
@@ -409,8 +466,8 @@ static int glResetState(void)
     glUniform1i(s_uUseTex, 0);
     glUniform1i(s_uKeyBlack, 0);
     glDisable(GL_BLEND);
-    glViewport(0, 0, s_width, s_height);
-    glScissor(0, 0, s_width, s_height);
+    s_viewX = 0; s_viewY = 0; s_viewW = s_width; s_viewH = s_height;
+    glApplyViewport();
     return 1;
 }
 

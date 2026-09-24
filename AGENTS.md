@@ -19,8 +19,7 @@ with offline GUI and single-player functionality.
 - Active development and verification target: **Linux x86-64**. Defer
   Windows/macOS build/run claims until those targets are actually verified.
 - The Win32/MinGW/`GXSOFT.DLL` era (`maniac_rebuild.exe` under Wine) is
-  historical — see `docs/16-rebuild.md`. Do not extend it; record new status
-  in `docs/17-cross-platform.md`.
+  historical.
 
 ## Implementation
 - Do not reimplement system libraries, runtime code, import stubs, or compiler glue.

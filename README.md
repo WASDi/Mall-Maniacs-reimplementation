@@ -15,5 +15,5 @@ The game is now fully playable (excluding network play). This took a lot of time
 
 Future goals:
 
-* Port the game to cross-plattform, replacing the software renderer with some popular hardware rendering-based library.
+* Port the game to cross-plattform, replacing the software renderer with some popular hardware rendering-based library - DONE.
 * Make a HD mod using image upscaling and adding modern rendering techniques.

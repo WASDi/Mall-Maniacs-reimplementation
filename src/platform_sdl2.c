@@ -107,7 +107,7 @@ int platformInit(int argc, char **argv)
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
     s_window = SDL_CreateWindow("Mall Maniacs",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (!s_window) {
         fprintf(stderr, "[platform] SDL_CreateWindow failed: %s\n", SDL_GetError());
         SDL_Quit();
