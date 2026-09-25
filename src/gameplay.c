@@ -642,6 +642,16 @@ void roundTeardown(void) /* @0x40aa10 */
     }
     g_pSndEmitterHead = NULL;                        /* @0x45e5f0 @0x40aa65 */
     g_pSndEmitterTail = NULL;                        /* @0x45e5f4 @0x40aa6b */
+    /* The player records co-own their step/engine emitters (lazy alloc/free
+     * in playerAnimSfxUpdate), so the list free above leaves dangling
+     * pSndEmitterStep/Engine behind. Clear them: otherwise the next round
+     * treats the freed (and realloc'd) blocks as live emitters and crashes
+     * in sndEmitterFree ("free(): invalid pointer" on the second gameplay).
+     * playerSetupRound NULLs them again defensively at round start. */
+    for (i = 0; i < 8; i++) {
+        g_playerRecords[i].pSndEmitterStep = NULL;
+        g_playerRecords[i].pSndEmitterEngine = NULL;
+    }
     sndShutdown();                                   /* @0x437cb0 @0x40aa71 */
     for (pConn = (ZoneConn *)g_pZoneConnHead; pConn != NULL; /* @0x40aa76 */
          pConn = pNextConn) {

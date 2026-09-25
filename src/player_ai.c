@@ -651,8 +651,10 @@ int aiStateCartAction(AiController *pCtrl) /* @0x401e40 */
 int aiStateGrabObject(AiController *pCtrl) /* @0x401eb0 */
 {
     PlayerRecord *pRec = pCtrl->pPlayerObj;
-    GxVec2 vItem;
-    int nItemHeight;
+    struct {                                           /* {z, x, height} layout */
+        GxVec2 vXZ;
+        int nHeight;
+    } target;
     int nHeld;
     EventObject *pObj;
 
@@ -660,7 +662,7 @@ int aiStateGrabObject(AiController *pCtrl) /* @0x401eb0 */
         pCtrl->nTargetItemId = pRec->anListIds[0];     /* +0x184 @0x401eda */
     }
     pObj = objGetPos(pCtrl->nTargetItemId, pCtrl->nTargetOccurrence,
-                     &vItem.x, &nItemHeight);          /* @0x40f1b0 @0x401eef */
+                     &target.vXZ.x, &target.nHeight);  /* @0x40f1b0 @0x401eef */
     (void)pObj;
 
     nHeld = pRec->anHeldSlot[0];                       /* +0x17c @0x401f01 */
@@ -681,7 +683,7 @@ int aiStateGrabObject(AiController *pCtrl) /* @0x401eb0 */
         }
         return 0;
     }
-    aiPathfindToTarget(pCtrl, &pCtrl->vSelfXZ.x, &vItem.x); /* @0x401f98 */
+    aiPathfindToTarget(pCtrl, &pCtrl->vSelfXZ.x, &target.vXZ.x); /* @0x401f98 */
     return 0;
 }
 

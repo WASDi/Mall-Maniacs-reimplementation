@@ -146,6 +146,13 @@ void playerSetupRound(void) /* @0x410e90 */
         pRec->nActionSubstate = 0;                                         /* @0x410f95 */
         pRec->nAiPhase = 0;                                                /* @0x410f98 */
         pRec->field_2fc = 0;                                               /* @0x410f9b */
+        /* roundTeardown frees every emitter but a quit path that skips it
+         * would leave dangling step/engine emitters behind; a stale
+         * non-NULL pointer here is treated as live by playerAnimSfxUpdate
+         * and crashes on the next round, so always start clean (safe: at
+         * this point no voice may reference them anymore). */
+        pRec->pSndEmitterStep = NULL;
+        pRec->pSndEmitterEngine = NULL;
         if (pRec->pSubObjA != NULL) {                                      /* @0x410f9e */
             objDtor((WorldNode *)pRec->pSubObjA);                          /* @0x402ab0 @0x410faa */
             memFreeDirect(pRec->pSubObjA);                                 /* @0x43dd37 @0x410fb0 */
