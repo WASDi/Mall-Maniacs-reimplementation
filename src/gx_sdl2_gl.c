@@ -33,15 +33,11 @@
  *   folds its effect into the byte/256 edge); other exotic
  *   pSetOrigin bits only gate the backface rule. pDrawTriangle/pDrawLine
  *   stay no-ops (as in GXSOFT).
- * - Ordering: gxDrawTriUV/gxDrawQuad/gxDrawPolygon only QUEUE 0x50-byte
- *   records (backface-cull + trivial-reject at queue time); gxFlip runs
- *   the gxSortPolyRecords bucket painter sort (descending z-sum: far
- *   first) and rasterizes in that order. The port replicates this with a
- *   deferred queue: every tri is queued with its z-sum key and emitted
- *   back-to-front at pFlip (stable within equal keys, so z==0 HUD draws
- *   keep submission order on top). Drawing immediately in submission
- *   order hides characters behind the mall floor and floats transparent
- *   items above nearer geometry.
+ * - Ordering: opaque scene triangles are submitted without sorting and use
+ *   the depth buffer; scene-transparent triangles retain the far-first stable
+ *   painter sort with depth writes disabled, while UI/fullscreen draws follow
+ *   in submission order. The per-tri texture rides along because state changes
+ *   flush the GL batch as before.
  * - Transparency follows gxSetOrigin @0x10001f90 exactly: textured draws
  *   with origin bit 0x20 use the blend rasterizer (LUT _g_abBlend, 50%
  *   average — every texel contributes, including near-black); with 0x20
@@ -112,6 +108,9 @@ static int s_batchCount;
 static GLuint s_boundTex;
 static int s_blendOn;
 static int s_keyBlack;
+static int s_depthTest;
+static int s_depthWrite;
+static int s_depthEnabled;
 /* Fullscreen streaming texture for presentFrame CPU buffers (R5G6B5). */
 static GLuint s_streamTex;
 static unsigned char *s_rgba;
@@ -141,7 +140,7 @@ static const char *kVS =
     /* NDC xy stay identical (p.xy * w / w), but a varying w lets GL
      * perspective-divide vUV/vCol instead of affine screen-lerping them.
      * w == 1 reproduces the old path exactly (2D UI, fullscreen blit). */
-    "void main(){ vec4 p=uMVP*vec4(aPos,0.0,1.0); gl_Position=vec4(p.xy*aW,0.0,aW); vUV=aUV; vCol=aCol; }\n";
+    "void main(){ vec4 p=uMVP*vec4(aPos,0.0,1.0); float depth=clamp((aW/4096.0)*2.0-1.0,-1.0,1.0); gl_Position=vec4(p.xy*aW,depth*aW,aW); vUV=aUV; vCol=aCol; }\n";
 static const char *kFS =
     "#version 330 core\n"
     "in vec2 vUV; in vec4 vCol;\n"
@@ -191,29 +190,30 @@ static void batchTri(float x0, float y0, float u0, float v0, float w0,
     s_batch[s_batchCount++] = (GLVertex){x2, y2, u2, v2, r, g, b, a, w2};
 }
 
-static void useDrawState(GLuint tex, int blend, int key)
+static void useDrawState(GLuint tex, int blend, int key,
+                          int depthTest, int depthWrite)
 {
-    if (tex != s_boundTex || blend != s_blendOn || key != s_keyBlack) {
+    if (tex != s_boundTex || blend != s_blendOn || key != s_keyBlack ||
+        depthTest != s_depthTest || depthWrite != s_depthWrite) {
         batchFlush();
         s_boundTex = tex;
         s_blendOn = blend;
         s_keyBlack = key;
+        s_depthTest = depthTest;
+        s_depthWrite = depthWrite;
         glBindTexture(GL_TEXTURE_2D, tex ? tex : 0);
         glUniform1i(s_uUseTex, tex ? 1 : 0);
         glUniform1i(s_uKeyBlack, (tex && key) ? 1 : 0);
         glUniform1i(s_uKeyAlpha, (tex && key == 2) ? 1 : 0);
         if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+        if (depthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+        glDepthMask(depthWrite ? GL_TRUE : GL_FALSE);
     }
 }
 
-/* Deferred painter queue replicating the GXSOFT record queue + the
- * gxSortPolyRecords bucket sort at gxFlip time. Every tri from
- * glDrawPolygon/glDrawTriUV/glDrawQuad is queued with its z-sum key
- * (GxVert z0+z1+z2, larger = farther: scene depth is (aspect+wz)*16,
- * 2D draws use z 0) and emitted back-to-front at glFlip. Ordering within
- * equal keys is stable (sequence tiebreak) so HUD layering is preserved.
- * The per-tri texture rides along because the sorted emission rebinds
- * (useDrawState flushes the GL batch on change, as before). */
+/* Deferred painter queues: opaque scene records are emitted in submission
+ * order, transparent scene records are far-first sorted, and UI records keep
+ * submission order. */
 typedef struct QueuedTri {
     GLVertex v[3];
     GLuint tex;
@@ -223,9 +223,18 @@ typedef struct QueuedTri {
     int key;   /* near-black discard at emission (color-key path) */
 } QueuedTri;
 
-static QueuedTri *s_queue;
-static size_t s_qCount, s_qCap;
+typedef struct QueueBucket {
+    QueuedTri *data;
+    size_t count;
+    size_t cap;
+} QueueBucket;
+
+static QueueBucket s_opaqueQueue;
+static QueueBucket s_transparentQueue;
+static QueueBucket s_uiQueue;
+static QueueBucket s_legacyQueue;
 static unsigned s_qSeq;
+static int s_transparentOrdered = 1;
 static int s_pendingBlit; /* fullscreen present deferred past sorted emission */
 
 static void queueTri(float x0, float y0, float u0, float v0, float w0,
@@ -234,26 +243,38 @@ static void queueTri(float x0, float y0, float u0, float v0, float w0,
                      float r0, float g0, float b0,
                      float r1, float g1, float b1,
                      float r2, float g2, float b2, float a,
-                     GLuint tex, int zsum, int blend, int key)
+                     int scene, GLuint tex, int zsum, int blend, int key)
 {
-    if (s_qCount >= s_qCap) {
-        size_t ncap = s_qCap ? s_qCap * 2 : 4096;
-        QueuedTri *nq = (QueuedTri *)realloc(s_queue, ncap * sizeof(QueuedTri));
-        if (!nq) return; /* OOM: drop (never observed; queue drains every flip) */
-        s_queue = nq;
-        s_qCap = ncap;
+    QueuedTri q;
+    QueueBucket *bucket;
+    if (!s_depthEnabled)
+        bucket = &s_legacyQueue;
+    else if (scene && (blend || key))
+        bucket = &s_transparentQueue;
+    else if (scene)
+        bucket = &s_opaqueQueue;
+    else
+        bucket = &s_uiQueue;
+    if (bucket->count >= bucket->cap) {
+        size_t ncap = bucket->cap ? bucket->cap * 2 : 4096;
+        QueuedTri *nq = (QueuedTri *)realloc(bucket->data,
+                                             ncap * sizeof(QueuedTri));
+        if (!nq) return;
+        bucket->data = nq;
+        bucket->cap = ncap;
     }
-    {
-        QueuedTri *q = &s_queue[s_qCount++];
-        q->v[0] = (GLVertex){x0, y0, u0, v0, r0, g0, b0, a, w0};
-        q->v[1] = (GLVertex){x1, y1, u1, v1, r1, g1, b1, a, w1};
-        q->v[2] = (GLVertex){x2, y2, u2, v2, r2, g2, b2, a, w2};
-        q->tex = tex;
-        q->zsum = zsum;
-        q->seq = s_qSeq++;
-        q->blend = blend;
-        q->key = key;
-    }
+    q.v[0] = (GLVertex){x0, y0, u0, v0, r0, g0, b0, a, w0};
+    q.v[1] = (GLVertex){x1, y1, u1, v1, r1, g1, b1, a, w1};
+    q.v[2] = (GLVertex){x2, y2, u2, v2, r2, g2, b2, a, w2};
+    q.tex = tex;
+    q.zsum = zsum;
+    q.seq = s_qSeq++;
+    q.blend = blend;
+    q.key = key;
+    if (bucket == &s_transparentQueue && bucket->count > 0 &&
+        q.zsum > bucket->data[bucket->count - 1].zsum)
+        s_transparentOrdered = 0;
+    bucket->data[bucket->count++] = q;
 }
 
 static int queueTriCmp(const void *a, const void *b)
@@ -267,18 +288,38 @@ static int queueTriCmp(const void *a, const void *b)
 /* Sort + emit the deferred queue (gxSortPolyRecords + gxDrawPolyRecords),
  * then the deferred fullscreen blit (FUN_10002810 runs after the records
  * in gxFlip), then swap. */
-static void queueEmitSorted(void)
+static void queueEmitBucket(QueueBucket *bucket, int depthTest, int depthWrite)
 {
-    if (s_qCount > 1) qsort(s_queue, s_qCount, sizeof(QueuedTri), queueTriCmp);
-    for (size_t i = 0; i < s_qCount; i++) {
-        QueuedTri *q = &s_queue[i];
-        useDrawState(q->tex, q->blend, q->key);
+    for (size_t i = 0; i < bucket->count; i++) {
+        QueuedTri *q = &bucket->data[i];
+        useDrawState(q->tex, q->blend, q->key, depthTest, depthWrite);
         batchEnsure(3);
         s_batch[s_batchCount++] = q->v[0];
         s_batch[s_batchCount++] = q->v[1];
         s_batch[s_batchCount++] = q->v[2];
     }
-    s_qCount = 0;
+}
+
+static void queueEmitSorted(void)
+{
+    if (!s_depthEnabled) {
+        if (s_legacyQueue.count > 1)
+            qsort(s_legacyQueue.data, s_legacyQueue.count,
+                  sizeof(QueuedTri), queueTriCmp);
+        queueEmitBucket(&s_legacyQueue, 0, 0);
+        s_legacyQueue.count = 0;
+        return;
+    }
+    if (s_transparentQueue.count > 1 && !s_transparentOrdered)
+        qsort(s_transparentQueue.data, s_transparentQueue.count,
+              sizeof(QueuedTri), queueTriCmp);
+    queueEmitBucket(&s_opaqueQueue, 1, 1);
+    queueEmitBucket(&s_transparentQueue, 1, 0);
+    queueEmitBucket(&s_uiQueue, 0, 0);
+    s_opaqueQueue.count = 0;
+    s_transparentQueue.count = 0;
+    s_uiQueue.count = 0;
+    s_transparentOrdered = 1;
 }
 
 /* Fixed 8.8 -> pixels; UV 8.8 -> 0..1 (texture is 256x256). */
@@ -385,7 +426,9 @@ static void glUpdateDrawableSize(void)
     glDisable(GL_SCISSOR_TEST);
     glViewport(0, 0, width, height);
     glClearColor(0, 0, 0, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glDepthMask(GL_TRUE);
+    s_depthWrite = 1;
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_SCISSOR_TEST);
     glApplyViewport();
 }
@@ -408,6 +451,12 @@ static int glSetMode(GxMode *mode)
     glUpdateDrawableSize();
     glApplyViewport();
     glEnable(GL_SCISSOR_TEST);
+    glDepthFunc(GL_LESS);
+    glClearDepth(1.0);
+    glDepthMask(GL_TRUE);
+    s_depthTest = s_depthEnabled;
+    s_depthWrite = 1;
+    if (s_depthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     /* Ortho MVP for 640x480 (y-down to match software rasterizer). */
     float m[16] = {0};
     m[0] = 2.0f / (float)s_width; m[5] = -2.0f / (float)s_height;
@@ -415,7 +464,7 @@ static int glSetMode(GxMode *mode)
     glUseProgram(s_prog);
     glUniformMatrix4fv(s_uMVP, 1, GL_FALSE, m);
     glClearColor(0, 0, 0, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     return 1;
 }
 
@@ -442,7 +491,7 @@ static int glFlip(void)
     queueEmitSorted();
     if (s_pendingBlit) {
         s_pendingBlit = 0;
-        useDrawState(s_streamTex, 0, 0);
+        useDrawState(s_streamTex, 0, 0, 0, 0);
         batchTri(0, 0, 0, 0, 1, (float)s_width, 0, 1, 0, 1,
                  (float)s_width, (float)s_height, 1, 1, 1, 1, 1, 1, 1);
         batchTri(0, 0, 0, 0, 1, (float)s_width, (float)s_height, 1, 1, 1,
@@ -461,12 +510,13 @@ static int glClearScreen(int clearMode, int color)
 {
     (void)clearMode;
     batchFlush();
-    glUpdateDrawableSize();
     if (s_outputX != 0 || s_outputY != 0 ||
         s_outputWidth != s_drawWidth || s_outputHeight != s_drawHeight) {
         glDisable(GL_SCISSOR_TEST);
         glClearColor(0, 0, 0, 1);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glDepthMask(GL_TRUE);
+        s_depthWrite = 1;
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_SCISSOR_TEST);
         glApplyViewport();
     }
@@ -474,22 +524,29 @@ static int glClearScreen(int clearMode, int color)
     float g = ((color >> 8) & 0xff) / 255.0f;
     float b = (color & 0xff) / 255.0f;
     glClearColor(r, g, b, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glDepthMask(GL_TRUE);
+    s_depthWrite = 1;
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     return 1;
 }
 
 static int glSetViewport(void *rect)
 {
-    batchFlush();
+    int oldX = s_viewX;
+    int oldY = s_viewY;
+    int oldW = s_viewW;
+    int oldH = s_viewH;
     if (rect) {
         int *r = (int *)rect; /* left,top,right,bottom (pixels) */
         int w = r[2] - r[0], h = r[3] - r[1];
         if (w < 0) w = 0;
         if (h < 0) h = 0;
         s_viewX = r[0]; s_viewY = s_height - r[3]; s_viewW = w; s_viewH = h;
-        glApplyViewport();
     } else {
         s_viewX = 0; s_viewY = 0; s_viewW = s_width; s_viewH = s_height;
+    }
+    if (s_viewX != oldX || s_viewY != oldY ||
+        s_viewW != oldW || s_viewH != oldH) {
         glApplyViewport();
     }
     return 1;
@@ -516,6 +573,12 @@ static int glResetState(void)
     glUniform1i(s_uKeyBlack, 0);
     glUniform1i(s_uKeyAlpha, 0);
     glDisable(GL_BLEND);
+    glDepthFunc(GL_LESS);
+    glClearDepth(1.0);
+    glDepthMask(GL_TRUE);
+    s_depthTest = s_depthEnabled;
+    s_depthWrite = 1;
+    if (s_depthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     s_viewX = 0; s_viewY = 0; s_viewW = s_width; s_viewH = s_height;
     glApplyViewport();
     return 1;
@@ -616,10 +679,10 @@ static void glDrawPolygon(void *a0, void *a1, void *a2, void *a3, int flags, voi
         int key = tex ? keyMode : 0;
         queueTri(x0, y0, u0, v00, depthW(v0->z), x1, y1, u1, v1_, depthW(v1->z),
                  x2, y2, u2, v2_, depthW(v2->z),
-                 r, g, b, r, g, b, r, g, b, 1, tex, z012, 0, key);
+                 r, g, b, r, g, b, r, g, b, 1, 0, tex, z012, 0, key);
         queueTri(x0, y0, u0, v00, depthW(v0->z), x2, y2, u2, v2_, depthW(v2->z),
                  x3, y3, u3, v3_, depthW(v3->z),
-                 r, g, b, r, g, b, r, g, b, 1, tex, z023, 0, key);
+                 r, g, b, r, g, b, r, g, b, 1, 0, tex, z023, 0, key);
     }
 }
 
@@ -686,9 +749,7 @@ static void glSetOrigin(int packed)
 {
     /* GXSOFT gxSetOrigin @0x10001f90 keeps the low 16 bits as g_dwFlags;
      * bit 0x8000 disables the backface-cull in gxDrawTriUV/gxDrawQuad. */
-    int next = packed & 0xffff;
-    if (next != s_origin) batchFlush();
-    s_origin = next;
+    s_origin = packed & 0xffff;
 }
 
 static void glDrawTriangle(void *v0, void *color) { (void)v0; (void)color; }
@@ -769,7 +830,7 @@ static void glDrawTriUV(void *a0, void *a1, void *a2, void *color, void *uvRec)
                  fx8(v1->x), fx8(v1->y), u1, v1_, depthW(v1->z),
                  fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z),
                  r0, g0, b0, r1, g1, b1, r2, g2, b2, a,
-                 tex, v0->z + v1->z + v2->z, blend, key);
+                 1, tex, v0->z + v1->z + v2->z, blend, key);
     }
 }
 
@@ -836,12 +897,12 @@ static void glDrawQuad(void *a0, void *a1, void *a2, void *a3, void *color, void
                  fx8(v1->x), fx8(v1->y), u1, v1_, depthW(v1->z),
                  fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z),
                  r0, g0, b0, r1, g1, b1, r2, g2, b2, a,
-                 tex, v0->z + v1->z + v2->z, blend, key);
+                 1, tex, v0->z + v1->z + v2->z, blend, key);
         queueTri(fx8(v0->x), fx8(v0->y), u0, v0_, depthW(v0->z),
                  fx8(v2->x), fx8(v2->y), u2, v2_, depthW(v2->z),
                  fx8(v3->x), fx8(v3->y), u3, v3_, depthW(v3->z),
                  r0, g0, b0, r2, g2, b2, r3, g3, b3, a,
-                 tex, v0->z + v2->z + v3->z, blend, key);
+                 1, tex, v0->z + v2->z + v3->z, blend, key);
     }
 }
 
@@ -942,6 +1003,7 @@ static int glCreateSurface(const char *path)
 int gxGLBackendInstall(void)
 {
     GLuint vs, fs;
+    GLint depthBits = 0;
     vs = compileShader(GL_VERTEX_SHADER, kVS);
     fs = compileShader(GL_FRAGMENT_SHADER, kFS);
     s_prog = glCreateProgram();
@@ -954,6 +1016,8 @@ int gxGLBackendInstall(void)
     s_uUseTex = glGetUniformLocation(s_prog, "uUseTex");
     s_uKeyBlack = glGetUniformLocation(s_prog, "uKeyBlack");
     s_uKeyAlpha = glGetUniformLocation(s_prog, "uKeyAlpha");
+    glGetIntegerv(GL_DEPTH_BITS, &depthBits);
+    s_depthEnabled = depthBits > 0;
     glGenVertexArrays(1, &s_vao);
     glGenBuffers(1, &s_vbo);
     glBindVertexArray(s_vao);
@@ -972,7 +1036,12 @@ int gxGLBackendInstall(void)
     glUniform1i(s_uUseTex, 0);
     glUniform1i(s_uKeyBlack, 0);
     glUniform1i(s_uKeyAlpha, 0);
-    glDisable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glClearDepth(1.0);
+    glDepthMask(GL_TRUE);
+    s_depthTest = s_depthEnabled;
+    s_depthWrite = 1;
+    if (s_depthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_SCISSOR_TEST);
@@ -982,8 +1051,12 @@ int gxGLBackendInstall(void)
     s_boundTex = 0;
     s_blendOn = 0;
     s_keyBlack = 0;
-    s_qCount = 0;
+    s_opaqueQueue.count = 0;
+    s_transparentQueue.count = 0;
+    s_uiQueue.count = 0;
+    s_legacyQueue.count = 0;
     s_qSeq = 0;
+    s_transparentOrdered = 1;
     s_pendingBlit = 0;
     s_texCount = 0;
     memset(s_tex, 0, sizeof(s_tex));
@@ -1035,8 +1108,12 @@ int gxGLBackendInstall(void)
 void gxGLBackendUninstall(void)
 {
     batchFlush();
-    s_qCount = 0;
+    s_opaqueQueue.count = 0;
+    s_transparentQueue.count = 0;
+    s_uiQueue.count = 0;
+    s_legacyQueue.count = 0;
     s_qSeq = 0;
+    s_transparentOrdered = 1;
     s_pendingBlit = 0;
     for (int i = 0; i < s_texCount; i++) {
         GLuint textures[] = {s_tex[i].nearest, s_tex[i].linear,

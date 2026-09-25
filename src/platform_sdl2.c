@@ -107,7 +107,7 @@ int platformInit(int argc, char **argv)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     {
         int attempt;
         for (attempt = 0; attempt < 2; attempt++) {
@@ -153,6 +153,11 @@ int platformInit(int argc, char **argv)
             appLog("[platform] GL multisampling enabled (%d samples)", samples);
         else
             appLog("[platform] GL multisampling unavailable; using non-MSAA rendering");
+    }
+    {
+        int depthBits = 0;
+        SDL_GL_GetAttribute(SDL_GL_DEPTH_SIZE, &depthBits);
+        appLog("[platform] GL depth buffer %d bits", depthBits);
     }
     if (SDL_GL_SetSwapInterval(1) != 0) {
         appLog("[platform] VSync unavailable: %s", SDL_GetError());

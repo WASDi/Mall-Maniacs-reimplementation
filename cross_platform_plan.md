@@ -150,11 +150,13 @@ it. `GxMode.hInstance/hwnd` become ignored fields.
 - State: `pSetViewport → glViewport/glScissor`, `pClearScreen → glClear`,
   `pSnooze/pResetState` trivial, `nDriverActive` accounting preserved.
   Textured/opaque/alpha maps to a single blend on/off (`glBlendFunc`);
-  color-key and exotic `pSetOrigin` bits are not replicated. Depth test off;
-  scene draw order (already sorted by the game) defines occlusion.
-  Perspective-correct UVs are used; the original's affine warps, float
-  rounding streaks, backface-cull `<1` rule, `z>=0` near test, bucket painter
-  sort, and half-texel paths are intentionally not reproduced.
+  color-key and exotic `pSetOrigin` bits are not replicated. A depth buffer
+  resolves opaque scene triangles; scene-transparent triangles depth-test
+  without writing, while UI and fullscreen presentation disable depth. Only
+  transparent scene triangles retain painter sorting. Perspective-correct UVs
+  are used; the original's affine warps, float rounding streaks, backface-cull
+  `<1` rule, `z>=0` near test, and half-texel paths are intentionally not
+  reproduced.
 - `pDrawTriangle/pDrawLine` (no-op `RET` stubs in GXSOFT) stay no-ops.
 - Backslash asset literals (`DRIVERS\…`, `menu\…`, `sound\…`) resolve through
   the Phase 5 path normalizer or are rewritten to `/`.
