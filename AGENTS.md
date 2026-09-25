@@ -54,9 +54,9 @@ with offline GUI and single-player functionality.
 - Follow established patterns and code format and comment structures.
 - After every thinking step, output a one sentence summary of the progress.
 
-## Rules
+## Old rules
 
-VERY IMPORTANT! REMEMBER THESE:
+These rules are no longer strictly enforced for the cross-platform build.
 
 - Always look at both `decompile_function` and `disassemble_function` when reimplementing a function. The decompile serves as an overall structure, but it is lossy so the disassembly needs to be thoroughly verified so its logic matches the reimplemented code.
 - Use precise types rather than Ghidra undefined placeholders. Give proper names to everything (not ghidra placeholder names like "param_1" or "iVar3" etc). Use `set_function_prototype` and  `create_struct` to come up with structs the the original code likely had. Don't use raw access `obj + 0x...`, instead use `obj.field`.

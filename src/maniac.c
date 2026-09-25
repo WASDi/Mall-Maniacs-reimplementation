@@ -65,7 +65,7 @@ int main(int argc, char **argv)
             break;
         }
         if (g_bGameActive != 0) {
-            gameRunFrame(0);
+            gameRunFrame(1);
         } else {
             gameFrameUpdate();
         }

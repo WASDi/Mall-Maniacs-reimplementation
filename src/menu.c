@@ -926,6 +926,7 @@ void menuInit(int nRestartMode)
  * deferred. Timing uses getGameTime @0x40dfe0 (SDL2 clock source). */
 void gameFrameUpdate(void)
 {
+    static DWORD s_nLastMixTime;
     GxColorUv uv;
     GxVert    v0;
     GxVert    v1;
@@ -956,14 +957,13 @@ void gameFrameUpdate(void)
 
     if (g_nMenuInit != 0) {
         now = (DWORD)getGameTime();
-        if (g_nLastFrameTime + 0x19 <= now) {
-            now = (DWORD)getGameTime();
-            g_flFrameDelta = (float)(now - g_nLastFrameTime) * 0.04f;
-            g_nLastFrameTime = (DWORD)getGameTime();
-            /* sndMixTick(0) @0x437c50 — lock SDL ring regions,
-             * render the active voices, and recycle finished ones
-             * (src/sound.c). */
+        g_flFrameDelta = (float)(now - g_nLastFrameTime) * 0.04f;
+        g_nLastFrameTime = now;
+        if (s_nLastMixTime == 0 || g_nObjUpdateTime <= 0 ||
+            now - s_nLastMixTime >= (DWORD)g_nObjUpdateTime) {
             sndMixTick(0);
+            s_nLastMixTime = now;
+        }
 
             if (g_pStateFunc != introUpdate &&
                 g_pStateFunc != stateQuitConfirm) {
@@ -1101,6 +1101,5 @@ void gameFrameUpdate(void)
                 gxFlip();
                 gxClearScreen(1, 0);   /* g_nClearColor @0x45892c = 0 */
             }
-        }
     }
 }

@@ -114,6 +114,9 @@ static int s_blendOn;
 static int s_keyBlack;
 /* Fullscreen streaming texture for presentFrame CPU buffers (R5G6B5). */
 static GLuint s_streamTex;
+static unsigned char *s_rgba;
+static unsigned char *s_streamSource;
+static int s_streamSourceValid;
 static int s_viewX, s_viewY, s_viewW, s_viewH;
 static int s_origin;
 static int s_width = 640, s_height = 480;
@@ -628,12 +631,12 @@ static int glBlitSurface(int a, int b, int c, void *tex, int x, int y, int w, in
      * B5 at bits 0-4 (verified against the decompile: (B>>3) +
      * (((R&0xf8)*0x20 + (G&0x1ffc))*8)), so decode R5G6B5 here — not
      * X1R5G5B5. No palette LUT. */
-    static unsigned char *s_rgba;
     unsigned short *px = (unsigned short *)tex;
     (void)a; (void)b; (void)c; (void)x; (void)y; (void)w; (void)h; (void)h2;
     if (!px) return 0;
     if (!s_rgba) s_rgba = (unsigned char *)malloc(640 * 480 * 4);
     if (!s_rgba) return 0;
+    if (!s_streamSource) s_streamSource = (unsigned char *)malloc(640 * 480 * 2);
     if (!s_streamTex) {
         glGenTextures(1, &s_streamTex);
         batchFlush();
@@ -642,6 +645,16 @@ static int glBlitSurface(int a, int b, int c, void *tex, int x, int y, int w, in
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 640, 480, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    }
+    batchFlush();
+    glBindTexture(GL_TEXTURE_2D, s_streamTex);
+    if (s_streamSource && s_streamSourceValid &&
+        memcmp(px, s_streamSource, 640 * 480 * 2) == 0) {
+        s_boundTex = 0xFFFFFFFFu;
+        s_pendingBlit = 1;
+        return 1;
     }
     for (int i = 0; i < 640 * 480; i++) {
         unsigned short v = px[i];
@@ -650,9 +663,12 @@ static int glBlitSurface(int a, int b, int c, void *tex, int x, int y, int w, in
         s_rgba[i*4+2] = (unsigned char)((v & 0x1f) * 255 / 31);
         s_rgba[i*4+3] = 0xff;
     }
-    batchFlush();
-    glBindTexture(GL_TEXTURE_2D, s_streamTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 640, 480, 0, GL_RGBA, GL_UNSIGNED_BYTE, s_rgba);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 640, 480,
+                    GL_RGBA, GL_UNSIGNED_BYTE, s_rgba);
+    if (s_streamSource) {
+        memcpy(s_streamSource, px, 640 * 480 * 2);
+        s_streamSourceValid = 1;
+    }
     /* The binds above are manual upload binds, not draw state: mark the
      * useDrawState cache unknown (never a real texture name) so the
      * flip-time useDrawState(s_streamTex, ...) always rebinds and
@@ -1029,6 +1045,9 @@ void gxGLBackendUninstall(void)
     }
     s_texCount = 0;
     if (s_streamTex) { glDeleteTextures(1, &s_streamTex); s_streamTex = 0; }
+    free(s_rgba); s_rgba = NULL;
+    free(s_streamSource); s_streamSource = NULL;
+    s_streamSourceValid = 0;
     if (s_vbo) { glDeleteBuffers(1, &s_vbo); s_vbo = 0; }
     if (s_vao) { glDeleteVertexArrays(1, &s_vao); s_vao = 0; }
     if (s_prog) { glDeleteProgram(s_prog); s_prog = 0; }
