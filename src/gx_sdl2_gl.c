@@ -99,6 +99,7 @@ static float depthW(int z)
 
 static GLuint s_prog;
 static GLuint s_vao, s_vbo;
+static int s_vboBound;
 static GLint s_uMVP;
 static GLint s_uUseTex = -1;
 static GLint s_uKeyBlack = -1;
@@ -155,7 +156,7 @@ static const char *kFS =
      * opaque; NEAREST filtering yields exact texel values. Blend-path
      * tris arrive with vCol.a 0.5 to approximate the _g_abBlend
      * averaging LUT (uKeyBlack is 0 there, so black still contributes). */
-    "void main(){ vec4 t=texture(uTex,vUV); if(uUseTex!=0){ if(uKeyBlack!=0){ if(uKeyAlpha!=0){ if(t.a<0.5) discard; t.rgb/=max(t.a,0.0001); } else if(t.r*255.0<7.5 && t.g*255.0<7.5 && t.b*255.0<7.5) discard; } oCol=vec4(t.rgb*vCol.rgb,(uKeyBlack!=0?1.0:t.a)*vCol.a); } else oCol=vCol; }\n";
+    "void main(){ if(uUseTex!=0){ vec4 t=texture(uTex,vUV); if(uKeyBlack!=0){ if(uKeyAlpha!=0){ if(t.a<0.5) discard; t.rgb/=max(t.a,0.0001); } else if(t.r*255.0<7.5 && t.g*255.0<7.5 && t.b*255.0<7.5) discard; } oCol=vec4(t.rgb*vCol.rgb,(uKeyBlack!=0?1.0:t.a)*vCol.a); } else oCol=vCol; }\n";
 
 static GLuint compileShader(GLenum type, const char *src)
 {
@@ -165,10 +166,25 @@ static GLuint compileShader(GLenum type, const char *src)
     return sh;
 }
 
+static void bindVbo(void)
+{
+    if (!s_vboBound) {
+        glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+        s_vboBound = 1;
+    }
+}
+
+static void orphanVbo(void)
+{
+    if (!s_vbo) return;
+    bindVbo();
+    glBufferData(GL_ARRAY_BUFFER, sizeof(s_batch), NULL, GL_STREAM_DRAW);
+}
+
 static void batchFlush(void)
 {
     if (s_batchCount == 0 || s_prog == 0) return;
-    glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+    bindVbo();
     glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(s_batchCount * sizeof(GLVertex)), s_batch);
     glDrawArrays(GL_TRIANGLES, 0, s_batchCount);
     s_batchCount = 0;
@@ -193,20 +209,34 @@ static void batchTri(float x0, float y0, float u0, float v0, float w0,
 static void useDrawState(GLuint tex, int blend, int key,
                           int depthTest, int depthWrite)
 {
-    if (tex != s_boundTex || blend != s_blendOn || key != s_keyBlack ||
-        depthTest != s_depthTest || depthWrite != s_depthWrite) {
-        batchFlush();
+    int texChanged = tex != s_boundTex;
+    int blendChanged = blend != s_blendOn;
+    int keyChanged = key != s_keyBlack;
+    int depthTestChanged = depthTest != s_depthTest;
+    int depthWriteChanged = depthWrite != s_depthWrite;
+    if (!texChanged && !blendChanged && !keyChanged &&
+        !depthTestChanged && !depthWriteChanged) return;
+    batchFlush();
+    if (texChanged) {
         s_boundTex = tex;
-        s_blendOn = blend;
-        s_keyBlack = key;
-        s_depthTest = depthTest;
-        s_depthWrite = depthWrite;
         glBindTexture(GL_TEXTURE_2D, tex ? tex : 0);
         glUniform1i(s_uUseTex, tex ? 1 : 0);
+    }
+    if (texChanged || keyChanged) {
+        s_keyBlack = key;
         glUniform1i(s_uKeyBlack, (tex && key) ? 1 : 0);
         glUniform1i(s_uKeyAlpha, (tex && key == 2) ? 1 : 0);
+    }
+    if (blendChanged) {
+        s_blendOn = blend;
         if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    }
+    if (depthTestChanged) {
+        s_depthTest = depthTest;
         if (depthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    }
+    if (depthWriteChanged) {
+        s_depthWrite = depthWrite;
         glDepthMask(depthWrite ? GL_TRUE : GL_FALSE);
     }
 }
@@ -235,6 +265,7 @@ static QueueBucket s_uiQueue;
 static QueueBucket s_legacyQueue;
 static unsigned s_qSeq;
 static int s_transparentOrdered = 1;
+static int s_legacyOrdered = 1;
 static int s_pendingBlit; /* fullscreen present deferred past sorted emission */
 
 static void queueTri(float x0, float y0, float u0, float v0, float w0,
@@ -274,6 +305,9 @@ static void queueTri(float x0, float y0, float u0, float v0, float w0,
     if (bucket == &s_transparentQueue && bucket->count > 0 &&
         q.zsum > bucket->data[bucket->count - 1].zsum)
         s_transparentOrdered = 0;
+    if (bucket == &s_legacyQueue && bucket->count > 0 &&
+        q.zsum > bucket->data[bucket->count - 1].zsum)
+        s_legacyOrdered = 0;
     bucket->data[bucket->count++] = q;
 }
 
@@ -303,11 +337,12 @@ static void queueEmitBucket(QueueBucket *bucket, int depthTest, int depthWrite)
 static void queueEmitSorted(void)
 {
     if (!s_depthEnabled) {
-        if (s_legacyQueue.count > 1)
+        if (s_legacyQueue.count > 1 && !s_legacyOrdered)
             qsort(s_legacyQueue.data, s_legacyQueue.count,
                   sizeof(QueuedTri), queueTriCmp);
         queueEmitBucket(&s_legacyQueue, 0, 0);
         s_legacyQueue.count = 0;
+        s_legacyOrdered = 1;
         return;
     }
     if (s_transparentQueue.count > 1 && !s_transparentOrdered)
@@ -344,6 +379,38 @@ static float normUv(int b, int half)
 {
     (void)half;
     return (float)b / 256.0f;
+}
+
+static int outsideViewport(const GxVert *v0, const GxVert *v1,
+                           const GxVert *v2, const GxVert *v3)
+{
+    int minX = v0->x;
+    int maxX = v0->x;
+    int minY = v0->y;
+    int maxY = v0->y;
+    if (v1) {
+        if (v1->x < minX) minX = v1->x;
+        if (v1->x > maxX) maxX = v1->x;
+        if (v1->y < minY) minY = v1->y;
+        if (v1->y > maxY) maxY = v1->y;
+    }
+    if (v2) {
+        if (v2->x < minX) minX = v2->x;
+        if (v2->x > maxX) maxX = v2->x;
+        if (v2->y < minY) minY = v2->y;
+        if (v2->y > maxY) maxY = v2->y;
+    }
+    if (v3) {
+        if (v3->x < minX) minX = v3->x;
+        if (v3->x > maxX) maxX = v3->x;
+        if (v3->y < minY) minY = v3->y;
+        if (v3->y > maxY) maxY = v3->y;
+    }
+    if (s_viewW <= 0 || s_viewH <= 0) return 1;
+    return maxX < s_viewX * 256 ||
+           minX > (s_viewX + s_viewW) * 256 ||
+           maxY < (s_height - s_viewY - s_viewH) * 256 ||
+           minY > (s_height - s_viewY) * 256;
 }
 
 static int texAlloc(GLTexture texture)
@@ -486,6 +553,12 @@ static int glFlip(void)
     /* Window size changes affect the drawable independently of GX's fixed
      * 640x480 logical mode; scale that canvas on the next presentation. */
     glUpdateDrawableSize();
+    if (s_batchCount != 0 || s_opaqueQueue.count != 0 ||
+        s_transparentQueue.count != 0 || s_uiQueue.count != 0 ||
+        s_legacyQueue.count != 0 || s_pendingBlit) {
+        batchFlush();
+        orphanVbo();
+    }
     /* Sorted 3D/UI emission first, then a deferred fullscreen blit (if
      * any), then swap — mirroring gxFlip's sort/draw/blit order. */
     queueEmitSorted();
@@ -649,6 +722,7 @@ static void glDrawPolygon(void *a0, void *a1, void *a2, void *a3, int flags, voi
     float r = 1, g = 1, b = 1;
     float u0 = 0, v00 = 0, u1 = 0, v1_ = 0, u2 = 0, v2_ = 0, u3 = 0, v3_ = 0;
     if (!v0 || !v1 || !v2 || !v3) return;
+    if (outsideViewport(v0, v1, v2, v3)) return;
     r = v0->r / 255.0f; g = v0->g / 255.0f; b = v0->b / 255.0f;
     if (uv && (flags & 4)) {
         int h = 0;
@@ -697,6 +771,12 @@ static int glBlitSurface(int a, int b, int c, void *tex, int x, int y, int w, in
     unsigned short *px = (unsigned short *)tex;
     (void)a; (void)b; (void)c; (void)x; (void)y; (void)w; (void)h; (void)h2;
     if (!px) return 0;
+    if (s_streamTex && s_streamSource && s_streamSourceValid &&
+        memcmp(px, s_streamSource, 640 * 480 * 2) == 0) {
+        s_boundTex = 0xFFFFFFFFu;
+        s_pendingBlit = 1;
+        return 1;
+    }
     if (!s_rgba) s_rgba = (unsigned char *)malloc(640 * 480 * 4);
     if (!s_rgba) return 0;
     if (!s_streamSource) s_streamSource = (unsigned char *)malloc(640 * 480 * 2);
@@ -713,12 +793,6 @@ static int glBlitSurface(int a, int b, int c, void *tex, int x, int y, int w, in
     }
     batchFlush();
     glBindTexture(GL_TEXTURE_2D, s_streamTex);
-    if (s_streamSource && s_streamSourceValid &&
-        memcmp(px, s_streamSource, 640 * 480 * 2) == 0) {
-        s_boundTex = 0xFFFFFFFFu;
-        s_pendingBlit = 1;
-        return 1;
-    }
     for (int i = 0; i < 640 * 480; i++) {
         unsigned short v = px[i];
         s_rgba[i*4+0] = (unsigned char)(((v >> 11) & 0x1f) * 255 / 31);
@@ -783,6 +857,7 @@ static void glDrawTriUV(void *a0, void *a1, void *a2, void *color, void *uvRec)
     float r = 1, g = 1, b = 1;
     (void)color;
     if (!v0 || !v1 || !v2) return;
+    if (outsideViewport(v0, v1, v2, NULL)) return;
     if (backfaceCulled(v0, v1, v2)) return;
     r = v0->r / 255.0f; g = v0->g / 255.0f; b = v0->b / 255.0f;
     if (uv) memcpy(&h, uv + 0, 4);
@@ -855,6 +930,7 @@ static void glDrawQuad(void *a0, void *a1, void *a2, void *a3, void *color, void
     float r = 1, g = 1, b = 1;
     (void)color;
     if (!v0 || !v1 || !v2 || !v3) return;
+    if (outsideViewport(v0, v1, v2, v3)) return;
     if (backfaceCulled(v0, v1, v2)) return;
     r = v0->r / 255.0f; g = v0->g / 255.0f; b = v0->b / 255.0f;
     if (uv) memcpy(&h, uv + 0, 4);
@@ -1022,6 +1098,7 @@ int gxGLBackendInstall(void)
     glGenBuffers(1, &s_vbo);
     glBindVertexArray(s_vao);
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+    s_vboBound = 1;
     glBufferData(GL_ARRAY_BUFFER, sizeof(s_batch), NULL, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(GLVertex), (void *)0);
@@ -1057,6 +1134,7 @@ int gxGLBackendInstall(void)
     s_legacyQueue.count = 0;
     s_qSeq = 0;
     s_transparentOrdered = 1;
+    s_legacyOrdered = 1;
     s_pendingBlit = 0;
     s_texCount = 0;
     memset(s_tex, 0, sizeof(s_tex));
@@ -1114,6 +1192,7 @@ void gxGLBackendUninstall(void)
     s_legacyQueue.count = 0;
     s_qSeq = 0;
     s_transparentOrdered = 1;
+    s_legacyOrdered = 1;
     s_pendingBlit = 0;
     for (int i = 0; i < s_texCount; i++) {
         GLuint textures[] = {s_tex[i].nearest, s_tex[i].linear,
@@ -1125,7 +1204,7 @@ void gxGLBackendUninstall(void)
     free(s_rgba); s_rgba = NULL;
     free(s_streamSource); s_streamSource = NULL;
     s_streamSourceValid = 0;
-    if (s_vbo) { glDeleteBuffers(1, &s_vbo); s_vbo = 0; }
+    if (s_vbo) { glDeleteBuffers(1, &s_vbo); s_vbo = 0; s_vboBound = 0; }
     if (s_vao) { glDeleteVertexArrays(1, &s_vao); s_vao = 0; }
     if (s_prog) { glDeleteProgram(s_prog); s_prog = 0; }
     memset(&g_driver.api, 0, sizeof(g_driver.api));

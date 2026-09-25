@@ -232,7 +232,6 @@ int stateLevelSelect(int nType, int nKey, int nKeyType)
             int x = (int)(arrowOffset + 132.0f);
             gxDrawQuadColor(g_hMenuTexGfx, x, 0x100, x + 0x2b, 0x12b,
                             0, 0x33, 0x2b, 0x5e);
-            arrowOffset = sinf(g_endSceneT) * 5.0f;
             x = (int)(464.0f - arrowOffset);
             gxDrawQuadColor(g_hMenuTexGfx, x, 0x100, x + 0x2b, 0x12b,
                             0x2c, 0x33, 0x57, 0x5e);

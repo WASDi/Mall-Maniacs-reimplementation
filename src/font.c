@@ -389,25 +389,29 @@ int textDrawCentered(gxFont *font, unsigned int color, int x, int y, char *text)
     return textDraw(font, color, (x - w / 2) + 0x140, y, text);
 }
 
+static void formatDecimal(char *buf, int value)
+{
+    char digits[32];
+    int n = 0;
+    int negative = value < 0;
+    unsigned int magnitude = negative
+        ? (unsigned int)(-(value + 1)) + 1u
+        : (unsigned int)value;
+    do {
+        digits[n++] = (char)('0' + magnitude % 10u);
+        magnitude /= 10u;
+    } while (magnitude != 0);
+    if (negative) *buf++ = '-';
+    for (int i = 0; i < n; i++) *buf++ = digits[n - 1 - i];
+    *buf = '\0';
+}
+
 /* textDrawInt @0x4098a0 — draw a decimal integer, returns 1. */
 int textDrawInt(void *font, unsigned int color, int x, int y, int value)
 {
     char buf[32];
-    int i;
-    int digit;
-    int negative = value < 0;
 
-    buf[0] = '\0';
-    do {
-        for (i = 0x1c; i >= 0; i--) buf[i + 1] = buf[i];
-        digit = value % 10;
-        buf[0] = (char)(abs(digit) + '0');
-        value = (value - digit) / 10;
-    } while (value != 0);
-    if (negative) {
-        for (i = 0x1c; i >= 0; i--) buf[i + 1] = buf[i];
-        buf[0] = '-';
-    }
+    formatDecimal(buf, value);
     textDraw((gxFont *)font, color, x, y, buf);
     return 1;
 }
@@ -416,21 +420,8 @@ int textDrawInt(void *font, unsigned int color, int x, int y, int value)
 int textIntWidth(void *font, int value)
 {
     char buf[32];
-    int i;
-    int digit;
-    int negative = value < 0;
 
-    buf[0] = '\0';
-    do {
-        for (i = 0x1c; i >= 0; i--) buf[i + 1] = buf[i];
-        digit = value % 10;
-        buf[0] = (char)(abs(digit) + '0');
-        value = (value - digit) / 10;
-    } while (value != 0);
-    if (negative) {
-        for (i = 0x1c; i >= 0; i--) buf[i + 1] = buf[i];
-        buf[0] = '-';
-    }
+    formatDecimal(buf, value);
     return textWidth((gxFont *)font, buf);
 }
 
@@ -467,8 +458,13 @@ void textDrawWrappedCentered(QuestRecord *pMsg, int nX, int nY, int nMaxWidth)
         for (p = text; *p != '\0'; p++) {                /* @0x4101fe */
             if (*p == '\n') break;
             if (p != text) {
-                acOne[0] = *p;
-                w += textWidth(g_hHudFontTiny, acOne);   /* @0x410224 */
+                if (*p == '{') {
+                    acOne[0] = *p;
+                    w += textWidth(g_hHudFontTiny, acOne);
+                } else {
+                    w += (short)g_hHudFontTiny->wGlobalSpace +
+                         (unsigned int)g_hHudFontTiny->pGlyphWidth[(unsigned char)*p];
+                }
                 if (nMaxWidth <= w) {
                     if (pBreak != text) pLineEnd = pBreak;
                     break;

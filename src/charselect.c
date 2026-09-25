@@ -135,8 +135,7 @@ void textDrawMixedCase(int x, int y, const char *text) /* @0x41ffc0 */
             if (n > 0) {
                 if (n > 255) n = 255;
                 memcpy(token, p, (size_t)n); token[n]='\0';
-                textDraw(small, 0x2004, cx, y, token);
-                cx += textWidth(small, token);
+                cx = textDraw(small, 0x2004, cx, y, token);
             }
         } else {
             while (*q != '\0') {
@@ -148,8 +147,7 @@ void textDrawMixedCase(int x, int y, const char *text) /* @0x41ffc0 */
             if (n > 0) {
                 if (n > 255) n = 255;
                 memcpy(token, p, (size_t)n); token[n]='\0';
-                textDraw(big, 0x2004, cx, y, token);
-                cx += textWidth(big, token);
+                cx = textDraw(big, 0x2004, cx, y, token);
             }
         }
         p = q;

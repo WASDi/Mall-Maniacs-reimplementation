@@ -267,8 +267,7 @@ int menuUpdate(int nType, int nKey, int nKeyType)
                 if (n > 0) {
                     memcpy(token, p, (size_t)n);
                     token[n] = '\0';
-                    textDraw(small, 0x2004, x, row * 0x29 + 0xbe, token);
-                    x += textWidth(small, token);
+                    x = textDraw(small, 0x2004, x, row * 0x29 + 0xbe, token);
                     p = q;
                     continue;
                 }
@@ -283,8 +282,7 @@ int menuUpdate(int nType, int nKey, int nKeyType)
                 if (n > 0) {
                     memcpy(token, p, (size_t)n);
                     token[n] = '\0';
-                    textDraw(big, 0x2004, x, row * 0x29 + 0xbe, token);
-                    x += textWidth(big, token);
+                    x = textDraw(big, 0x2004, x, row * 0x29 + 0xbe, token);
                     p = q;
                 }
             }
@@ -404,8 +402,7 @@ int stateGameTypeSelect(int nType, int nKey, int nKeyType)
                 if (n > 0) {
                     memcpy(token, p, (size_t)n);
                     token[n] = '\0';
-                    textDraw(small, 0x2004, x, row * 0x29 + 0xbe, token);
-                    x += textWidth(small, token);
+                    x = textDraw(small, 0x2004, x, row * 0x29 + 0xbe, token);
                     p = q;
                     continue;
                 }
@@ -420,8 +417,7 @@ int stateGameTypeSelect(int nType, int nKey, int nKeyType)
                 if (n > 0) {
                     memcpy(token, p, (size_t)n);
                     token[n] = '\0';
-                    textDraw(big, 0x2004, x, row * 0x29 + 0xbe, token);
-                    x += textWidth(big, token);
+                    x = textDraw(big, 0x2004, x, row * 0x29 + 0xbe, token);
                     p = q;
                 }
             }

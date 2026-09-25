@@ -292,8 +292,7 @@ void renderGameHud(void)
                     g_playerRecords[g_nLocalPlayerIdx].anHeldSlot[1]); /* @0x413140 */
         i = textIntWidth(g_hHudFontDigits,
                          g_playerRecords[g_nLocalPlayerIdx].anHeldSlot[1]) + 0xa; /* @0x413185 */
-        textDraw(g_hHudFontDigits, 0x2004, i, 0x32, SZ_SLASH); /* @0x41319d */
-        i += textWidth(g_hHudFontDigits, SZ_SLASH);          /* @0x4131ae */
+        i = textDraw(g_hHudFontDigits, 0x2004, i, 0x32, SZ_SLASH); /* @0x41319d */
         textDrawInt(g_hHudFontDigits, 0x2004, i, 0x3c, 5);   /* @0x4131c6 */
     }
 
@@ -489,8 +488,7 @@ void renderGameHud(void)
         if (nRank != 0) {                                    /* @0x413b9d */
             textDrawInt(g_hHudFontDigits, 0x2004, 0x230, 0x28, nRank); /* @0x413bad */
             i = textIntWidth(g_hHudFontDigits, nRank) + 0x230; /* @0x413bd4 */
-            textDraw(g_hHudFontDigits, 0x2004, i, 0x32, SZ_SLASH); /* @0x413be8 */
-            i += textWidth(g_hHudFontDigits, SZ_SLASH);      /* @0x413bf9 */
+            i = textDraw(g_hHudFontDigits, 0x2004, i, 0x32, SZ_SLASH); /* @0x413be8 */
             textDrawInt(g_hHudFontDigits, 0x2004, i, 0x3c, g_nPlayerCount); /* @0x413c15 */
         }
     }
