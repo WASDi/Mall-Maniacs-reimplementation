@@ -1567,10 +1567,18 @@ void playerAnimSfxUpdate(void) /* @0x40c800 */
                     eventAnimReset(pSet->pAnm);                 /* @0x434270 @0x40ca84 */
                 }
                 if (g_nAnimSfxTick != 0) {                      /* @0x40ca8c */
-                    sceneObjectAnimStep((SceneObjAnimList *)pRec->apAnmSets[7], 1); /* stand @0x40ca99 */
+                    /* PORT DEVIATION (cross-platform smoothing): the original
+                     * snaps the stand keyframe via sceneObjectAnimStep
+                     * @0x40ca99; the rebuild blends the current/next keyframes
+                     * at t=0.5 (original Interp midpoint convention) so idle
+                     * posing interpolates instead of popping. Frame cadence,
+                     * loop handling and return contract are unchanged. */
+                    sceneObjectAnimStepLerp((SceneObjAnimList *)pRec->apAnmSets[7], 1, 0.5f); /* stand @0x40ca99 */
                 }
             } else {
-                sceneObjectAnimStep((SceneObjAnimList *)pRec->apAnmSets[6], 1); /* run @0x40ca78 */
+                /* PORT DEVIATION (same as stand above): run @0x40ca78 blends
+                 * at t=0.5 instead of snapping. */
+                sceneObjectAnimStepLerp((SceneObjAnimList *)pRec->apAnmSets[6], 1, 0.5f); /* run @0x40ca78 */
             }
             if (pRec->flInputTurn != g_flZero) {                /* +0x2e0 @0x40caa1 */
                 short anAngles[3];

@@ -161,6 +161,31 @@ typedef struct SceneObjAnimList {
 int  sceneObjectAnimStep(SceneObjAnimList *pList, byte bLoop);            /* @0x434540 */
 void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop);      /* @0x4347c0 interpolation variant */
 
+/* --- Linear keyframe interpolation (cross-platform port addition, no
+ * original address). The original gameplay path snaps each stepped frame's
+ * records straight onto the channels (sceneObjectAnimStep); only the
+ * results-screen variant blends, and only at a fixed 0.5 midpoint with an
+ * asymmetric integer formula. These helpers blend the effective keyframe
+ * pose of the current frame with the effective pose of the next frame at
+ * an explicit factor t in [0,1]:
+ *   sceneObjectAnimStepLerp(pList, bLoop, t) — same frame cadence, loop
+ *     handling and return contract as sceneObjectAnimStep, but type-5
+ *     channel triples and the type-6 object position are applied as
+ *     lerp(a, b, t) = trunc(a + (b - a) * t) (truncation toward zero,
+ *     matching the original __ftol casts). Sparse tracks hold: a channel
+ *     (or position) missing at one endpoint falls back to the endpoint
+ *     that defines it; op1/op2 master targets and op3/op4 mesh records
+ *     keep the original snap semantics. t is clamped to [0,1], so t=0
+ *     reproduces the exact sceneObjectAnimStep pose of the current frame.
+ *   Consumed by the player run/stand locomotion path in
+ *   playerAnimSfxUpdate (t = 0.5, matching the original Interp midpoint
+ *   convention). Action sets (pick/throw/grab/oops/winner) stay on the
+ *   exact stepper so their state-machine timing is unchanged. */
+float animClampT(float t);
+short animLerpShort(short a, short b, float t);
+int   animLerpInt(int a, int b, float t);
+int   sceneObjectAnimStepLerp(SceneObjAnimList *pList, byte bLoop, float t);
+
 /* g_awWalkAnimTable @0x458138 — 128 x {Bdg-orientation, search angle} shorts
  * precomputed by roundStartInit via walkAnimTableEntryCalc and consumed by
  * playerAnimOrientFromDir @0x4336b0. */

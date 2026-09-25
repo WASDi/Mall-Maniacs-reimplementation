@@ -885,6 +885,262 @@ void sceneObjectAnimStepInterp(SceneObjAnimList *pList, byte bLoop) /* @0x4347c0
     }
 }
 
+/* -------------------------------------------------------------------
+ * Linear keyframe interpolation (port addition — no original address).
+ * See anim.h for the contract. Record strides match the native writer
+ * (type 3 = 0x18, type 4 = 0x14, type 5 = 8, else 0x10) so the scan
+ * below walks exactly the tables anmLoad built.
+ * ------------------------------------------------------------------- */
+float animClampT(float t) /* port addition */
+{
+    if (t < 0.0f) return 0.0f;
+    if (t > 1.0f) return 1.0f;
+    return t;
+}
+
+short animLerpShort(short a, short b, float t) /* port addition */
+{
+    float tc = animClampT(t);
+    return (short)(int)((float)(int)a + (float)((int)b - (int)a) * tc);
+}
+
+int animLerpInt(int a, int b, float t) /* port addition */
+{
+    double tc = (double)animClampT(t);
+    return a + (int)(((double)b - (double)a) * tc);
+}
+
+/* Native stride of one expanded record (matches the anmLoad writer and
+ * every stepper above, including the default-0x10 quirk). */
+static size_t animRecStride(byte tp)
+{
+    switch (tp) {
+    case 3:
+        return 0x18u;
+    case 4:
+        return 0x14u;
+    case 5:
+        return 8u;
+    default:
+        return 0x10u;
+    }
+}
+
+/* Latest type-5 triple for channel nCh in tracks 0..nUpTo (inclusive).
+ * Returns 1 when some track defines it (hold semantics for sparse
+ * tracks), 0 otherwise. */
+static int animFindChannel(const AnmTrack *pBase, int nUpTo, int nCh, short out[3])
+{
+    int i, found = 0;
+    for (i = 0; i <= nUpTo; i++) {
+        const byte *rec = (const byte *)pBase[i].pRecs;
+        int j, n = pBase[i].nRecs;
+        for (j = 0; j < n; j++) {
+            byte tp = rec[0];
+            if (tp == 5 && (int)rec[1] == (nCh & 0xff)) {
+                memcpy(&out[0], rec + 2, sizeof(short));
+                memcpy(&out[1], rec + 4, sizeof(short));
+                memcpy(&out[2], rec + 6, sizeof(short));
+                found = 1;
+            }
+            rec += animRecStride(tp);
+        }
+    }
+    return found;
+}
+
+/* Latest type-6 raw position triple in tracks 0..nUpTo (inclusive).
+ * Returns 1 when some track defines it, 0 otherwise. */
+static int animFindPos(const AnmTrack *pBase, int nUpTo, int out[3])
+{
+    int i, found = 0;
+    for (i = 0; i <= nUpTo; i++) {
+        const byte *rec = (const byte *)pBase[i].pRecs;
+        int j, n = pBase[i].nRecs;
+        for (j = 0; j < n; j++) {
+            byte tp = rec[0];
+            if (tp == 6) {
+                memcpy(&out[0], rec + 4, sizeof(int));
+                memcpy(&out[1], rec + 8, sizeof(int));
+                memcpy(&out[2], rec + 12, sizeof(int));
+                found = 1;
+            }
+            rec += animRecStride(tp);
+        }
+    }
+    return found;
+}
+
+int sceneObjectAnimStepLerp(SceneObjAnimList *pList, byte bLoop, float t) /* port addition */
+{
+    SceneObjAnimState *st;
+    const AnmTrack *pBase;
+    const byte *rec;
+    float tc;
+    int nCur, nNext, n, i;
+    int bHasPosNext = 0, bHasPosCur = 0;
+    int anPosCur[3] = {0, 0, 0}, anPosNext[3] = {0, 0, 0};
+
+    if (!pList) return 0;
+    st = pList->pState;
+    if (!st) return 0;
+    if (st->nFrame >= st->nFrameCount) return 0;
+    if (st->nFrameCount <= 0) return 0;
+    pBase = (const AnmTrack *)st->pLoopBase;
+    if (!pBase) return 0;
+    tc = animClampT(t);
+
+    nCur = st->nFrame;
+    nNext = nCur + 1;
+    if (nNext >= st->nFrameCount) {
+        nNext = ((bLoop & 1) != 0) ? 0 : nCur; /* hold last frame when not looping */
+    }
+
+    /* Type-5 channels: union over every track (up to 256 channel ids);
+     * each endpoint resolves through hold semantics, then lerp. */
+    {
+        unsigned char abSeen[256];
+        int nCh;
+        memset(abSeen, 0, sizeof(abSeen));
+        for (i = 0; i < st->nFrameCount; i++) {
+            const byte *r = (const byte *)pBase[i].pRecs;
+            int j, m = pBase[i].nRecs;
+            for (j = 0; j < m; j++) {
+                byte tp = r[0];
+                if (tp == 5) abSeen[r[1]] = 1;
+                r += animRecStride(tp);
+            }
+        }
+        for (nCh = 0; nCh < 256; nCh++) {
+            short aV[3], bV[3];
+            int bA, bB;
+            short oV[3];
+            int k;
+            if (!abSeen[nCh]) continue;
+            bA = animFindChannel(pBase, nCur, nCh, aV);
+            bB = animFindChannel(pBase, nNext, nCh, bV);
+            if (!bA && !bB) continue;
+            if (bA && bB) {
+                for (k = 0; k < 3; k++) oV[k] = animLerpShort(aV[k], bV[k], tc);
+            } else if (bA) {
+                for (k = 0; k < 3; k++) oV[k] = aV[k];
+            } else {
+                for (k = 0; k < 3; k++) oV[k] = bV[k];
+            }
+            if (pList->apObjs[0] != 0) {
+                /* Original passes (signed char)rec[1] as the channel index;
+                 * mirror it so high channel bytes no-op identically. */
+                int nMeshIdx = (nCh > 127) ? nCh - 256 : nCh;
+                k = 0;
+                while (k < 5 && pList->apObjs[k] != 0) {
+                    sceneObjSetSubPos(pList->apObjs[k], nMeshIdx, oV[0], oV[1], oV[2], 2);
+                    k++;
+                }
+            }
+        }
+    }
+
+    /* Type-6 object position: lerp the raw stored triple, then apply the
+     * runtime Y/Z sign conversion exactly like op6 in sceneObjectAnimStep. */
+    bHasPosCur = animFindPos(pBase, nCur, anPosCur);
+    bHasPosNext = animFindPos(pBase, nNext, anPosNext);
+    if (bHasPosCur || bHasPosNext) {
+        int oP[3];
+        int k;
+        if (bHasPosCur && bHasPosNext) {
+            for (k = 0; k < 3; k++) oP[k] = animLerpInt(anPosCur[k], anPosNext[k], tc);
+        } else if (bHasPosCur) {
+            for (k = 0; k < 3; k++) oP[k] = anPosCur[k];
+        } else {
+            for (k = 0; k < 3; k++) oP[k] = anPosNext[k];
+        }
+        if (pList->apObjs[0] != 0) {
+            k = 0;
+            while (k < 5 && pList->apObjs[k] != 0) {
+                sceneObjSetPos(pList->apObjs[k], oP[0], -oP[1], -oP[2], 2);
+                k++;
+            }
+        }
+    }
+
+    /* Remaining ops keep original snap semantics from the current track:
+     * op1/op2 master targets, op3 mesh-or-list positions, op4 orientations. */
+    {
+        AnmTrack *pTrk = st->pCurTrack;
+        n = pTrk->nRecs;
+        rec = (const byte *)pTrk->pRecs;
+        for (i = 0; i < n; i++) {
+            byte tp = rec[0];
+            switch (tp) {
+            case 1:
+                st->nPosX = *(const int *)(rec + 4);
+                st->nPosY = -*(const int *)(rec + 8);
+                st->nPosZ = -*(const int *)(rec + 0xc);
+                rec += 0x10;
+                break;
+            case 2:
+                st->nFaceX = *(const int *)(rec + 4);
+                st->nFaceY = -*(const int *)(rec + 8);
+                st->nFaceZ = -*(const int *)(rec + 0xc);
+                rec += 0x10;
+                break;
+            case 3: {
+                SceneNode *mesh = *(SceneNode *const *)(rec + 4);
+                int ax = *(const int *)(rec + 12);
+                int ay = -*(const int *)(rec + 16);
+                int az = -*(const int *)(rec + 20);
+                if (pList->apObjs[0] == 0) {
+                    if (mesh != 0) sceneObjSetPos(mesh, ax, ay, az, 2);
+                } else {
+                    int k = 0;
+                    while (k < 5 && pList->apObjs[k] != 0) {
+                        sceneObjSetPos(pList->apObjs[k], ax, ay, az, 2);
+                        k++;
+                    }
+                }
+                rec += 0x18;
+                break;
+            }
+            case 4: {
+                short sx = *(const short *)(rec + 12);
+                short sy = *(const short *)(rec + 14);
+                short sz = *(const short *)(rec + 16);
+                if (pList->apObjs[0] == 0) {
+                    SceneNode *mesh = *(SceneNode *const *)(rec + 4);
+                    sceneObjSetPosOrient(mesh, sx, (short)-sy, (short)-sz, 2);
+                } else {
+                    int k = 0;
+                    while (k < 5 && pList->apObjs[k] != 0) {
+                        sceneObjSetPosOrient(pList->apObjs[k], sx, (short)-sy, (short)-sz, 2);
+                        k++;
+                    }
+                }
+                rec += 0x14;
+                break;
+            }
+            default:
+                rec += animRecStride(tp);
+                break;
+            }
+        }
+    }
+    if (st->pMasterNode != 0) {
+        sceneObjSetPos(st->pMasterNode, st->nPosX, st->nPosY, st->nPosZ, 2);
+        sceneNodeFacePos(st->pMasterNode, 0,
+                         (float)st->nFaceX, (float)st->nFaceY, (float)st->nFaceZ, 2);
+    }
+    /* Frame advance + return contract identical to sceneObjectAnimStep. */
+    st->nFrame++;
+    if (st->nFrame >= st->nFrameCount) {
+        if ((bLoop & 1) == 0) return 1;
+        st->nFrame = 0;
+        st->pCurTrack = st->pLoopBase;
+        return 1;
+    }
+    st->pCurTrack = (AnmTrack *)((char *)st->pCurTrack + sizeof(AnmTrack));
+    return 0;
+}
+
 /* g_awWalkAnimTable @0x458138 — walk-anim lookup table filled by
  * roundStartInit @0x40a941..0x40a981, read by playerAnimOrientFromDir
  * @0x4336b0. */

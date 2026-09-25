@@ -142,6 +142,11 @@ target_link_libraries(test_record_dispatch PRIVATE
     maniac_lib ${SDL2_LIBRARIES} OpenGL::GL m dl pthread)
 add_test(NAME record_dispatch COMMAND test_record_dispatch)
 
+add_executable(test_anim_lerp tests/test_anim_lerp.c)
+target_link_libraries(test_anim_lerp PRIVATE
+    maniac_lib ${SDL2_LIBRARIES} OpenGL::GL m dl pthread)
+add_test(NAME anim_lerp COMMAND test_anim_lerp)
+
 # Offline font visualizer tool (no game launch needed).
 add_executable(render_font tests/render_font.c)
 target_link_libraries(render_font PRIVATE
