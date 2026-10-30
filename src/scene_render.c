@@ -784,6 +784,11 @@ void sceneBuildRootMatrix(SceneNode *pRootNode) /* @0x42f520 */
     rm->wz = px * rm->wmat[6] + py * rm->wmat[7] + pz * rm->wmat[8];
 }
 
+/* PORT ADDITION (widescreen): tangent/cosine of the culling cone's
+ * half-angle; 1.0 keeps the original 45-degree cone. Set by sceneRender. */
+static float s_flWideConeTan = 1.0f;
+static float s_flWideConeCos = 0.70723f;
+
 int sceneNodeRender(SceneNode *pNode) /* @0x42f8c0 */
 {
     SceneNode *node = pNode;
@@ -813,7 +818,13 @@ int sceneNodeRender(SceneNode *pNode) /* @0x42f8c0 */
         if (!(0.0f < flRadiusB + ch0->wz)) return 1;               /* @0x42f920 */
         if (ch0->wz - flRadiusB > flRenderT) return 1;             /* @0x42f940 */
         flLateral = sqrtf(ch0->wy * ch0->wy + ch0->wx * ch0->wx);
-        if (g_flSceneAspect + ch0->wz <= flLateral) {              /* @0x42f969 */
+        if (s_flWideConeTan != 1.0f) {
+            /* PORT ADDITION (widescreen): the 45-degree view cone widens
+             * to the extended horizontal field of view. */
+            float flEdge = (g_flSceneAspect + ch0->wz) * s_flWideConeTan;
+            nDist = (flEdge <= flLateral)
+                ? (int)((flLateral - flEdge) * s_flWideConeCos) : 0;
+        } else if (g_flSceneAspect + ch0->wz <= flLateral) {       /* @0x42f969 */
             nDist = (int)((flLateral - (g_flSceneAspect + ch0->wz)) * 0.70723f);
         } else {
             nDist = 0;
@@ -1090,6 +1101,33 @@ int sceneRender(void *pCameraBlock) /* @0x42f1c0 */
     if (viewport[2] > oldViewport[2]) viewport[2] = oldViewport[2];
     if (viewport[3] > oldViewport[3]) viewport[3] = oldViewport[3];
     if (viewport[0] > viewport[2] || viewport[1] > viewport[3]) return 1;
+
+    /* PORT ADDITION (widescreen): a scene viewport touching a canvas edge
+     * extends into the margin there. The projection is unchanged (square
+     * pixels at 640x480), so this widens the horizontal field of view;
+     * the culling cone widens to the larger side. */
+    s_flWideConeTan = 1.0f;
+    s_flWideConeCos = 0.70723f;
+    {
+        int margin = gxGetWideMargin();
+        if (margin > 0 && g_nSceneHalfWidth > 0) {
+            /* g_centerX / g_nSceneHalfWidth are 8.8 fixed point pixels. */
+            int reach = 0;
+            if (viewport[0] == 0 && oldViewport[0] == 0) {
+                viewport[0] = -margin;
+                reach = g_centerX + margin * 256;
+            }
+            if (viewport[2] == width && oldViewport[2] == width) {
+                viewport[2] = width + margin;
+                if ((width + margin) * 256 - g_centerX > reach)
+                    reach = (width + margin) * 256 - g_centerX;
+            }
+            if (reach > g_nSceneHalfWidth) {
+                s_flWideConeTan = (float)reach / (float)g_nSceneHalfWidth;
+                s_flWideConeCos = 1.0f / sqrtf(1.0f + s_flWideConeTan * s_flWideConeTan);
+            }
+        }
+    }
 
     gxSetViewport(viewport);
     /* TODO: pre-render MusicSlot callbacks 0x45e650..0x45e81c */

@@ -27,6 +27,11 @@ void gxSetTextureDir(const char *dir)
 }
 const char *gxGetTextureDir(void) { return s_texDir; }
 
+/* Widescreen margin of the GL canvas (rebuild-only, no original slot). */
+int gxGetWideMargin(void) { return gxGLGetWideMargin(); }
+/* Horizontal shift for 2D polygons, used to edge-anchor the HUD. */
+void gxSetUiShift(int nShiftX) { gxGLSetUiShift(nShiftX); }
+
 /* gxDrawPolygon scale globals @0x45eb38/@0x45eb3c. The registry-driven
  * option loading that supplies alternate driver scales is deferred; the
  * fixed-point scale is the GXSOFT-compatible default for this rebuild. */

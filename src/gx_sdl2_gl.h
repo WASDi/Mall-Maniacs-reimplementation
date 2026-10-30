@@ -15,4 +15,12 @@ void gxGLBackendUninstall(void);
  * focus/range in az world units. Defaults come from MANIAC_DOF*. */
 void gxGLSetDepthOfField(float strength, float focus, float range);
 
+/* PORT ADDITION: logical pixels the widescreen canvas exposes on each side
+ * of the 640x480 GX canvas (0 at 4:3 or with MANIAC_WIDESCREEN=0). */
+int gxGLGetWideMargin(void);
+
+/* PORT ADDITION: shift subsequent pDrawPolygon draws (2D UI) and their
+ * clip rect horizontally by shiftX logical pixels; 0 restores. */
+void gxGLSetUiShift(int shiftX);
+
 #endif /* GX_SDL2_GL_H */

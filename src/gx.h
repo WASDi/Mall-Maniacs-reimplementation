@@ -84,6 +84,12 @@ int  gxUnloadDriver(void);
 /* Scene texture search dir for bare TNAM names (see gx.c). */
 void gxSetTextureDir(const char *dir);
 const char *gxGetTextureDir(void);
+/* Widescreen margin in logical pixels on each side of the 640x480 canvas
+ * (PORT ADDITION, see gx_sdl2_gl.c). */
+int  gxGetWideMargin(void);
+/* Shift subsequent gxDrawPolygon draws (and their clip) by nShiftX pixels;
+ * 0 restores (PORT ADDITION, edge-anchored HUD). */
+void gxSetUiShift(int nShiftX);
 
 /* Reimplementation of maniac presentFrame @0x410310.
  * 64-bit port: takes the CPU RGB555 pixel pointer directly (the original

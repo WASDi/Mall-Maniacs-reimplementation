@@ -10,6 +10,12 @@
  *   message panel, the local player face + checkout progress bar, the
  *   rank counter, the net-wait banner, and the phase countdown
  *   ("Klara!"/"Färdiga!"/"Gå!!") with its sfx.
+ *
+ * PORT ADDITION (widescreen): the shopping list and "Varor" counter are
+ * shifted onto the left canvas edge, and the race timer, face and rank
+ * counter onto the right one, via gxSetUiShift(±gxGetWideMargin()).
+ * Centred panels stay at their 640x480 positions; with no margin (4:3)
+ * nothing moves.
  * ===================================================================== */
 #include <stdlib.h>
 #include <string.h>
@@ -151,6 +157,7 @@ void renderGameHud(void)
     GxColorUv cu;
     char szBuf[124];
     int i, j, n, nTmp, nRank, nMyTaken;
+    int nWide = gxGetWideMargin(); /* PORT ADDITION: edge anchoring */
 
     if (g_nScrollText != 0) {                                /* @0x41437a */
         gxDrawQuadColor(g_hHudListTpg, 0, 0, 0x280, 0xff, 0, 0, 10, 10);
@@ -286,6 +293,7 @@ void renderGameHud(void)
                 }
             }
         }
+        gxSetUiShift(-nWide);
         gxDrawQuadColor(g_hHudGfx2Tpg, 2, 10, 0x6a, 0x3d, 0x99, 0xac, 0xff, 0xde); /* @0x4130eb */
         textDrawCentered(g_hHudFontTiny, 0x2004, -0x10a, 0x1c, SZ_VAROR); /* @0x413113 */
         textDrawInt(g_hHudFontDigits, 0x2004, 10, 0x28,
@@ -294,6 +302,7 @@ void renderGameHud(void)
                          g_playerRecords[g_nLocalPlayerIdx].anHeldSlot[1]) + 0xa; /* @0x413185 */
         i = textDraw(g_hHudFontDigits, 0x2004, i, 0x32, SZ_SLASH); /* @0x41319d */
         textDrawInt(g_hHudFontDigits, 0x2004, i, 0x3c, 5);   /* @0x4131c6 */
+        gxSetUiShift(0);
     }
 
     if (g_playerRecords[g_nLocalPlayerIdx].bStateFlags & 0x20) { /* @0x4131e6 */
@@ -331,6 +340,7 @@ void renderGameHud(void)
             g_nInvBarCur = (g_nInvBarCur + g_nInvBarTarget) / 2; /* @0x413380 */
         }
         if (g_nInvBarCur != 0) {                             /* @0x413390 */
+            gxSetUiShift(-nWide);
             memset(&cu, 0, sizeof(cu));
             cu.nTexture = g_hHudListTpg;                     /* @0x413412 */
             cu.V = (0xff - g_nInvBarCur) * 0x100;            /* @0x413398 */
@@ -354,6 +364,7 @@ void renderGameHud(void)
                     j += 0x16;                               /* @0x4134b3 */
                 }
             }
+            gxSetUiShift(0);
         }
     }
 
@@ -361,8 +372,10 @@ void renderGameHud(void)
         nTmp = g_playerRecords[g_nLocalPlayerIdx].nScoreTicks * g_nObjUpdateTime; /* @0x4134dc */
         i = nTmp / 100;
         fmtSprintf(szBuf, SZ_TIME_FMT, i / 60, i % 60, nTmp % 100); /* @0x413544 */
+        gxSetUiShift(nWide);
         gxDrawQuadColor(g_hHudGfx2Tpg, 0x217, 2, 0x27f, 0x35, 0x99, 0xac, 0xff, 0xde); /* @0x413549 */
         textDrawCentered(g_hHudFontTiny, 0x2004, 0x10b, 0x14, szBuf); /* @0x413577 */
+        gxSetUiShift(0);
     }
 
     if (g_playerRecords[g_nLocalPlayerIdx].pQuestMessage != NULL) { /* @0x4135ae */
@@ -403,7 +416,9 @@ void renderGameHud(void)
     v2.x = 0x22000; v2.y = 0x4a00;
     v3.x = 0x1e000; v3.y = 0x4a00;
     setSignVerts(&v0, &v1, &v2, &v3);
+    gxSetUiShift(nWide);
     gxDrawPolygon(&v0, &v1, &v2, &v3, 0x2004, &cu);          /* @0x4137dc */
+    gxSetUiShift(0);
 
     /* checkout progress bar frame @0x4137e1 */
     nTmp = g_playerRecords[g_nLocalPlayerIdx].nCheckoutProgress; /* @0x413832 */
@@ -486,10 +501,12 @@ void renderGameHud(void)
             }
         }
         if (nRank != 0) {                                    /* @0x413b9d */
+            gxSetUiShift(nWide);
             textDrawInt(g_hHudFontDigits, 0x2004, 0x230, 0x28, nRank); /* @0x413bad */
             i = textIntWidth(g_hHudFontDigits, nRank) + 0x230; /* @0x413bd4 */
             i = textDraw(g_hHudFontDigits, 0x2004, i, 0x32, SZ_SLASH); /* @0x413be8 */
             textDrawInt(g_hHudFontDigits, 0x2004, i, 0x3c, g_nPlayerCount); /* @0x413c15 */
+            gxSetUiShift(0);
         }
     }
 

@@ -171,6 +171,18 @@ it. `GxMode.hInstance/hwnd` become ignored fields.
   `MANIAC_GRADE_LUT=<file.cube>`, `MANIAC_VIGNETTE`, `MANIAC_DOF`
   (`_FOCUS`, `_RANGE`; also `gxGLSetDepthOfField`), `MANIAC_ANISOTROPY`,
   `MANIAC_ALPHA_TO_COVERAGE`.
+- Widescreen (port addition): a window wider than 4:3 widens the logical
+  canvas by a margin on each side (`gxGetWideMargin`; capped by
+  `MANIAC_MAX_ASPECT`, default 2.4; `MANIAC_WIDESCREEN=0` pillarboxes).
+  GX coordinates are unchanged, so 640×480 UI and fullscreen images stay
+  centred. `sceneRender` extends a scene viewport that touches a canvas edge
+  into the margin, and widens the 45° culling cone to match (Hor+, same
+  vertical FOV). The GL viewport always covers the whole canvas. The GX
+  viewport is only a scissor, and queued records keep the rect that was
+  current when they were submitted. `renderGameHud` brackets its edge panels
+  with `gxSetUiShift(±margin)`, which shifts 2D polygons and their clip rect
+  together. The shopping list and "Varor" counter go to the left edge; the
+  timer, face and rank go to the right. Centred panels don't move.
 - `pDrawTriangle/pDrawLine` (no-op `RET` stubs in GXSOFT) stay no-ops.
 - Backslash asset literals (`DRIVERS\…`, `menu\…`, `sound\…`) resolve through
   the Phase 5 path normalizer or are rewritten to `/`.

@@ -76,6 +76,12 @@
  *   still draw straight to the window after the composite, so 2D screens are
  *   untouched. Every knob is a MANIAC_* environment variable (see
  *   postConfigLoad); MANIAC_POSTFX=0 restores the direct-to-window path.
+ * - PORT ADDITION (widescreen, no GXSOFT counterpart): when the window is
+ *   wider than 4:3 the logical canvas grows by s_wideMargin pixels on each
+ *   side (MANIAC_WIDESCREEN=0 pillarboxes instead, MANIAC_MAX_ASPECT caps
+ *   it). GX coordinates are unchanged, so 640x480 UI stays centred, while
+ *   sceneRender extends a full-width scene viewport into the margins
+ *   (gxGetWideMargin) for a wider horizontal field of view.
  */
 
 extern int g_nGfxMode; /* @0x4580c4 */
@@ -146,6 +152,15 @@ static int s_width = 640, s_height = 480;
 static int s_drawWidth = 640, s_drawHeight = 480;
 static int s_outputX, s_outputY, s_outputWidth = 640, s_outputHeight = 480;
 static float s_outputScale = 1.0f;
+/* Widescreen (PORT ADDITION, see header note): logical pixels exposed on
+ * each side of the 640-wide GX canvas when the window is wider than 4:3.
+ * The canvas spans x = -s_wideMargin .. s_width + s_wideMargin. */
+static int s_wideMargin;
+/* Horizontal shift (logical pixels) for 2D polygons, set by the HUD to
+ * anchor panels to the widescreen edges (gxSetUiShift). */
+static int s_uiShift;
+static int s_wideEnabled = 1;
+static float s_wideMaxAspect = 2.4f;
 
 /* int handle (1-based) -> GLuint registry. */
 #define GL_TEX_MAX 4096
@@ -495,6 +510,7 @@ typedef struct QueuedTri {
     unsigned seq;
     int blend; /* GL blend enable at emission (blend rasterizer path) */
     int key;   /* near-black discard at emission (color-key path) */
+    short view[4]; /* GX view rect at submission (x, y, w, h; GL y-up) */
 } QueuedTri;
 
 typedef struct QueueBucket {
@@ -546,6 +562,8 @@ static void queueTri(float x0, float y0, float u0, float v0, float w0,
     q.seq = s_qSeq++;
     q.blend = blend;
     q.key = key;
+    q.view[0] = (short)s_viewX; q.view[1] = (short)s_viewY;
+    q.view[2] = (short)s_viewW; q.view[3] = (short)s_viewH;
     if (bucket == &s_transparentQueue && bucket->count > 0 &&
         q.zsum > bucket->data[bucket->count - 1].zsum)
         s_transparentOrdered = 0;
@@ -563,6 +581,28 @@ static int queueTriCmp(const void *a, const void *b)
     return 0;
 }
 
+static void glApplyViewport(void);
+
+/* GXSOFT clips each record against the viewport current at submission;
+ * emission happens at flip, so switch the scissor to the record's rect. */
+static void queueUseView(const QueuedTri *q)
+{
+    if (q->view[0] == s_viewX && q->view[1] == s_viewY &&
+        q->view[2] == s_viewW && q->view[3] == s_viewH) return;
+    batchFlush();
+    s_viewX = q->view[0]; s_viewY = q->view[1];
+    s_viewW = q->view[2]; s_viewH = q->view[3];
+    glApplyViewport();
+}
+
+static void queueRestoreView(int x, int y, int w, int h)
+{
+    if (x == s_viewX && y == s_viewY && w == s_viewW && h == s_viewH) return;
+    batchFlush();
+    s_viewX = x; s_viewY = y; s_viewW = w; s_viewH = h;
+    glApplyViewport();
+}
+
 /* Sort + emit the deferred queue (gxSortPolyRecords + gxDrawPolyRecords),
  * then the deferred fullscreen blit (FUN_10002810 runs after the records
  * in gxFlip), then swap. */
@@ -572,6 +612,7 @@ static void queueEmitBucket(QueueBucket *bucket, int depthTest, int depthWrite,
     for (size_t i = 0; i < bucket->count; i++) {
         QueuedTri *q = &bucket->data[i];
         int write = depthWrite || (keyedDepthWrite && q->key && !q->blend);
+        queueUseView(q);
         useDrawState(q->tex, q->blend, q->key, depthTest, write);
         batchEnsure(3);
         s_batch[s_batchCount++] = q->v[0];
@@ -589,6 +630,7 @@ static void queueEmitUi(int behind, int sceneZsumMax)
     for (size_t i = 0; i < s_uiQueue.count; i++) {
         QueuedTri *q = &s_uiQueue.data[i];
         if ((q->zsum > sceneZsumMax) != behind) continue;
+        queueUseView(q);
         useDrawState(q->tex, q->blend, q->key, 0, 0);
         batchEnsure(3);
         s_batch[s_batchCount++] = q->v[0];
@@ -600,6 +642,7 @@ static void queueEmitUi(int behind, int sceneZsumMax)
 static void queueEmitSorted(void)
 {
     int sceneZsumMax = 0x7fffffff;
+    int viewX = s_viewX, viewY = s_viewY, viewW = s_viewW, viewH = s_viewH;
     if (!s_depthEnabled) {
         if (s_legacyQueue.count > 1 && !s_legacyOrdered)
             qsort(s_legacyQueue.data, s_legacyQueue.count,
@@ -607,6 +650,7 @@ static void queueEmitSorted(void)
         queueEmitBucket(&s_legacyQueue, 0, 0, 0);
         s_legacyQueue.count = 0;
         s_legacyOrdered = 1;
+        queueRestoreView(viewX, viewY, viewW, viewH);
         return;
     }
     if (s_transparentQueue.count > 1 && !s_transparentOrdered)
@@ -646,6 +690,7 @@ static void queueEmitSorted(void)
     s_transparentQueue.count = 0;
     s_uiQueue.count = 0;
     s_transparentOrdered = 1;
+    queueRestoreView(viewX, viewY, viewW, viewH);
 }
 
 /* Fixed 8.8 -> pixels; UV 8.8 -> 0..1 (texture is 256x256). */
@@ -1065,6 +1110,8 @@ static void postInit(void)
         }
     }
     s_anisotropy = clampf(envFloat("MANIAC_ANISOTROPY", 16.0f), 1.0f, maxAniso);
+    s_wideEnabled = envFloat("MANIAC_WIDESCREEN", 1.0f) != 0.0f;
+    s_wideMaxAspect = clampf(envFloat("MANIAC_MAX_ASPECT", 2.4f), 4.0f / 3.0f, 8.0f);
     appLog("[gxGL] anisotropic filtering %.0fx (max %.0fx)", s_anisotropy, maxAniso);
 
     s_postReady = 0;
@@ -1158,8 +1205,11 @@ static void postRender(void)
         glViewport(0, 0, aoW, aoH);
         glUseProgram(s_progAo);
         /* sceneNodeRender: ndc.x = wx / (az * nWidth), ndc.y carries the
-         * 1.333 Y scale, so view y spans 0.75 of view x per NDC unit. */
-        postUniform2f(s_progAo, "uProj", s_post.projScale, s_post.projScale * 0.75f);
+         * 1.333 Y scale, so view y spans 0.75 of view x per NDC unit; the
+         * widescreen margins stretch the target's x span by canvas/640. */
+        postUniform2f(s_progAo, "uProj",
+                      s_post.projScale * (float)(s_width + 2 * s_wideMargin) / (float)s_width,
+                      s_post.projScale * 0.75f);
         postUniform1f(s_progAo, "uRadius", s_post.ssaoRadius);
         postUniform2f(s_progAo, "uDepthTexel", 1.0f / s_postW, 1.0f / s_postH);
         glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -1236,17 +1286,45 @@ static void glApplyViewport(void)
 {
     /* The window target letterboxes the logical canvas into the output
      * rect; the offscreen scene target is exactly that rect at its own
-     * (render-scaled) size. */
+     * (render-scaled) size. GX coordinates are absolute screen pixels and
+     * the GX viewport is only a clip rect, so the GL viewport always covers
+     * the whole canvas and the view rect becomes the scissor. */
+    int canvasW = s_width + 2 * s_wideMargin;
     int originX = s_sceneTarget ? 0 : s_outputX;
     int originY = s_sceneTarget ? 0 : s_outputY;
-    float scaleX = s_sceneTarget ? (float)s_postW / (float)s_width : s_outputScale;
-    float scaleY = s_sceneTarget ? (float)s_postH / (float)s_height : s_outputScale;
-    int left = originX + (int)floorf(s_viewX * scaleX);
+    int fullW = s_sceneTarget ? s_postW : s_outputWidth;
+    int fullH = s_sceneTarget ? s_postH : s_outputHeight;
+    float scaleX = (float)fullW / (float)canvasW;
+    float scaleY = (float)fullH / (float)s_height;
+    int left = originX + (int)floorf((s_viewX + s_wideMargin) * scaleX);
     int bottom = originY + (int)floorf(s_viewY * scaleY);
-    int right = originX + (int)ceilf((s_viewX + s_viewW) * scaleX);
+    int right = originX + (int)ceilf((s_viewX + s_viewW + s_wideMargin) * scaleX);
     int top = originY + (int)ceilf((s_viewY + s_viewH) * scaleY);
-    glViewport(left, bottom, right - left, top - bottom);
+    glViewport(originX, originY, fullW, fullH);
     glScissor(left, bottom, right - left, top - bottom);
+}
+
+/* Ortho MVP over the logical canvas (y-down to match the software
+ * rasterizer); x = -s_wideMargin maps to the left edge. */
+static void glApplyProjection(void)
+{
+    float canvasW = (float)(s_width + 2 * s_wideMargin);
+    float m[16] = {0};
+    m[0] = 2.0f / canvasW; m[5] = -2.0f / (float)s_height;
+    m[10] = -1.0f; m[12] = -1.0f + 2.0f * (float)s_wideMargin / canvasW;
+    m[13] = 1.0f; m[15] = 1.0f;
+    glUseProgram(s_prog);
+    glUniformMatrix4fv(s_uMVP, 1, GL_FALSE, m);
+}
+
+int gxGLGetWideMargin(void)
+{
+    return s_wideMargin;
+}
+
+void gxGLSetUiShift(int shiftX)
+{
+    s_uiShift = shiftX;
 }
 
 static void glUpdateDrawableSize(void)
@@ -1262,10 +1340,19 @@ static void glUpdateDrawableSize(void)
     batchFlush();
     s_drawWidth = width;
     s_drawHeight = height;
-    scaleX = (float)width / (float)s_width;
+    /* Windows wider than 4:3 widen the canvas (up to MANIAC_MAX_ASPECT)
+     * instead of pillarboxing; taller ones still letterbox. */
+    s_wideMargin = 0;
+    if (s_wideEnabled && (long)width * s_height > (long)height * s_width) {
+        float aspect = (float)width / (float)height;
+        if (aspect > s_wideMaxAspect) aspect = s_wideMaxAspect;
+        s_wideMargin = (int)floorf((s_height * aspect - s_width) * 0.5f);
+        if (s_wideMargin < 0) s_wideMargin = 0;
+    }
+    scaleX = (float)width / (float)(s_width + 2 * s_wideMargin);
     scaleY = (float)height / (float)s_height;
     s_outputScale = (scaleX < scaleY) ? scaleX : scaleY;
-    s_outputWidth = (int)floorf(s_width * s_outputScale);
+    s_outputWidth = (int)floorf((s_width + 2 * s_wideMargin) * s_outputScale);
     s_outputHeight = (int)floorf(s_height * s_outputScale);
     if (s_outputWidth < 1) s_outputWidth = 1;
     if (s_outputHeight < 1) s_outputHeight = 1;
@@ -1281,6 +1368,7 @@ static void glUpdateDrawableSize(void)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_SCISSOR_TEST);
     postResize();
+    glApplyProjection();
     glApplyViewport();
 }
 
@@ -1308,12 +1396,7 @@ static int glSetMode(GxMode *mode)
     s_depthTest = s_depthEnabled;
     s_depthWrite = 1;
     if (s_depthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-    /* Ortho MVP for 640x480 (y-down to match software rasterizer). */
-    float m[16] = {0};
-    m[0] = 2.0f / (float)s_width; m[5] = -2.0f / (float)s_height;
-    m[10] = -1.0f; m[12] = -1.0f; m[13] = 1.0f; m[15] = 1.0f;
-    glUseProgram(s_prog);
-    glUniformMatrix4fv(s_uMVP, 1, GL_FALSE, m);
+    glApplyProjection();
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     return 1;
@@ -1367,7 +1450,9 @@ static int glClearScreen(int clearMode, int color)
 {
     (void)clearMode;
     batchFlush();
-    if (s_outputX != 0 || s_outputY != 0 ||
+    /* Letterbox bars and widescreen margins sit outside the GX view rect;
+     * clear them too so earlier frames never linger there. */
+    if (s_wideMargin != 0 || s_outputX != 0 || s_outputY != 0 ||
         s_outputWidth != s_drawWidth || s_outputHeight != s_drawHeight) {
         glDisable(GL_SCISSOR_TEST);
         glClearColor(0, 0, 0, 1);
@@ -1388,6 +1473,12 @@ static int glClearScreen(int clearMode, int color)
         /* Same scissored clear on the offscreen scene target; alpha 0
          * marks "no scene coverage" for the composite. */
         postSetTarget(1);
+        if (s_wideMargin != 0) {
+            glDisable(GL_SCISSOR_TEST);
+            glClearColor(0, 0, 0, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glEnable(GL_SCISSOR_TEST);
+        }
         glClearColor(r, g, b, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         postSetTarget(0);
@@ -1536,22 +1627,27 @@ static void glDrawPolygon(void *a0, void *a1, void *a2, void *a3, int flags, voi
      * clear), so textured draws are always color-keyed (fonts depend on
      * it); untextured draws carry the vertex color opaquely. */
     {
-        float x0 = fx8(v0->x), y0 = fx8(v0->y);
-        float x1 = fx8(v1->x), y1 = fx8(v1->y);
-        float x2 = fx8(v2->x), y2 = fx8(v2->y);
-        float x3 = fx8(v3->x), y3 = fx8(v3->y);
+        /* The UI shift moves the polygon and its clip rect together, so the
+         * viewport test above stays in GX coordinates. */
+        float shift = (float)s_uiShift;
+        float x0 = fx8(v0->x) + shift, y0 = fx8(v0->y);
+        float x1 = fx8(v1->x) + shift, y1 = fx8(v1->y);
+        float x2 = fx8(v2->x) + shift, y2 = fx8(v2->y);
+        float x3 = fx8(v3->x) + shift, y3 = fx8(v3->y);
         /* Queued with the GXSOFT z-sum key (z0+z1+z2); emitted sorted at flip.
          * Per-vertex w = az depth restores perspective-correct UVs (2D draws
          * use z 0 -> w 1, identical to the old affine path). */
         int z012 = v0->z + v1->z + v2->z;
         int z023 = v0->z + v2->z + v3->z;
         int key = tex ? keyMode : 0;
+        s_viewX += s_uiShift;
         queueTri(x0, y0, u0, v00, depthW(v0->z), x1, y1, u1, v1_, depthW(v1->z),
                  x2, y2, u2, v2_, depthW(v2->z),
                  r, g, b, r, g, b, r, g, b, 1, 0, tex, z012, 0, key);
         queueTri(x0, y0, u0, v00, depthW(v0->z), x2, y2, u2, v2_, depthW(v2->z),
                  x3, y3, u3, v3_, depthW(v3->z),
                  r, g, b, r, g, b, r, g, b, 1, 0, tex, z023, 0, key);
+        s_viewX -= s_uiShift;
     }
 }
 
