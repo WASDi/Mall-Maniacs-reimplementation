@@ -268,12 +268,32 @@ extern void *g_pNodePool2;         /* @0x45e648 */
 extern void *g_pMeshPool;          /* @0x45e610 */
 extern void *g_pNodePoolCur;       /* @0x45e908 cursor into g_pNodePool */
 extern void *g_pNodePool2Cur;      /* @0x45e5fc cursor into g_pNodePool2 */
-extern void *g_pRootMatrix;        /* @0x45e8d4 camera/world matrix (points at g_rootChannel, orig 0x45e818) */
 extern SceneNode g_rootNode;       /* @0x45e8c0 root node storage */
+/* @0x45e8d4 camera/world matrix — ALIASES g_rootNode+0x14 (pChannels) in the
+ * original, pointing at the root channel (orig 0x45e818, g_rootChannel).
+ * A macro like g_pSceneNodeList so the root node stays one object. */
+#define g_pRootMatrix (*(void **)&g_rootNode.pChannels)
 /* @0x45e8cc — the render-list head ALIASES g_rootNode+0xc (pChild) in the
  * original: one doubly-linked list, not two. Kept as a macro so both names
  * always refer to the same slot; per-caller sync hacks are unnecessary. */
 #define g_pSceneNodeList (*(SceneNode **)&g_rootNode.pChild)
+/* --- music-module slot registry g_aMusicSlots @0x45e650: 16 entries of
+ * 0x1c, filled by musicSlotAlloc @0x431c30 (handle = 0x100 + index) and
+ * zeroed by sceneSystemInit. musicEmitterAlloc @0x431b00 copies nRadius to
+ * the new node's bounding radii and calls pfnInit (musicCbInitEmitter
+ * @0x437b40 clears node+0x24). The other callbacks (scene pre/post render,
+ * node dtor via +0x18 @0x45e668) are not reconstructed. --- */
+typedef struct MusicSlot {
+    int   bUsed;                       /* +0x00 1 = registered */
+    int   nRadius;                     /* +0x04 bounding radius for new emitters */
+    int (*pfnInit)(SceneNode *pNode);  /* +0x08 per-emitter init (may be NULL) */
+    void *pfnCb0c;                     /* +0x0c */
+    void *pfnCb10;                     /* +0x10 musicModulePosCheck @0x437b60 */
+    void *pfnCb14;                     /* +0x14 */
+    void *pfnDtor;                     /* +0x18 node dtor (sceneNodeFree, nId >= 0x100) */
+} MusicSlot;                           /* 0x1c */
+
+extern MusicSlot g_aMusicSlots[16];    /* @0x45e650..0x45e80f */
 extern float *g_pSinTable;           /* @0x45e5f8 sin table 0x400 */
 extern float *g_pSinTree;            /* @0x45e888 sin tree 0x3ff8 */
 extern int   g_nSceneNodeCount;

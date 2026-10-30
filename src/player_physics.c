@@ -37,15 +37,15 @@ static const double g_dblMinusPi31415 = -3.1415;    /* @0x44b2a0 */
 static const float g_flTwoPiF = 6.283f;             /* @0x44b2a8 */
 static const float g_flHalfPiPhy = 1.5707964f;      /* @0x44b270 */
 static const float g_flEighteen = 18.0f;            /* @0x44b58c */
-static const float g_flNegSixSeventh = -0.8571429f; /* @0x44b6f8 */
+static const float g_flNegSixSeventh = -0.85714287f; /* @0x44b6f8 */
 static const float g_fl0_999 = 0.999f;              /* @0x44b57c */
 static const float g_fl300 = 300.0f;                /* @0x44b6f4 */
 static const float g_fl250 = 250.0f;                /* @0x44b460 */
 static const float g_fl1100 = 1100.0f;              /* @0x44b27c */
 static const double g_dbl0_75 = 0.75;               /* @0x44b6e8 */
-static const float g_fl0_75f = 0.75f;               /* @0x44b6ec (float 0.75) */
+static const float g_flNegThreeQuarters = -0.75f;   /* @0x44b700 cart bounce factor */
 static const float g_flBinAngle = 10430.219f;       /* @0x44b6f0 (32768/pi) */
-static const float g_flPiPhy = 3.1415925f;          /* @0x44b2d0 */
+static const float g_flPiPhy = 3.14159f;            /* @0x44b2d0 */
 static const float g_fl9_588e_05 = 9.587673e-05f;   /* @0x44b6dc */
 
 /* Wrap a node heading into [-3.1415, 3.1415] (shared inline loop of the
@@ -874,7 +874,7 @@ void playerUpdateCartPhysics(PlayerRecord *pRec) /* @0x4280b0 */
                 pMesh->flVertVel = 0.0f;                                  /* @0x428552 */
                 pMesh->flHeight = flSupport;                              /* @0x428556 */
             } else {
-                flVel = pMesh->flVertVel * g_fl0_75f;                     /* [0x44b6ec] @0x42855e */
+                flVel = pMesh->flVertVel * g_flNegThreeQuarters;          /* FMUL [0x44b700] @0x428669 */
                 pMesh->flVertVel = flVel;
                 pMesh->flHeight = flVel + pMesh->flHeight;
             }

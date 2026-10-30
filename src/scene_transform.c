@@ -484,7 +484,7 @@ void mathVec2Polar(GxVec2 *pOut, const GxVec2 *pIn) /* @0x435060 */
 int sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float flZ, int nMode) /* @0x431030 */
 {
     SceneNode *n = pNode;
-    if (nChannel >= 0 && nChannel < (int)n->nChannelCount && nMode == 2) {
+    if (nChannel >= 0 && nChannel < (int)(signed char)n->nChannelCount && nMode == 2) { /* MOVSX @0x431039 */
         SceneChannel *ch = &n->pChannels[nChannel];
         float dx = flX - ch->x;
         float dy = flY - ch->y;
@@ -497,7 +497,7 @@ int sceneNodeFacePos(SceneNode *pNode, int nChannel, float flX, float flY, float
          * (the original calls no helper here). rot[2] forced to 0 (0x431081),
          * bFlagA/bFlagB cleared (0x4310f7/0x431104). */
         ch->rot[1] = (short)(int)(atan2((double)dx, (double)dz) * g_dblRadToBdg);
-        ch->rot[0] = (short)(int)(atan2((double)-dy, (double)d3) * g_dblRadToBdg);
+        ch->rot[0] = (short)(int)(atan2((double)-dy / d3, (double)dHoriz / d3) * g_dblRadToBdg);
         ch->rot[2] = 0;
         ch->bFlagA = 0;
         ch->bFlagB = 0;

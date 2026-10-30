@@ -2,3 +2,5 @@
 obj/
 build*/
 rebuild.log
+.venv/
+__pycache__/

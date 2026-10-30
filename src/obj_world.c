@@ -24,8 +24,8 @@
 
 WorldNode *g_pObjHead;  /* @0x4550d4 world-object list head */
 
-static const float g_flPi = 3.1415925f;        /* @0x44b2d0 (bytes D0 0F 49 40) */
-static const double g_dblAngleScale = 3.0547e-05; /* @0x44b2c8 (bytes 10 00 10 00 10 00 00 3F) */
+static const float g_flPi = 3.14159f;          /* @0x44b2d0 (bytes D0 0F 49 40) */
+static const double g_dblAngleScale = 3.0518043793392844e-05; /* @0x44b2c8 (bytes 10 00 10 00 10 00 00 3F) = 2/65535 */
 
 
 /* objUpdateAll @0x4055f0 — clear every world node's per-frame state
@@ -84,7 +84,7 @@ WorldNode *worldNodeCtor(void *pMem, int nX, int nY, int nZ, short nScale,
     pNode->vPosB.x = pNode->vPos.x;         /* @0x402a5f */
     pNode->vPosB.y = pNode->vPos.y;         /* @0x402a5c..0x402a61 */
     pNode->pParent = pParent;               /* +0x44 @0x402a78 */
-    flScale = (float)nScale * g_flPi * (float)g_dblAngleScale; /* @0x44b2d0/0x44b2c8 @0x402a7e */
+    flScale = (float)((double)nScale * g_flPi * g_dblAngleScale); /* FMUL float @0x402a7e, FMUL double @0x402a84 */
     pNode->flScaleA = flScale;              /* +0x30 @0x402a8a */
     pNode->flScaleB = flScale;              /* +0x38 @0x402a8d */
     pNode->flScaleC = flScale;              /* +0x34 @0x402a90 */
@@ -117,7 +117,7 @@ void objDtor(WorldNode *pNode) /* @0x402ab0 */
         /* 64-bit port: +0x48 is ObjChildMesh.pNext (32-bit layout);
          * use struct access (80 on 64-bit, not 72). */
         if (((ObjChildMesh *)pSub)->pNext != NULL) { /* @0x402afb */
-            objTurretListFree(1);                    /* @0x402b40 @0x402b04 */
+            objTurretListFree(((ObjChildMesh *)pSub)->pNext, 1); /* @0x402b40 @0x402b04 */
         }
         memFreeDirect(pSub);                         /* @0x402b0a */
     }
@@ -125,10 +125,36 @@ void objDtor(WorldNode *pNode) /* @0x402ab0 */
     if (pSub != NULL) {
         /* +0x18 is ObjTurret.pNext on both layouts (24); struct access. */
         if (((ObjTurret *)pSub)->pNext != NULL) { /* @0x402b1a */
-            objTurretListFree2(1);                   /* @0x402b70 @0x402b23 */
+            objTurretListFree2(((ObjTurret *)pSub)->pNext, 1); /* @0x402b70 @0x402b23 */
         }
         memFreeDirect(pSub);                         /* @0x402b29 */
     }
+}
+
+/* objTurretListFree @0x402b40 — child-mesh list scalar deleting destructor:
+ * recurse on pNext (+0x48) with flags 1, free this entry when nFlags & 1. */
+ObjChildMesh *objTurretListFree(ObjChildMesh *pMesh, int nFlags) /* @0x402b40 */
+{
+    if (pMesh->pNext != NULL) {                      /* +0x48 @0x402b43 */
+        objTurretListFree(pMesh->pNext, 1);          /* @0x402b4c */
+    }
+    if ((nFlags & 1) != 0) {                         /* @0x402b51 */
+        memFreeDirect(pMesh);                        /* @0x43dd37 @0x402b59 */
+    }
+    return pMesh;
+}
+
+/* objTurretListFree2 @0x402b70 — turret list scalar deleting destructor:
+ * recurse on pNext (+0x18) with flags 1, free this entry when nFlags & 1. */
+ObjTurret *objTurretListFree2(ObjTurret *pTurret, int nFlags) /* @0x402b70 */
+{
+    if (pTurret->pNext != NULL) {                    /* +0x18 @0x402b73 */
+        objTurretListFree2(pTurret->pNext, 1);       /* @0x402b7c */
+    }
+    if ((nFlags & 1) != 0) {                         /* @0x402b81 */
+        memFreeDirect(pTurret);                      /* @0x43dd37 @0x402b89 */
+    }
+    return pTurret;
 }
 
 /* --- per-node queries (playerUpdateAI / pickup / camera paths) --- */
@@ -287,20 +313,20 @@ float objDistToPoint(WorldNode *pNode, float flA, float flB) /* @0x405050 */
 float nodeChannelAvgFloat(WorldNode *pNode, intptr_t nChannelKey) /* @0x4050c0 */
 {
     ObjChildMesh *pMesh;
-    float flSum = 0.0f;    /* @0x4050c3 */
-    float flCount = 0.0f;  /* @0x4050c9 */
+    double dblSum = 0.0;   /* @0x4050c3 x87 register accumulators */
+    double dblCount = 0.0; /* @0x4050c9 */
 
     for (pMesh = (ObjChildMesh *)pNode->pChildMeshHead; pMesh != NULL;
          pMesh = pMesh->pNext) {                         /* @0x4050d3 */
         if (pMesh->nChannelKey == nChannelKey) {         /* @0x4050d7 */
-            flSum += pMesh->flHeight;                    /* +0x40 @0x4050dc */
-            flCount += g_flOne;                          /* @0x4050e1 */
+            dblSum += pMesh->flHeight;                    /* +0x40 @0x4050dc */
+            dblCount += g_flOne;                          /* @0x4050e1 */
         }
     }
-    if (flCount == g_flZero) {                           /* @0x4050f2 */
+    if (dblCount == g_flZero) {                           /* @0x4050f2 */
         return g_flZero;                                 /* @0x405103 */
     }
-    return flSum / flCount;                              /* FDIVRP @0x40510c */
+    return (float)(dblSum / dblCount);                   /* FDIVRP @0x40510c */
 }
 
 /* objFindTurret @0x405120 — return the first child-mesh entry of pNode
@@ -341,7 +367,7 @@ void objTurretAdd(WorldNode *pNode, int nPosX, int nPosY, int nPosZ,
     gxVec2Set(&vIn, (float)nPosZ, (float)nPosX);             /* @0x434fa0 @0x4052f4 */
     pTurret->vPos = vIn;                                     /* @0x4052fc */
     mathVec2Polar(&pTurret->vPolar, &vIn);                   /* @0x435060 @0x405314 */
-    pTurret->flAngle = (float)(int)nAngle * g_flPi * (float)g_dblAngleScale; /* @0x405338 */
+    pTurret->flAngle = (float)((double)(int)nAngle * g_flPi * g_dblAngleScale); /* FMUL double @0x405340 */
     pTurret->nTypeId = nTypeId;                              /* @0x40533e */
     pTurret->pNext = (ObjTurret *)pNode->pTurretHead;        /* @0x405349 */
     pNode->pTurretHead = pTurret;                            /* @0x405353 */
@@ -415,10 +441,10 @@ void nodeSetTransformFromChannels(WorldNode *pNode, int nPosX, int nPosY,
     GxVec2 vOut;
 
     pNode->vPos.x = (float)nPosZ;                            /* +0x20 @0x404e18 */
-    pNode->field_3c = nUnk;                                  /* +0x3c @0x404e22 */
+    memcpy(&pNode->field_3c, &nUnk, sizeof(nUnk));          /* +0x3c raw int bits (MOV, no FILD) @0x404e22 */
     pNode->vPos.y = (float)nPosX;                            /* +0x24 @0x404e27 */
     pNode->vPosB = pNode->vPos;                              /* @0x404e34 */
-    pNode->flScaleA = (float)(int)nAngle * g_flPi * (float)g_dblAngleScale; /* @0x404e46 */
+    pNode->flScaleA = (float)((double)(int)nAngle * g_flPi * g_dblAngleScale); /* FMUL double @0x404e40 */
     pNode->flScaleB = pNode->flScaleA;                       /* +0x34 @0x404e49 */
     for (pMesh = (ObjChildMesh *)pNode->pChildMeshHead; pMesh != NULL;
          pMesh = pMesh->pNext) {                             /* @0x404e85 */

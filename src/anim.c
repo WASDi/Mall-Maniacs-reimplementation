@@ -376,7 +376,9 @@ AnmSet *anmSetAlloc(AnmFile *pAnm) /* @0x4344d0 */
     pSet->pMesh[2] = NULL;
     pSet->nUnkC = 0;
     pSet->nUnk10 = 0;
+#if !MANIAC_32BIT_RUNTIME_LAYOUT
     pSet->_pad20 = 0; /* keeps apObjs[3] NULL when read as a list */
+#endif
     pSet->pAnm = pAnm;
     return pSet;
 }

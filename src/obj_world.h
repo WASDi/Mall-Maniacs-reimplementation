@@ -134,6 +134,14 @@ float nodeChannelAvgFloat(WorldNode *pNode, intptr_t nChannelKey);
  * matches nChannelKey (walks the +0x08 ObjChildMesh list), or NULL. */
 ObjChildMesh *objFindTurret(WorldNode *pNode, intptr_t nChannelKey);
 
+/* objTurretListFree @0x402b40 / objTurretListFree2 @0x402b70 — scalar
+ * deleting destructors of the child-mesh (+0x48 link) resp. turret (+0x18
+ * link) list entries: destroy the rest of the list first (flags 1), then
+ * memFreeDirect this entry when (nFlags & 1). Return the entry. Original
+ * __thiscall RET 0x4. */
+ObjChildMesh *objTurretListFree(ObjChildMesh *pMesh, int nFlags);
+ObjTurret *objTurretListFree2(ObjTurret *pTurret, int nFlags);
+
 /* objDistTo @0x404fe0 — Euclidean ground-plane distance between the two
  * nodes' vPos. */
 float objDistTo(WorldNode *pA, WorldNode *pB);

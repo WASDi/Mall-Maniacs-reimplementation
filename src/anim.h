@@ -71,7 +71,9 @@ typedef struct AnmSet {
     void   *pMesh[3];      /* +0x00/+0x08/+0x10 mesh slots (was +0/+4/+8) */
     int     nUnkC;         /* +0x18 (was +0x0c) */
     int     nUnk10;        /* +0x1c (was +0x10) */
-    int     _pad20;        /* +0x20 padding (always 0) */
+#if !MANIAC_32BIT_RUNTIME_LAYOUT
+    int     _pad20;        /* +0x20 padding (always 0); absent in the 32-bit layout */
+#endif
     AnmFile *pAnm;         /* +0x28 (was +0x14): aliases SceneObjAnimList.pState */
 } AnmSet;
 
@@ -127,7 +129,9 @@ typedef struct SceneObjAnimState {
     void      *pLoopBase;    /* +0x08 track-table base (aliases AnmFile.pTrackBase) */
     AnmTrack  *pCurTrack;    /* +0x10 current track pointer */
     int        nUnk18;       /* +0x18 unused (aliases AnmFile.nLoopStart) */
-    int        _pad1c;       /* +0x1c alignment pad */
+#if !MANIAC_32BIT_RUNTIME_LAYOUT
+    int        _pad1c;       /* +0x1c alignment pad; absent in the 32-bit layout */
+#endif
     void      *pUnk20;       /* +0x20 unused (aliases AnmFile.pPool) */
     void      *pUnk28;       /* +0x28 unused (aliases AnmFile.pObj) */
     SceneNode *pMasterNode;  /* +0x30 pos/facing snap target (may be 0) */

@@ -49,9 +49,9 @@ static const double g_dblL0OffsetAScale = 4.0;    /* @0x44b5f8 (bytes 00 00 00 0
 static const double g_dblL0SubAngleAStep = 0.011; /* @0x44b5f0 (bytes BA 49 0C 02 2B 87 86 3F) */
 static const double g_dblL0OffsetBScale = 3.0;    /* @0x44b5e8 (bytes 00 00 00 00 00 00 08 40) */
 static const double g_dblL0SubAngleCStep = 0.01;  /* @0x44b5e0 (bytes 7B 14 AE 47 E1 7A 84 3F) */
-static const double g_dblL0Sub1Scale = 384.0;     /* @0x44b5d8 (bytes 00 00 00 00 00 80 78 40) */
+static const double g_dblL0Sub1Scale = 392.0;     /* @0x44b5d8 (bytes 00 00 00 00 00 80 78 40) */
 static const double g_dblL0SubAngleBStep = 0.008; /* @0x44b5d0 (bytes FC A9 F1 D2 4D 62 80 3F) */
-static const double g_dblL0Sub3Scale = 180.0;     /* @0x44b5c8 (bytes 00 00 00 00 00 E0 6C 40) */
+static const double g_dblL0Sub3Scale = 231.0;     /* @0x44b5c8 (bytes 00 00 00 00 00 E0 6C 40) */
 
 /* --- director state (xref-verified private to the three functions) --- */
 static SceneNode *g_pL0SignObj;       /* @0x459d70 scenNameToIdEx("SIGN_FELIXPO") node handle */

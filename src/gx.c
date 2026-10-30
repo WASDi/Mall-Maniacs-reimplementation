@@ -334,8 +334,9 @@ void gxVec2Set(GxVec2 *pVec, float x, float y) /* @0x434fa0 */
  * cartesian out = length * (cos(angle), sin(angle)) via FSIN/FCOS. */
 void gxVec2FromPolar(GxVec2 *pOut, const GxVec2 *pPolar) /* @0x434fc0 */
 {
-    pOut->x = pPolar->x * (float)cos((double)pPolar->y);
-    pOut->y = pPolar->x * (float)sin((double)pPolar->y);
+    /* FCOS/FSIN result multiplied at x87 precision, rounded once by FSTP float. */
+    pOut->x = (float)((double)pPolar->x * cos((double)pPolar->y));
+    pOut->y = (float)((double)pPolar->x * sin((double)pPolar->y));
 }
 
 /* gxVec2Add @0x434fe0 — component-wise sum via gxVec2Set. */
@@ -357,10 +358,14 @@ void gxVec2Sub(GxVec2 *pOut, const GxVec2 *pA, const GxVec2 *pB) /* @0x435020 */
 void gxVec2RotateAdd(GxVec2 *pOut, const GxVec2 *pA, const GxVec2 *pB) /* @0x435090 */
 {
     GxVec2 vSum;
+    /* Products stay in x87 precision; only the B cosine term is spilled
+     * as a float (FSTP float @0x4350b1). */
+    float flCosB = (float)((double)pB->x * cos((double)pB->y));
+    double dblCosA = (double)pA->x * cos((double)pA->y);
+    double dblSinA = (double)pA->x * sin((double)pA->y);
+    double dblSinB = (double)pB->x * sin((double)pB->y);
 
-    gxVec2Set(&vSum,
-              pB->x * (float)cos((double)pB->y) + pA->x * (float)cos((double)pA->y),
-              pB->x * (float)sin((double)pB->y) + pA->x * (float)sin((double)pA->y));
+    gxVec2Set(&vSum, (float)(flCosB + dblCosA), (float)(dblSinB + dblSinA));
     mathVec2Polar(pOut, &vSum); /* @0x4350d9 */
 }
 

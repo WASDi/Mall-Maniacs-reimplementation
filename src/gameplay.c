@@ -1464,7 +1464,7 @@ int g_nAnimSfxTick;     /* @0x458954 alternating step gate (toggled each call) *
 float g_playerAnimT;    /* @0x458958 results-screen winner orbit phase */
 
 /* Constants used by playerAnimSfxUpdate (addresses from the disassembly). */
-static const float g_flLimbTurnScale = 5575.0f;   /* @0x44b4a8 (bytes 00 00 AF 45) */
+static const float g_flLimbTurnScale = 5600.0f;   /* @0x44b4a8 (bytes 00 00 AF 45) */
 static const float g_flEngineSpeedHi = 45.0f;     /* @0x44b4a4 (bytes 00 00 34 42) */
 static const float g_flEngineSpeedLo = -45.0f;    /* @0x44b4a0 (bytes 00 00 34 C2) */
 static const double g_dblEngineTurnHi = 0.012;    /* @0x44b498 (bytes FA 7E 6A BC 74 93 88 3F) */

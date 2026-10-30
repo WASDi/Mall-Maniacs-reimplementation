@@ -99,6 +99,64 @@ void *sceneNodeAllocChild(SceneNode *pParent, void *pChannelPtr, void *pChannelP
 }
 
 /* ===================================================================
+ * musicEmitterAlloc @0x431b00  (0xa8-byte music/3D-sound node)
+ * Verified vs disasm 0x431b00..0x431c23. _malloc(0xa8); pParent==0 ->
+ * &g_rootNode; head-insert into the parent's child list (+0xc), old head's
+ * pPrevLink(+0x10) = n, n->pPrevLink = parent. nId = (short)nSlot (the
+ * music-module handle 0x100+i), pTypeDef(+0x20) = arg 6, pChild = 0,
+ * bType = 0, one embedded channel: rot 0, fUnk6 1.0f, nIdx = nChanIdx
+ * (parent channel), x/y/z = nX/nY/nZ, flags cleared. Both bounding radii
+ * come from g_aMusicSlots[nSlot & 0xff].nRadius; that slot's pfnInit runs
+ * when non-NULL. Counters as the other 0xa8 allocators; parent bounds
+ * refresh unless the parent is the root. The remaining fields (+0x24..
+ * +0x34, channel matrices) are left as malloc returned them.
+ * =================================================================== */
+SceneNode *musicEmitterAlloc(SceneNode *pParent, int nChanIdx, int nX, int nY, int nZ,
+                             SceneObjTypeDef *pTypeDef, unsigned int nSlot) /* @0x431b00 */
+{
+    SceneNode *n = (SceneNode *)malloc(sizeof(SceneNode));  /* _malloc(0xa8) @0x431b07 */
+    MusicSlot *pSlot;
+    SceneChannel *ch;
+
+    if (n == NULL) return NULL;
+    n->pParent = (pParent != NULL) ? pParent : &g_rootNode;  /* @0x431b20 */
+    n->pNextSib = n->pParent->pChild;                      /* @0x431b33 */
+    if (n->pNextSib != NULL) n->pNextSib->pPrevLink = n;   /* @0x431b3d */
+    n->pParent->pChild = n;                                /* @0x431b46 */
+    n->pPrevLink = n->pParent;                             /* @0x431b50 */
+    n->nId = (unsigned short)nSlot;                        /* @0x431b57 */
+    n->pTypeDef = pTypeDef;                                /* @0x431b60 */
+    n->pChild = NULL;                                      /* @0x431b65 */
+    n->pChannels = &n->ch;                                 /* @0x431b68 */
+    n->bType = 0;                                          /* @0x431b6b */
+    /* the original indexes the 16-slot table blindly (handles are 0 or 0x100+i) */
+    pSlot = &g_aMusicSlots[nSlot & 0xff];                  /* stride 0x1c @0x431b6e */
+    n->nBoundingRadiusA = pSlot->nRadius;                  /* @0x431b80 */
+    n->nBoundingRadiusB = pSlot->nRadius;                  /* @0x431b89 */
+    n->nChannelCount = 1;                                  /* @0x431b90 */
+    ch = n->pChannels;
+    ch->x = nX;                                            /* @0x431b94 */
+    ch->rot[0] = 0;
+    ch->y = nY;
+    ch->z = nZ;
+    ch->rot[1] = 0;
+    ch->rot[2] = 0;
+    ch->fUnk6 = 1.0f;                                      /* @0x431bb4 */
+    ch->nIdx = nChanIdx;                                   /* @0x431bbb */
+    ch->bFlagA = 0;
+    ch->bFlagB = 0;
+    if (pSlot->pfnInit != NULL) {                          /* @0x431bc4 */
+        pSlot->pfnInit(n);
+    }
+    g_nSceneNodeCount++;
+    if (g_nSceneNodeCountPeak < g_nSceneNodeCount) g_nSceneNodeCountPeak = g_nSceneNodeCount;
+    g_nSceneNodeMemUsed += 0xa8;                           /* matches sceneNodeFree */
+    if (g_nSceneNodeMemPeak < g_nSceneNodeMemUsed) g_nSceneNodeMemPeak = g_nSceneNodeMemUsed;
+    if (n->pParent != &g_rootNode) sceneNodeUpdateBounds(n->pParent); /* @0x431c17 */
+    return n;
+}
+
+/* ===================================================================
  * sceneryObjAlloc @0x430200  (0xa8 + nSub*0x70)
  * Faithful: handles pTypeDef==NULL -> &g_sceneObjDefaultType, malloc
  * (*(pTypeDef+8)*0x70+0xa8), nChannelCount = *(char*)(pTypeDef+8)+1.

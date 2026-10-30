@@ -32,18 +32,21 @@ void *g_pNodePool2Cur = NULL;        /* @0x45e5fc cursor into g_pNodePool2 */
  * root node @0x45e8c0; root node's pChannels at +0x14 = 0x45e8d4 = g_pRootMatrix).
  * g_pRootMatrix points to this buffer. */
 static SceneChannel g_rootChannel;    /* root channel storage */
-void *g_pRootMatrix = NULL;           /* @0x45e8d4 — points to g_rootChannel */
-SceneNode g_rootNode;                 /* @0x45e8c0 root node storage */
+/* The original's root is only the 0x38-byte node header: its channel lives at
+ * 0x45e818 (g_rootChannel) and other globals follow at 0x45e8f8, so the
+ * difftest syncs just that header. */
+SceneNode g_rootNode;                 /* @0x45e8c0 sync:0x38 root node (+0x14 = g_pRootMatrix @0x45e8d4) */
+MusicSlot g_aMusicSlots[16];          /* @0x45e650 music-module slot registry */
 float *g_pSinTable = NULL;           /* @0x45e5f8 0x400 floats (0x1000), built at 0x42ed40 */
 float *g_pSinTree = NULL;            /* @0x45e888 0x3ff8 bytes, via mathSinTreeBuild @0x42efb0 */
-static double g_dblTrigStep = 0.015707963267948967; /* @0x44b790 = 2*pi/0x400, used for sin table */
+static double g_dblTrigStep = 0.0015339807880859375; /* @0x44b790 ~ 2*pi/0x1000: 0x400 entries = quarter wave */
 
 
-int   g_nSceneNodeCount = 0;
-int   g_nSceneNodeMemUsed = 0;
+int   g_nSceneNodeCount = 0;      /* @0x45e638 live scene nodes */
+int   g_nSceneNodeMemUsed = 0;    /* @0x45e640 bytes in live nodes */
 int   g_nSceneryObjCountPeak = 0;
-int   g_nSceneNodeCountPeak = 0;
-int   g_nSceneNodeMemPeak = 0;
+int   g_nSceneNodeCountPeak = 0;  /* @0x45e63c */
+int   g_nSceneNodeMemPeak = 0;    /* @0x45e644 */
 float g_nSceneWidth = 0.0f;   /* @0x45e900 float, disasm moves via int */
 float g_nSceneHeight = 0.0f;  /* @0x45e614 float */
 float g_flSceneAspect = 1.0f; /* @0x45e8fc */
@@ -166,8 +169,9 @@ int sceneSystemInit(int nNodePoolSize, int nSceneBufSize, int nSortBufCount,
     if (!g_pSinTree) return 0;
     mathSinTreeBuild(0, 0x400, g_pSinTree); /* @0x42efb0 */
 
-    /* TODO: original zeros g_sceneSystem18/1c/28/2c/30/ram0x45e824 and
-     * music slot region 0x45e650..0x45e810 — deferred for menu preview */
+    /* TODO: original zeros g_sceneSystem18/1c/28/2c/30/ram0x45e824 —
+     * deferred for menu preview */
+    memset(g_aMusicSlots, 0, sizeof(g_aMusicSlots)); /* 0x45e650..0x45e810 */
     /* Root node and root channel are SEPARATE in the original (root channel
      * @0x45e818, root node @0x45e8c0). The root node's pChannels field at
      * +0x14 IS g_pRootMatrix (same address 0x45e8d4 in the original).

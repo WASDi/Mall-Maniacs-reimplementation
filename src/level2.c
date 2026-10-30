@@ -55,9 +55,9 @@ static const double g_dblL2OffsetAScale = 4.0;    /* @0x44b5f8 */
 static const double g_dblL2SubAngleAStep = 0.011; /* @0x44b5f0 */
 static const double g_dblL2OffsetBScale = 3.0;    /* @0x44b5e8 */
 static const double g_dblL2SubAngleCStep = 0.01;  /* @0x44b5e0 */
-static const double g_dblL2Sub1Scale = 384.0;     /* @0x44b5d8 */
+static const double g_dblL2Sub1Scale = 392.0;     /* @0x44b5d8 */
 static const double g_dblL2SubAngleBStep = 0.008; /* @0x44b5d0 */
-static const double g_dblL2Sub3Scale = 180.0;     /* @0x44b5c8 */
+static const double g_dblL2Sub3Scale = 231.0;     /* @0x44b5c8 */
 static const double g_dblL2CashRadius = 2500.0;   /* @0x44b608 */
 static const int kL2CashZoneId = 0x676e6f67;      /* *(int *)"gong" @0x4500cc */
 

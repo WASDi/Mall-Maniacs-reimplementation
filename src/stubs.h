@@ -32,12 +32,6 @@ int stateNetworkMenu(int nType, int nKey, int nKeyType);     /* @0x420190 */
  * else returns NULL (callers must treat a NULL reply as "no data"). */
 unsigned char *commandDispatch(intptr_t nCommand, LPCSTR pszCommand); /* @0x408b60 */
 
-/* World-object sub-lists freed by objDtor @0x402ab0 (obj_world). The turret
- * object model is deferred; the player round-setup sub-objects never
- * populate these fields, so the stubs are safe no-ops. */
-void objTurretListFree(int nMode);                           /* @0x402b40 */
-void objTurretListFree2(int nMode);                          /* @0x402b70 */
-
 /* Early-init deferred stubs — keep call hierarchy intact for
  * TrackRebuildDetailed. Real implementations will replace these when
  * the scene / string subsystems land. */

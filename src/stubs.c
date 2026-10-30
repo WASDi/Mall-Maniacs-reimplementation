@@ -113,20 +113,6 @@ extern char g_szSceneDir[]; /* @0x45e950 defined in sen.c */
  * longer called: the offline rebuild never opens the console overlay
  * (g_nScrollText stays 0), so gameKeyHandler drops that branch. */
 
-/* objTurretListFree @0x402b40 — free a turret sub-struct list (node +0x08
- * embedded list at +0x48). Turret objects are deferred; safe no-op. */
-void objTurretListFree(int nMode) /* @0x402b40 */
-{
-    (void)nMode;
-}
-
-/* objTurretListFree2 @0x402b70 — free the second turret sub-struct list
- * (node +0x0c, embedded list at +0x18). Deferred; safe no-op. */
-void objTurretListFree2(int nMode) /* @0x402b70 */
-{
-    (void)nMode;
-}
-
 /* musicModuleInit @0x437b10 — see stubs.h. The slot-allocator entry and its
  * callback chain stay unreconstructed; returning NULL keeps the offline
  * game music-silent (g_nMusicModuleHandle == 0, mciPlayCdaudio still runs

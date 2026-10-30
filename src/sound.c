@@ -7,6 +7,9 @@
 
 #include "sound.h"
 #include "scene.h"
+#include "scene_alloc.h"
+#include "scene_transform.h"
+#include "gameplay.h"
 #include "pool.h"
 #include "util.h"
 #include "audio_sdl2.h"
@@ -50,7 +53,7 @@ typedef struct __attribute__((packed)) SndVoiceSlot {
     int        nLoop;      /* +0x14 [5] remaining loops (0x7fffffff) */
     int        nFlags;     /* +0x18 [6] (char) flags */
     int        nHandle;    /* +0x1c [7] slot index + 0x10000 */
-    intptr_t   nOwner;     /* +0x20 [8] mixer voice id (0 or a MusicEmitter*;
+    intptr_t   nOwner;     /* +0x20 [8] mixer voice id (0 or a MusicEmitterNode*;
                          * int on 32-bit, widened for 64-bit pointers) */
     int       *pPos;       /* +0x24 [9] 3D position or centered marker */
     char       nVolL;      /* +0x28 [10] */
@@ -66,20 +69,35 @@ typedef struct SndVoiceSet {
     int           nMasterVol;          /* +0x2e08 (+0x320c in set) 0x10000 */
 } SndVoiceSet;
 
-/* Music-emitter owner record — minimal stand-in for the 0xa8 scene-node
- * emitter musicEmitterAlloc @0x431b00 allocates. The mixer chain build
+/* Music-emitter node — the 0xa8 SceneNode musicEmitterAlloc @0x431b00
+ * creates for each 3D emitter (SndEmitter +0x10), viewed through the fields
+ * the sound module repurposes. The mixer chain build
  * (sndMixBuildVoiceChains @0x437fe0) reads owner+0x24 and, when it equals 1
  * (musicCbInitEmitter @0x437b40 clears it, musicModulePosCheck @0x437b60
- * sets it), aims the voice's 3D position at owner+0x28. The rebuild keeps
- * just those fields; the position cache is primed once at allocation in
- * sndPlaySfx3D (the original refreshes it through the streaming module's
- * per-emitter callback, which is not reproduced). Field offsets match the
- * original so the chain-build logic stays byte-compatible. */
-typedef struct MusicEmitter {
-    unsigned char aReserved[0x24]; /* +0x00 scene-node fields not needed */
-    int           nActive;         /* +0x24 active flag (chain build: ==1) */
-    int           anPos[3];        /* +0x28 cached emitter position */
-} MusicEmitter;
+ * sets it), aims the voice's 3D position at owner+0x28. Like
+ * SceneCameraBlock, the overlay mirrors SceneNode by FIELD IDENTITY: +0x24
+ * is nCacheFlag and +0x28..+0x30 the morph fields, which a music node
+ * (nId 0 or >= 0x100) never uses. The position cache is refreshed by
+ * sndEmitterUpdateAll (the streaming module's per-emitter callback is not
+ * reproduced). */
+typedef struct __attribute__((packed)) MusicEmitterNode {
+    unsigned short nId;          /* mirrored: music-module handle */
+    unsigned char  bType;
+    unsigned char  nChannelCount;
+    SceneNode     *pParent;      /* mirrored linkage */
+    SceneNode     *pNextSib;
+    SceneNode     *pChild;
+    SceneNode     *pPrevLink;
+    SceneChannel  *pChannels;
+    int            nBoundingRadiusA;
+    int            nBoundingRadiusB;
+    SceneObjTypeDef *pTypeDef;
+    int            nActive;      /* +0x24 overlays nCacheFlag (chain build: ==1) */
+    int            anPos[3];     /* +0x28 overlays nMorphIdxA/B, flMorphT: cached position */
+    int            nField_34;
+    SceneChannel   ch;
+} MusicEmitterNode;
+_Static_assert(sizeof(MusicEmitterNode) == sizeof(SceneNode), "MusicEmitterNode mirrors SceneNode");
 
 /* =====================================================================
  * Global state (maniac addresses)
@@ -594,7 +612,7 @@ int sndStopAllVoices(void *pVoiceList) /* @0x438100 */
         if (v->nPitch != 0 && v->pPos != &g_nMixRateDivisor) { /* @0x438114 */
             v->pPos = NULL;                              /* @0x43811f */
             if (v->nOwner != 0) {                        /* @0x438121 */
-                ((MusicEmitter *)(size_t)v->nOwner)->nActive = 0; /* @0x438125 */
+                ((MusicEmitterNode *)(size_t)v->nOwner)->nActive = 0; /* @0x438125 */
             }
         }
     }
@@ -862,12 +880,12 @@ static void sndMixBuildVoiceChains(int nFrameCounter)
     s_voiceSet.pChainB = NULL;
     for (i = 0; i < 0x100; i++) {
         SndVoiceSlot *v = (SndVoiceSlot *)s_voiceSet.aSlots + i;
-        MusicEmitter *pOwner;
+        MusicEmitterNode *pOwner;
 
         v->pLink = NULL;
         if (v->nPitch == 0) continue;
         if (v->pPos == NULL) {
-            pOwner = (MusicEmitter *)v->nOwner;
+            pOwner = (MusicEmitterNode *)v->nOwner;
             if (pOwner == NULL || pOwner->nActive != 1) {
                 if (pTailB == NULL) s_voiceSet.pChainB = v;   /* chain B */
                 else pTailB->pLink = v;
@@ -1295,7 +1313,7 @@ static int sndMixRenderRegion(void *pRegion)
  * ===================================================================== */
 
 /* sndPlaySfx @0x437cf0 — queue a one-shot effect. nMixerVoice is 0 for plain
- * cues or the owning MusicEmitter record pointer for 3D emitter voices (the
+ * cues or the owning music-emitter node pointer for 3D emitter voices (the
  * chain build borrows the owner's cached position when the voice has none). */
 int sndPlaySfx(intptr_t nMixerVoice, unsigned nBank, unsigned nSfxIndex,
                unsigned nVolume, int nPitch, unsigned nFlags)
@@ -1454,18 +1472,17 @@ int sndFreeVoiceByHandle(unsigned int nHandle) /* @0x437e40 */
 
 /* sndEmitterFree @0x42bec0 — release an emitter's voice and unlink it from
  * the list. The caller owns the 0x1c block (memFreeDirect after this).
- * The +0x10 music-emitter record is released inside the same !(nFlags & 2)
- * branch; the original calls sceneNodeFree(pMusicEmitter, 1), the rebuild
- * frees its minimal MusicEmitter record directly. */
+ * Unless nFlags bit 1 is set, the live voice is released and the +0x10
+ * music-emitter node freed with sceneNodeFree(pMusicEmitter, 1); the field
+ * itself is left as is (no store in the original). */
 void sndEmitterFree(SndEmitter *pEmitter) /* @0x42bec0 */
 {
     if ((pEmitter->nFlags & 2) == 0) {
         if (pEmitter->nSfxHandle != 0 && sndVoiceIsActive((unsigned)pEmitter->nSfxHandle)) {
             sndFreeVoiceByHandle((unsigned)pEmitter->nSfxHandle);
         }
-        if (pEmitter->pMusicEmitter != NULL) {
-            memFreeDirect(pEmitter->pMusicEmitter);   /* sceneNodeFree(pMusicEmitter,1) */
-            pEmitter->pMusicEmitter = NULL;
+        if (pEmitter->pMusicEmitter != NULL) {                       /* @0x42beec */
+            sceneNodeFree((SceneNode *)pEmitter->pMusicEmitter, 1);  /* @0x430460 @0x42bef3 */
         }
     }
     if (g_pSndEmitterHead == pEmitter) {
@@ -1513,10 +1530,13 @@ void sndEmitterUpdateAll(void) /* @0x42bf40 */
     while (pEmitter != NULL) {
         SndEmitter *pPrev = pEmitter->pPrev;
         if (pEmitter->pMusicEmitter != NULL) {
-            MusicEmitter *pMusic = (MusicEmitter *)pEmitter->pMusicEmitter;
+            MusicEmitterNode *pMusic = (MusicEmitterNode *)pEmitter->pMusicEmitter;
             if (pEmitter->pPosNode != NULL) {
                 sceneNodeGetPos((SceneNode *)pEmitter->pPosNode, 0,
                                 pMusic->anPos, 4);
+            } else {
+                /* root-parented emitter: centered (full volume) */
+                pMusic->anPos[0] = pMusic->anPos[1] = pMusic->anPos[2] = 0;
             }
             pMusic->nActive = 1;
         }
@@ -1526,40 +1546,42 @@ void sndEmitterUpdateAll(void) /* @0x42bf40 */
 }
 
 /* sndPlaySfx3D @0x42bcd0 — fill + link the caller-allocated 0x1c emitter
- * block and queue its sample.
- * nFlags: bit 4 = dedupe scan (skip when a same-id emitter sits within
- * ~100 units), bit 3 = free the duplicate instead of self, bit 4 = loop
- * flag 0x200, bit 5 = flag 0x800 + randomized pitch (rand&0x3fff + 0xd000).
- * musicEmitterAlloc (the 3D music-module registration) is reproduced as the
- * minimal MusicEmitter owner record (see above) so the queued voice gets a
- * live 3D position in the mix chain build. */
+ * block and queue its sample. Verified vs disasm 0x42bcd0..0x42beb7.
+ * nFlags: bit 2 = dedupe scan, bit 3 = free a near duplicate instead of
+ * self, bit 4 = loop flag 0x200, bit 5 = flag 0x800 + randomized pitch
+ * (rand&0x3fff + 0xd000). The dedupe scan starts at the first emitter with
+ * this nSndId from the head, which is always the new emitter itself, and
+ * walks older ones (pPrev). For each other one it reads the music node's
+ * position (sceneNodeGetPos mode 4 on +0x10) and, when the squared distance
+ * to (nX,nY,nZ) is under g_fl_10000, frees that emitter (bit 3) or frees
+ * itself and returns. Then musicEmitterAlloc @0x431b00 creates the music
+ * node under pPosNode (or the root), which becomes the voice's mix owner. */
 SndEmitter *sndPlaySfx3D(SndEmitter *pEmitter, unsigned int nBank,
                          unsigned int nIdx, unsigned int nVol, int nSndId,
                          void *pPosNode, int nEmitParam6, int nX, int nY,
                          int nZ, unsigned int nFlags) /* @0x42bcd0 */
 {
-    static const float g_flDedupeDist2 = 10000.0f; /* g_fl_10000: squared near-duplicate radius */
+    static const float g_fl_10000 = 10000.0f; /* @0x44b5b0 squared near-duplicate radius */
     unsigned int nSndFlags = 0;
     int nPitch = 0;
     SndEmitter *pOther;
-    SndEmitter *pNext;
+    SndEmitter *pNextOther;
     int anPos[3];
 
-    (void)nEmitParam6; (void)nX; (void)nY; (void)nZ;
-    if ((nFlags & 0x10) != 0) {
+    if ((nFlags & 0x10) != 0) {                          /* @0x42bcdd */
         nSndFlags = 0x200;
     }
-    if ((nFlags & 0x20) != 0) {
+    if ((nFlags & 0x20) != 0) {                          /* @0x42bcf4 */
         nSndFlags |= 0x800;
         nPitch = (rand() & 0x3fff) + 0xd000;   /* rand() & 0x80003fff: bit 31 never set */
     }
-    pEmitter->pPosNode = pPosNode;
+    pEmitter->pPosNode = pPosNode;                       /* @0x42bd28 */
     pEmitter->pMusicEmitter = NULL;
     pEmitter->nSfxHandle = 0;
     pEmitter->nFlags = nFlags;
     pEmitter->nSndId = nSndId;
     /* link as the new head (pPrev = previous head, pNext = NULL) */
-    if (g_pSndEmitterHead != NULL) {
+    if (g_pSndEmitterHead != NULL) {                     /* @0x42bd36 */
         g_pSndEmitterHead->pNext = pEmitter;
     } else {
         g_pSndEmitterTail = pEmitter;
@@ -1567,59 +1589,44 @@ SndEmitter *sndPlaySfx3D(SndEmitter *pEmitter, unsigned int nBank,
     pEmitter->pPrev = g_pSndEmitterHead;
     g_pSndEmitterHead = pEmitter;
     pEmitter->pNext = NULL;
-    if ((pEmitter->nFlags & 4) != 0) {
+    if ((pEmitter->nFlags & 4) != 0) {                   /* @0x42bd5e */
         for (pOther = g_pSndEmitterHead; pOther != NULL; pOther = pOther->pPrev) {
-            if (pOther->nSndId == pEmitter->nSndId) {
+            if (pOther->nSndId == pEmitter->nSndId) {    /* @0x42bd6d */
                 break;
             }
         }
-        if (pOther != NULL) {
-            for (pNext = pOther->pNext; pNext != NULL; pNext = pNext->pNext) {
-                if (pNext->nSndId == pEmitter->nSndId) {
+        while (pOther != NULL) {                         /* @0x42bdd1 */
+            for (pNextOther = pOther->pPrev; pNextOther != NULL;
+                 pNextOther = pNextOther->pPrev) {       /* @0x42bdd7 */
+                if (pNextOther->nSndId == pEmitter->nSndId) {
                     break;
                 }
             }
-            /* NOTE: the original compares the stored position (sceneNodeGetPos
-             * mode 4 on the other emitter's pos node) against (nX,nY,nZ);
-             * the pos-node read slot in the decompile (+0x10 vs +0x0c) was
-             * ambiguous, so the rebuild tests the caller-supplied coords. */
-            anPos[0] = anPos[1] = anPos[2] = 0;
-            if (pOther->pPosNode != NULL) {
-                sceneNodeGetPos((SceneNode *)pOther->pPosNode, 0, anPos, 4);
-            }
-            if (pOther != pEmitter &&
-                ((float)(nZ - anPos[2]) * (float)(nZ - anPos[2]) +
-                 (float)(nY - anPos[1]) * (float)(nY - anPos[1]) +
-                 (float)(nX - anPos[0]) * (float)(nX - anPos[0])) < g_flDedupeDist2) {
-                /* near-duplicate handling simplified: with bit 3 set the old
-                 * emitter is freed, otherwise this one frees itself. */
-                if ((nFlags & 8) != 0) {
-                    sndEmitterFree(pOther);
-                    memFreeDirect(pOther);
-                } else {
-                    sndEmitterFree(pEmitter);
-                    memFreeDirect(pEmitter);
-                    return pEmitter;
+            if (pOther != pEmitter) {                    /* @0x42bdf1 */
+                double dx, dy, dz;
+                sceneNodeGetPos((SceneNode *)pOther->pMusicEmitter, 0, anPos, 4); /* @0x431270 @0x42be05 */
+                /* integer differences (wrapping SUB), squared on the x87 stack */
+                dz = (double)(int)((unsigned int)nZ - (unsigned int)anPos[2]);
+                dy = (double)(int)((unsigned int)nY - (unsigned int)anPos[1]);
+                dx = (double)(int)((unsigned int)nX - (unsigned int)anPos[0]);
+                if (dx * dx + dy * dy + dz * dz < g_fl_10000) { /* FCOMP @0x42be53 */
+                    if ((pEmitter->nFlags & 8) != 0) {   /* @0x42be66 */
+                        sndEmitterFree(pOther);          /* @0x42bec0 @0x42be72 */
+                        memFreeDirect(pOther);           /* @0x43dd37 @0x42be78 */
+                    } else {
+                        sndEmitterFree(pEmitter);        /* @0x42bea0 */
+                        memFreeDirect(pEmitter);         /* @0x42bea6 */
+                        return pEmitter;
+                    }
                 }
             }
+            pOther = pNextOther;                         /* @0x42be80 */
         }
     }
-    /* musicEmitterAlloc(pPosNode, nEmitParam6, nX, nY, 0,
-     * g_nMusicModuleHandle) — the original allocates a 0xa8 scene-node
-     * emitter parented to the pos node and hands it to sndPlaySfx as the
-     * mix owner. The rebuild allocates the minimal MusicEmitter record the
-     * mixer chain build reads and primes its position cache with the first
-     * musicModulePosCheck @0x437b60 pass (nActive = 1 + node position). */
-    pEmitter->pMusicEmitter = malloc(sizeof(MusicEmitter));
-    if (pEmitter->pMusicEmitter != NULL) {
-        MusicEmitter *pMusic = (MusicEmitter *)pEmitter->pMusicEmitter;
-        memset(pMusic, 0, sizeof(*pMusic));
-        pMusic->nActive = 1;
-        if (pPosNode != NULL) {
-            sceneNodeGetPos((SceneNode *)pPosNode, 0, pMusic->anPos, 4);
-        }
-    }
+    pEmitter->pMusicEmitter = musicEmitterAlloc((SceneNode *)pEmitter->pPosNode, nEmitParam6,
+                                                nX, nY, nZ, NULL,
+                                                (unsigned int)g_nMusicModuleHandle); /* @0x431b00 @0x42bd98 */
     pEmitter->nSfxHandle = sndPlaySfx((intptr_t)pEmitter->pMusicEmitter, nBank,
-                                      nIdx, nVol, nPitch, nSndFlags);
+                                      nIdx, nVol, nPitch, nSndFlags); /* @0x437cf0 @0x42bdba */
     return pEmitter;
 }

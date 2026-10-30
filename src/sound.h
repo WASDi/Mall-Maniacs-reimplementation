@@ -81,7 +81,7 @@ int sndLoadBankFromDir(int nBank, char *pszDir);
 /* sndPlaySfx @0x437cf0 — queue a one-shot effect. nBank/nSfxIndex select the
  * sample, nVolume 0..0xffff, nPitch (0 = sample default), nFlags the low byte
  * stored as the voice flags (0x200 loop, 0x400 rate-divisor, 0x800 scale
- * pitch). nMixerVoice is 0 for plain cues or the owning MusicEmitter record
+ * pitch). nMixerVoice is 0 for plain cues or the owning music-emitter node
  * pointer for 3D emitter voices. Returns a handle or 0 when dropped. */
 int sndPlaySfx(intptr_t nMixerVoice, unsigned int nBank, unsigned int nSfxIndex,
                unsigned int nVolume, int nPitch, unsigned int nFlags);
@@ -103,9 +103,9 @@ typedef struct SndEmitter {
     struct SndEmitter *pPrev;   /* +0x04 toward the older emitter (head = newest) */
     struct SndEmitter *pNext;   /* +0x08 toward the newer emitter */
     void *pPosNode;             /* +0x0c positional node (param 6) */
-    void *pMusicEmitter;        /* +0x10 music emitter owner record
-                                 * (MusicEmitter in sound.c; freed by
-                                 * sndEmitterFree) */
+    void *pMusicEmitter;        /* +0x10 music-emitter SceneNode
+                                 * (musicEmitterAlloc @0x431b00; mix owner;
+                                 * freed by sndEmitterFree) */
     int nSfxHandle;             /* +0x14 queued one-shot voice (sndPlaySfx) */
     unsigned int nFlags;        /* +0x18 nFlags arg (bit0 = never auto-free,
                                  * bit1 = keep pos node on free, bit2 = dedupe
@@ -116,10 +116,10 @@ typedef struct SndEmitter {
 extern SndEmitter *g_pSndEmitterHead;   /* @0x45e5f0 (newest) */
 extern SndEmitter *g_pSndEmitterTail;   /* @0x45e5f4 (oldest) */
 
-/* sndPlaySfx3D @0x42bcd0 — fill + link a caller-allocated emitter block and
- * queue its sample (see sound.c). The 3D music-module registration
- * (musicEmitterAlloc) is reproduced as the minimal MusicEmitter owner
- * record, which the mixer chain build uses as the voice's live 3D position. */
+/* sndPlaySfx3D @0x42bcd0 — fill + link a caller-allocated emitter block,
+ * run the optional same-id dedupe scan, create its music-emitter node
+ * (musicEmitterAlloc @0x431b00) and queue the sample with that node as the
+ * mix owner (see sound.c). */
 SndEmitter *sndPlaySfx3D(SndEmitter *pEmitter, unsigned int nBank,
                          unsigned int nIdx, unsigned int nVol, int nSndId,
                          void *pPosNode, int nEmitParam6, int nX, int nY,
