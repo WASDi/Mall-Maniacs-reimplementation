@@ -10,4 +10,9 @@
 int gxGLBackendInstall(void);
 void gxGLBackendUninstall(void);
 
+/* PORT ADDITION: depth-of-field control for the HD post pass (cinematic
+ * shots). strength = max circle of confusion in pixels (0 disables);
+ * focus/range in az world units. Defaults come from MANIAC_DOF*. */
+void gxGLSetDepthOfField(float strength, float focus, float range);
+
 #endif /* GX_SDL2_GL_H */

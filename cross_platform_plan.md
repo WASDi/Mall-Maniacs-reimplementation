@@ -156,7 +156,21 @@ it. `GxMode.hInstance/hwnd` become ignored fields.
   transparent scene triangles retain painter sorting. Perspective-correct UVs
   are used; the original's affine warps, float rounding streaks, backface-cull
   `<1` rule, `z>=0` near test, and half-texel paths are intentionally not
-  reproduced.
+  reproduced. Depth is linear (`az / 65536`); UI records farther than every
+  scene triangle (backdrops at z 500000) are drawn before the scene, the rest
+  after it, matching the GXSOFT far-first painter order.
+- HD look (port addition, all inside `gx_sdl2_gl.c`): 16× anisotropic
+  filtering on linear scene textures, alpha-to-coverage on the premultiplied
+  color-key path, and an offscreen scene target (4× MSAA, render scale) with a
+  composite pass for FXAA, SSAO, bloom, and opt-in 3D-LUT grade, vignette and
+  depth of field. Textured triangles are not vertex-tinted (as in GXSOFT), so
+  scene colors match the original. UI and the fullscreen blit still draw straight to the window.
+  Knobs are environment variables: `MANIAC_POSTFX=0` (direct path),
+  `MANIAC_RENDER_SCALE`, `MANIAC_MSAA`, `MANIAC_FXAA`, `MANIAC_SSAO` (`_RADIUS`,
+  `_DEBUG`), `MANIAC_BLOOM` (`_THRESHOLD`), `MANIAC_GRADE`,
+  `MANIAC_GRADE_LUT=<file.cube>`, `MANIAC_VIGNETTE`, `MANIAC_DOF`
+  (`_FOCUS`, `_RANGE`; also `gxGLSetDepthOfField`), `MANIAC_ANISOTROPY`,
+  `MANIAC_ALPHA_TO_COVERAGE`.
 - `pDrawTriangle/pDrawLine` (no-op `RET` stubs in GXSOFT) stay no-ops.
 - Backslash asset literals (`DRIVERS\…`, `menu\…`, `sound\…`) resolve through
   the Phase 5 path normalizer or are rewritten to `/`.

@@ -26,10 +26,9 @@
  * - Vertices are 8.8 fixed-point x/y (/256.0f); nSoftwareMode stays 0 on
  *   this backend. UV bytes map per normUv (/256.0f, GL equivalent of the
  *   GXSOFT corner-minus-half + truncating rasterizer; see normUv note).
- * - GXSOFT textured tris do not supply vertex tint, but this port uses the
- *   positive-depth scene vertices' RGB for restrained mesh lighting; zero-
- *   depth textured draws stay white-modulated and untextured quads use the
- *   vertex color. The 0x1000 origin bit needs no GL replication (normUv
+ * - GXSOFT textured tris do not supply vertex tint: textured draws are
+ *   white-modulated (full texel brightness, matching the original's
+ *   colors) and untextured draws use the vertex color. The 0x1000 origin bit needs no GL replication (normUv
  *   folds its effect into the byte/256 edge); other exotic
  *   pSetOrigin bits only gate the backface rule. pDrawTriangle/pDrawLine
  *   stay no-ops (as in GXSOFT).
@@ -68,11 +67,33 @@
  *   port instead feeds each GxVert's az depth (z/16) as GL clip w, so the
  *   GPU perspective-divides vUV/vCol. Screen positions are unchanged
  *   (p.xy*w/w); 2D draws (z 0 -> w 1) render exactly as before.
+ * - PORT ADDITION (HD look, no GXSOFT counterpart): anisotropic filtering
+ *   on the linear/mipmap scene textures, alpha-to-coverage on the
+ *   premultiplied color-key path, and an offscreen scene framebuffer with a
+ *   post-processing pass (render scale, FXAA, SSAO, bloom, LUT grade,
+ *   vignette, depth of field). Only the opaque/transparent scene buckets
+ *   render into the offscreen target; UI records and the fullscreen blit
+ *   still draw straight to the window after the composite, so 2D screens are
+ *   untouched. Every knob is a MANIAC_* environment variable (see
+ *   postConfigLoad); MANIAC_POSTFX=0 restores the direct-to-window path.
  */
 
 extern int g_nGfxMode; /* @0x4580c4 */
 
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#endif
+#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+#endif
+
 #define GL_BATCH_MAX_VERTS 65536
+
+/* Linear depth range in az units: window depth = az / GL_DEPTH_FAR. Mall
+ * interiors reach well past 4096 az (the old range clamped everything
+ * beyond it to the far plane, where GL_LESS rejected it); with 24-bit
+ * linear depth 65536 still resolves ~0.004 az. */
+#define GL_DEPTH_FAR_STR "65536.0"
 
 typedef struct GLTexture {
     GLuint nearest;
@@ -104,6 +125,7 @@ static GLint s_uMVP;
 static GLint s_uUseTex = -1;
 static GLint s_uKeyBlack = -1;
 static GLint s_uKeyAlpha = -1;
+static GLint s_uA2C = -1;
 static GLVertex s_batch[GL_BATCH_MAX_VERTS];
 static int s_batchCount;
 static GLuint s_boundTex;
@@ -112,6 +134,7 @@ static int s_keyBlack;
 static int s_depthTest;
 static int s_depthWrite;
 static int s_depthEnabled;
+static int s_a2cOn;
 /* Fullscreen streaming texture for presentFrame CPU buffers (R5G6B5). */
 static GLuint s_streamTex;
 static unsigned char *s_rgba;
@@ -129,6 +152,51 @@ static float s_outputScale = 1.0f;
 static GLTexture s_tex[GL_TEX_MAX];
 static int s_texCount;
 static int s_linearSceneTextures = 1;
+static float s_anisotropy = 1.0f; /* applied to linear/mipmap uploads */
+
+/* HD post-processing state (PORT ADDITION, see header note). The scene
+ * buckets render into s_postSceneFbo (multisampled when s_postSamples > 1),
+ * resolve into color/depth textures, and composite into the window's
+ * output rect. Window depth is linear in az (the vertex shader maps
+ * az/GL_DEPTH_FAR -> [0,1]), so SSAO/DoF read distances as
+ * depth * GL_DEPTH_FAR. */
+typedef struct GLPostConfig {
+    int enabled;
+    float renderScale;    /* offscreen size / window output size */
+    int msaa;             /* requested offscreen samples */
+    int fxaa;
+    float ssao;           /* 0 disables; occlusion strength */
+    float ssaoRadius;     /* world units */
+    float projScale;      /* view-space x per NDC x per unit depth */
+    float bloom;          /* 0 disables; additive strength */
+    float bloomThreshold;
+    int grade;            /* 3D LUT colour grade */
+    float vignette;
+    float dof;            /* 0 disables; max circle of confusion (pixels) */
+    float dofFocus;       /* az units */
+    float dofRange;       /* az units from focus to full blur */
+    int alphaToCoverage;
+    int debugAo;          /* show the SSAO buffer instead of the scene */
+} GLPostConfig;
+
+static GLPostConfig s_post;
+static int s_postReady;       /* shaders built; FBOs (re)built lazily */
+static int s_sceneTarget;     /* 1 while the offscreen scene FBO is bound */
+static int s_windowSamples;
+static int s_postSamples;
+static int s_postW, s_postH;
+static GLuint s_postSceneFbo, s_postSceneColorRb, s_postSceneDepthRb;
+static GLuint s_postResolveFbo, s_postColorTex, s_postDepthTex;
+static GLuint s_postAoFbo, s_postAoTex;
+static GLuint s_postBloomFbo[2], s_postBloomTex[2];
+static GLuint s_postLutTex;
+static int s_postLutSize;
+static GLuint s_postVao;
+static GLuint s_progAo, s_progBright, s_progBlur, s_progComposite;
+
+static int postActive(void);
+static void postSetTarget(int scene);
+static void postRender(void);
 
 static const char *kVS =
     "#version 330 core\n"
@@ -141,7 +209,7 @@ static const char *kVS =
     /* NDC xy stay identical (p.xy * w / w), but a varying w lets GL
      * perspective-divide vUV/vCol instead of affine screen-lerping them.
      * w == 1 reproduces the old path exactly (2D UI, fullscreen blit). */
-    "void main(){ vec4 p=uMVP*vec4(aPos,0.0,1.0); float depth=clamp((aW/4096.0)*2.0-1.0,-1.0,1.0); gl_Position=vec4(p.xy*aW,depth*aW,aW); vUV=aUV; vCol=aCol; }\n";
+    "void main(){ vec4 p=uMVP*vec4(aPos,0.0,1.0); float depth=clamp((aW/" GL_DEPTH_FAR_STR ")*2.0-1.0,-1.0,1.0); gl_Position=vec4(p.xy*aW,depth*aW,aW); vUV=aUV; vCol=aCol; }\n";
 static const char *kFS =
     "#version 330 core\n"
     "in vec2 vUV; in vec4 vCol;\n"
@@ -149,22 +217,188 @@ static const char *kFS =
     "uniform int uUseTex;\n"
     "uniform int uKeyBlack;\n"
     "uniform int uKeyAlpha;\n"
+    "uniform int uA2C;\n"
     "out vec4 oCol;\n"
     /* Near-black discard replicates the _g_abColorKey LUT built by
      * gxLoadTexture @0x100019b0 (palette RGB all < 8 keeps the
      * destination). Byte-exact threshold 7.5 keeps index 0 (8,8,8)
      * opaque; NEAREST filtering yields exact texel values. Blend-path
      * tris arrive with vCol.a 0.5 to approximate the _g_abBlend
-     * averaging LUT (uKeyBlack is 0 there, so black still contributes). */
-    "void main(){ if(uUseTex!=0){ vec4 t=texture(uTex,vUV); if(uKeyBlack!=0){ if(uKeyAlpha!=0){ if(t.a<0.5) discard; t.rgb/=max(t.a,0.0001); } else if(t.r*255.0<7.5 && t.g*255.0<7.5 && t.b*255.0<7.5) discard; } oCol=vec4(t.rgb*vCol.rgb,(uKeyBlack!=0?1.0:t.a)*vCol.a); } else oCol=vCol; }\n";
+     * averaging LUT (uKeyBlack is 0 there, so black still contributes).
+     * PORT ADDITION: with uA2C the premultiplied keyed path sharpens the
+     * filtered alpha to a ~1 px ramp around the 0.5 cut and feeds it to
+     * GL_SAMPLE_ALPHA_TO_COVERAGE, so cut-out edges (hair, fences, plants)
+     * get MSAA-smoothed instead of the hard discard staircase. */
+    "void main(){ if(uUseTex!=0){ vec4 t=texture(uTex,vUV); float a=1.0; if(uKeyBlack!=0){ if(uKeyAlpha!=0){ if(uA2C!=0){ a=clamp((t.a-0.5)/max(fwidth(t.a),0.0001)+0.5,0.0,1.0); if(a<=0.0) discard; } else if(t.a<0.5) discard; t.rgb/=max(t.a,0.0001); } else if(t.r*255.0<7.5 && t.g*255.0<7.5 && t.b*255.0<7.5) discard; } oCol=vec4(t.rgb*vCol.rgb,(uKeyBlack!=0?a:t.a)*vCol.a); } else oCol=vCol; }\n";
 
 static GLuint compileShader(GLenum type, const char *src)
 {
     GLuint sh = glCreateShader(type);
+    GLint ok = 0;
     glShaderSource(sh, 1, &src, NULL);
     glCompileShader(sh);
+    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[1024];
+        glGetShaderInfoLog(sh, sizeof(log), NULL, log);
+        appLog("[gxGL] shader compile failed: %s", log);
+    }
     return sh;
 }
+
+/* --- HD post-processing shaders (PORT ADDITION) --- */
+
+/* Fullscreen triangle from gl_VertexID (no vertex buffer). */
+static const char *kPostVS =
+    "#version 330 core\n"
+    "out vec2 vUV;\n"
+    "void main(){ vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2)); vUV=p; gl_Position=vec4(p*2.0-1.0,0.0,1.0); }\n";
+
+/* SSAO at half resolution. View position is rebuilt from the linear depth
+ * (az = depth * GL_DEPTH_FAR) and the scene projection (sceneNodeRender @0x42f8c0:
+ * ndc.x = wx / (az * nWidth), ndc.y = 1.333 * wy / (az * nWidth)), the
+ * normal from the smaller of the forward/backward depth differences, and
+ * 12 cosine-weighted hemisphere taps rotated per pixel. */
+static const char *kPostAoFS =
+    "#version 330 core\n"
+    "in vec2 vUV; out vec4 oAo;\n"
+    "uniform sampler2D uDepth;\n"
+    "uniform vec2 uProj; uniform float uRadius; uniform vec2 uDepthTexel;\n"
+    "const float FAR=" GL_DEPTH_FAR_STR ";\n"
+    "vec3 viewPos(vec2 uv){ float d=texture(uDepth,uv).r*FAR; return vec3((uv*2.0-1.0)*uProj*d,d); }\n"
+    "float ign(vec2 p){ return fract(52.9829189*fract(dot(p,vec2(0.06711056,0.00583715)))); }\n"
+    "void main(){\n"
+    " float d=texture(uDepth,vUV).r;\n"
+    " if(d>=1.0||d*FAR<1.5){ oAo=vec4(1.0); return; }\n"
+    " vec3 P=viewPos(vUV);\n"
+    " vec3 r=viewPos(vUV+vec2(uDepthTexel.x,0.0)), l=viewPos(vUV-vec2(uDepthTexel.x,0.0));\n"
+    " vec3 t=viewPos(vUV+vec2(0.0,uDepthTexel.y)), b=viewPos(vUV-vec2(0.0,uDepthTexel.y));\n"
+    " vec3 dx=abs(r.z-P.z)<abs(P.z-l.z)?r-P:P-l;\n"
+    " vec3 dy=abs(t.z-P.z)<abs(P.z-b.z)?t-P:P-b;\n"
+    " vec3 N=normalize(cross(dx,dy)); if(dot(N,P)>0.0) N=-N;\n"
+    " vec3 T=normalize(abs(N.x)<0.9?cross(N,vec3(1.0,0.0,0.0)):cross(N,vec3(0.0,1.0,0.0)));\n"
+    " vec3 B=cross(N,T);\n"
+    " float rnd=ign(gl_FragCoord.xy);\n"
+    " float occ=0.0;\n"
+    " for(int i=0;i<12;i++){\n"
+    "  float f=(float(i)+0.5)/12.0;\n"
+    "  float phi=float(i)*2.3999632+rnd*6.2831853;\n"
+    "  float s=fract(float(i)*0.618034+rnd);\n"
+    "  vec3 dir=(T*cos(phi)+B*sin(phi))*sqrt(f)+N*max(sqrt(1.0-f),0.15);\n"
+    "  vec3 S=P+dir*uRadius*mix(0.1,1.0,s*s);\n"
+    "  if(S.z<=1.0) continue;\n"
+    "  vec2 suv=(S.xy/(S.z*uProj))*0.5+0.5;\n"
+    "  float sd=texture(uDepth,suv).r*FAR;\n"
+    "  float range=smoothstep(0.0,1.0,uRadius/max(abs(P.z-sd),0.0001));\n"
+    "  occ+=(sd<S.z-uRadius*0.03?1.0:0.0)*range;\n"
+    " }\n"
+    " oAo=vec4(1.0-occ/12.0);\n"
+    "}\n";
+
+/* Bloom bright pass (quarter resolution, 4 bilinear taps, soft knee). */
+static const char *kPostBrightFS =
+    "#version 330 core\n"
+    "in vec2 vUV; out vec4 oCol;\n"
+    "uniform sampler2D uColor; uniform vec2 uTexel; uniform float uThreshold;\n"
+    "void main(){\n"
+    " vec3 c=0.25*(texture(uColor,vUV+uTexel*vec2(-1.0,-1.0)).rgb+texture(uColor,vUV+uTexel*vec2(1.0,-1.0)).rgb\n"
+    "  +texture(uColor,vUV+uTexel*vec2(-1.0,1.0)).rgb+texture(uColor,vUV+uTexel*vec2(1.0,1.0)).rgb);\n"
+    " float br=max(c.r,max(c.g,c.b)); float knee=0.5*uThreshold+0.0001;\n"
+    " float soft=clamp(br-uThreshold+knee,0.0,2.0*knee); soft=soft*soft/(4.0*knee);\n"
+    " oCol=vec4(c*(max(soft,br-uThreshold)/max(br,0.0001)),1.0);\n"
+    "}\n";
+
+/* Separable 9-tap gaussian using 5 linear fetches. */
+static const char *kPostBlurFS =
+    "#version 330 core\n"
+    "in vec2 vUV; out vec4 oCol;\n"
+    "uniform sampler2D uSrc; uniform vec2 uDir;\n"
+    "void main(){\n"
+    " vec3 c=texture(uSrc,vUV).rgb*0.2270270270;\n"
+    " c+=(texture(uSrc,vUV+uDir*1.3846153846).rgb+texture(uSrc,vUV-uDir*1.3846153846).rgb)*0.3162162162;\n"
+    " c+=(texture(uSrc,vUV+uDir*3.2307692308).rgb+texture(uSrc,vUV-uDir*3.2307692308).rgb)*0.0702702703;\n"
+    " oCol=vec4(c,1.0);\n"
+    "}\n";
+
+/* Composite into the window output rect: resample (supersampling box or
+ * FXAA), depth of field, SSAO, bloom, LUT grade, vignette, dither,
+ * blended in by target alpha (scene coverage; backdrop UI leaves it 0).
+ * Depth-based effects skip the cleared background (depth 1) and z<=0 2D
+ * draws (az 1 -> depth 1/GL_DEPTH_FAR). */
+static const char *kPostCompositeFS =
+    "#version 330 core\n"
+    "in vec2 vUV; out vec4 oCol;\n"
+    "uniform sampler2D uColor; uniform sampler2D uDepth; uniform sampler2D uAo;\n"
+    "uniform sampler2D uBloom; uniform sampler3D uLut;\n"
+    "uniform vec2 uTexel; uniform vec2 uAoTexel; uniform vec2 uOutputSize;\n"
+    "uniform float uRenderScale; uniform int uFxaa;\n"
+    "uniform float uSsao; uniform float uBloomStrength; uniform int uGrade; uniform float uLutSize;\n"
+    "uniform float uVignette; uniform float uDof; uniform float uDofFocus; uniform float uDofRange;\n"
+    "uniform int uDebugAo;\n"
+    "const float FAR=" GL_DEPTH_FAR_STR ";\n"
+    "float luma(vec3 c){ return dot(c,vec3(0.299,0.587,0.114)); }\n"
+    "float ign(vec2 p){ return fract(52.9829189*fract(dot(p,vec2(0.06711056,0.00583715)))); }\n"
+    "vec3 fxaa(vec2 uv){\n"
+    " vec2 t=uTexel;\n"
+    " vec3 nw=texture(uColor,uv+vec2(-1.0,-1.0)*t).rgb, ne=texture(uColor,uv+vec2(1.0,-1.0)*t).rgb;\n"
+    " vec3 sw=texture(uColor,uv+vec2(-1.0,1.0)*t).rgb, se=texture(uColor,uv+vec2(1.0,1.0)*t).rgb;\n"
+    " vec3 m=texture(uColor,uv).rgb;\n"
+    " float lNW=luma(nw), lNE=luma(ne), lSW=luma(sw), lSE=luma(se), lM=luma(m);\n"
+    " float lMin=min(lM,min(min(lNW,lNE),min(lSW,lSE))), lMax=max(lM,max(max(lNW,lNE),max(lSW,lSE)));\n"
+    " vec2 dir=vec2(-((lNW+lNE)-(lSW+lSE)),(lNW+lSW)-(lNE+lSE));\n"
+    " float red=max((lNW+lNE+lSW+lSE)*(0.25*0.125),1.0/128.0);\n"
+    " float rcp=1.0/(min(abs(dir.x),abs(dir.y))+red);\n"
+    " dir=clamp(dir*rcp,vec2(-8.0),vec2(8.0))*t;\n"
+    " vec3 a=0.5*(texture(uColor,uv+dir*(1.0/3.0-0.5)).rgb+texture(uColor,uv+dir*(2.0/3.0-0.5)).rgb);\n"
+    " vec3 b=a*0.5+0.25*(texture(uColor,uv-dir*0.5).rgb+texture(uColor,uv+dir*0.5).rgb);\n"
+    " float lb=luma(b); return (lb<lMin||lb>lMax)?a:b;\n"
+    "}\n"
+    "vec3 sceneColor(vec2 uv){\n"
+    " if(uFxaa!=0) return fxaa(uv);\n"
+    " if(uRenderScale>1.01){ vec2 o=0.25*uTexel*uRenderScale;\n"
+    "  return 0.25*(texture(uColor,uv+vec2(-o.x,-o.y)).rgb+texture(uColor,uv+vec2(o.x,-o.y)).rgb\n"
+    "   +texture(uColor,uv+vec2(-o.x,o.y)).rgb+texture(uColor,uv+vec2(o.x,o.y)).rgb); }\n"
+    " return texture(uColor,uv).rgb;\n"
+    "}\n"
+    "float coc(float dist){ float t=clamp(abs(dist-uDofFocus)/max(uDofRange,1.0),0.0,1.0); return uDof*t*t; }\n"
+    "void main(){\n"
+    " float dist=texture(uDepth,vUV).r*FAR;\n"
+    " bool geo=dist<FAR&&dist>1.5;\n"
+    " vec3 c=sceneColor(vUV);\n"
+    " vec3 raw=c; float cover=texture(uColor,vUV).a;\n"
+    " if(uDof>0.0&&dist>1.5){\n"
+    "  float cc=coc(dist);\n"
+    "  if(cc>0.5){\n"
+    "   vec3 acc=c; float wsum=1.0;\n"
+    "   for(int i=0;i<16;i++){\n"
+    "    float f=(float(i)+0.5)/16.0; float ang=float(i)*2.3999632;\n"
+    "    vec2 suv=vUV+vec2(cos(ang),sin(ang))*sqrt(f)*cc*uTexel*uRenderScale;\n"
+    "    float sd=texture(uDepth,suv).r*FAR;\n"
+    "    float w=sd<dist?clamp(coc(sd)/cc,0.0,1.0):1.0;\n"
+    "    acc+=texture(uColor,suv).rgb*w; wsum+=w;\n"
+    "   }\n"
+    "   c=acc/wsum;\n"
+    "  }\n"
+    " }\n"
+    " if(geo&&uSsao>0.0){\n"
+    "  float ao=texture(uAo,vUV).r, wsum=1.0;\n"
+    "  for(int i=0;i<4;i++){\n"
+    "   vec2 o=vec2((i&1)==0?-1.0:1.0,(i&2)==0?-1.0:1.0)*uAoTexel;\n"
+    "   float sd=texture(uDepth,vUV+o).r*FAR;\n"
+    "   float w=exp(-abs(sd-dist)/(dist*0.02+1.0));\n"
+    "   ao+=texture(uAo,vUV+o).r*w; wsum+=w;\n"
+    "  }\n"
+    "  c*=mix(1.0,ao/wsum,uSsao);\n"
+    "  if(uDebugAo!=0){ oCol=vec4(vec3(ao/wsum),1.0); return; }\n"
+    " }\n"
+    " if(uBloomStrength>0.0) c+=texture(uBloom,vUV).rgb*uBloomStrength;\n"
+    " c=clamp(c,0.0,1.0);\n"
+    " if(uGrade!=0) c=texture(uLut,c*((uLutSize-1.0)/uLutSize)+0.5/uLutSize).rgb;\n"
+    " if(uVignette>0.0){ vec2 p=vUV*2.0-1.0; p.x*=uOutputSize.x/uOutputSize.y;\n"
+    "  c*=1.0-uVignette*smoothstep(0.5,1.7,length(p)); }\n"
+    " c+=(ign(gl_FragCoord.xy)-0.5)/255.0;\n"
+    " oCol=vec4(mix(raw,c,cover),1.0);\n"
+    "}\n";
 
 static void bindVbo(void)
 {
@@ -214,9 +448,19 @@ static void useDrawState(GLuint tex, int blend, int key,
     int keyChanged = key != s_keyBlack;
     int depthTestChanged = depthTest != s_depthTest;
     int depthWriteChanged = depthWrite != s_depthWrite;
+    /* Alpha-to-coverage only means something on a multisampled target. */
+    int targetSamples = s_sceneTarget ? s_postSamples : s_windowSamples;
+    int a2c = s_post.alphaToCoverage && tex && key == 2 && targetSamples > 1;
+    int a2cChanged = a2c != s_a2cOn;
     if (!texChanged && !blendChanged && !keyChanged &&
-        !depthTestChanged && !depthWriteChanged) return;
+        !depthTestChanged && !depthWriteChanged && !a2cChanged) return;
     batchFlush();
+    if (a2cChanged) {
+        s_a2cOn = a2c;
+        if (a2c) glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        else glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        glUniform1i(s_uA2C, a2c);
+    }
     if (texChanged) {
         s_boundTex = tex;
         glBindTexture(GL_TEXTURE_2D, tex ? tex : 0);
@@ -322,11 +566,30 @@ static int queueTriCmp(const void *a, const void *b)
 /* Sort + emit the deferred queue (gxSortPolyRecords + gxDrawPolyRecords),
  * then the deferred fullscreen blit (FUN_10002810 runs after the records
  * in gxFlip), then swap. */
-static void queueEmitBucket(QueueBucket *bucket, int depthTest, int depthWrite)
+static void queueEmitBucket(QueueBucket *bucket, int depthTest, int depthWrite,
+                            int keyedDepthWrite)
 {
     for (size_t i = 0; i < bucket->count; i++) {
         QueuedTri *q = &bucket->data[i];
-        useDrawState(q->tex, q->blend, q->key, depthTest, depthWrite);
+        int write = depthWrite || (keyedDepthWrite && q->key && !q->blend);
+        useDrawState(q->tex, q->blend, q->key, depthTest, write);
+        batchEnsure(3);
+        s_batch[s_batchCount++] = q->v[0];
+        s_batch[s_batchCount++] = q->v[1];
+        s_batch[s_batchCount++] = q->v[2];
+    }
+}
+
+/* UI records split around the scene: in the GXSOFT painter sort they share
+ * one far-first order with the scene tris, so a UI record farther than every
+ * scene tri (e.g. the charselect backdrop tiles at z 500000) is painted
+ * before the scene; everything else follows it in submission order. */
+static void queueEmitUi(int behind, int sceneZsumMax)
+{
+    for (size_t i = 0; i < s_uiQueue.count; i++) {
+        QueuedTri *q = &s_uiQueue.data[i];
+        if ((q->zsum > sceneZsumMax) != behind) continue;
+        useDrawState(q->tex, q->blend, q->key, 0, 0);
         batchEnsure(3);
         s_batch[s_batchCount++] = q->v[0];
         s_batch[s_batchCount++] = q->v[1];
@@ -336,11 +599,12 @@ static void queueEmitBucket(QueueBucket *bucket, int depthTest, int depthWrite)
 
 static void queueEmitSorted(void)
 {
+    int sceneZsumMax = 0x7fffffff;
     if (!s_depthEnabled) {
         if (s_legacyQueue.count > 1 && !s_legacyOrdered)
             qsort(s_legacyQueue.data, s_legacyQueue.count,
                   sizeof(QueuedTri), queueTriCmp);
-        queueEmitBucket(&s_legacyQueue, 0, 0);
+        queueEmitBucket(&s_legacyQueue, 0, 0, 0);
         s_legacyQueue.count = 0;
         s_legacyOrdered = 1;
         return;
@@ -348,9 +612,36 @@ static void queueEmitSorted(void)
     if (s_transparentQueue.count > 1 && !s_transparentOrdered)
         qsort(s_transparentQueue.data, s_transparentQueue.count,
               sizeof(QueuedTri), queueTriCmp);
-    queueEmitBucket(&s_opaqueQueue, 1, 1);
-    queueEmitBucket(&s_transparentQueue, 1, 0);
-    queueEmitBucket(&s_uiQueue, 0, 0);
+    if (s_opaqueQueue.count || s_transparentQueue.count) {
+        sceneZsumMax = -0x7fffffff;
+        for (size_t i = 0; i < s_opaqueQueue.count; i++)
+            if (s_opaqueQueue.data[i].zsum > sceneZsumMax)
+                sceneZsumMax = s_opaqueQueue.data[i].zsum;
+        if (s_transparentQueue.count && s_transparentQueue.data[0].zsum > sceneZsumMax)
+            sceneZsumMax = s_transparentQueue.data[0].zsum; /* sorted far-first */
+    }
+    if (postActive() && (s_opaqueQueue.count || s_transparentQueue.count)) {
+        /* Scene buckets go to the offscreen target. Color-keyed (not
+         * blended) tris also write depth there: the key is binary, and the
+         * post pass needs their depth so SSAO/DoF follow the cut-out
+         * surface rather than whatever is behind it. Backdrop UI goes in
+         * first with alpha masked, so target alpha stays scene coverage
+         * and the composite leaves pure-2D pixels ungraded. */
+        postSetTarget(1);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+        queueEmitUi(1, sceneZsumMax);
+        batchFlush();
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        queueEmitBucket(&s_opaqueQueue, 1, 1, 0);
+        queueEmitBucket(&s_transparentQueue, 1, 0, 1);
+        batchFlush();
+        postRender();
+    } else {
+        queueEmitUi(1, sceneZsumMax);
+        queueEmitBucket(&s_opaqueQueue, 1, 1, 0);
+        queueEmitBucket(&s_transparentQueue, 1, 0, 0);
+    }
+    queueEmitUi(0, sceneZsumMax);
     s_opaqueQueue.count = 0;
     s_transparentQueue.count = 0;
     s_uiQueue.count = 0;
@@ -452,16 +743,508 @@ static GLuint uploadTexture(const unsigned char *rgba, int linear)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, linear ? 8 : 0);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 256, 256, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-    if (linear) glGenerateMipmap(GL_TEXTURE_2D);
+    if (linear) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+        /* Floors and long walls are seen at grazing angles; anisotropic
+         * filtering keeps them sharp where trilinear alone blurs. */
+        if (s_anisotropy > 1.0f)
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+                            s_anisotropy);
+    }
     return tex;
+}
+
+/* --- HD post-processing (PORT ADDITION, see header note) --- */
+
+static void glApplyViewport(void);
+
+static float envFloat(const char *name, float def)
+{
+    const char *value = getenv(name);
+    char *end;
+    double parsed;
+    if (!value || !*value) return def;
+    parsed = strtod(value, &end);
+    return (end == value) ? def : (float)parsed;
+}
+
+static float clampf(float v, float lo, float hi)
+{
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+/* Defaults keep the original's colors (no grade, no vignette) and add only
+ * edge/depth cues; distances are az world units (window depth * GL_DEPTH_FAR). MANIAC_POSTFX=0 bypasses the offscreen
+ * target entirely; each effect is disabled by setting its strength to 0. */
+static void postConfigLoad(void)
+{
+    s_post.enabled = envFloat("MANIAC_POSTFX", 1.0f) != 0.0f;
+    s_post.renderScale = clampf(envFloat("MANIAC_RENDER_SCALE", 1.0f), 0.25f, 4.0f);
+    s_post.msaa = (int)envFloat("MANIAC_MSAA", 4.0f);
+    s_post.fxaa = envFloat("MANIAC_FXAA", 0.0f) != 0.0f;
+    s_post.ssao = clampf(envFloat("MANIAC_SSAO", 0.3f), 0.0f, 1.0f);
+    s_post.ssaoRadius = envFloat("MANIAC_SSAO_RADIUS", 350.0f);
+    s_post.projScale = envFloat("MANIAC_SSAO_PROJ", 1.0f);
+    s_post.bloom = envFloat("MANIAC_BLOOM", 0.25f);
+    s_post.bloomThreshold = envFloat("MANIAC_BLOOM_THRESHOLD", 0.75f);
+    /* Grading is opt-in; naming a .cube LUT turns it on. */
+    s_post.grade = envFloat("MANIAC_GRADE", getenv("MANIAC_GRADE_LUT") ? 1.0f : 0.0f) != 0.0f;
+    s_post.vignette = clampf(envFloat("MANIAC_VIGNETTE", 0.0f), 0.0f, 1.0f);
+    s_post.dof = envFloat("MANIAC_DOF", 0.0f);
+    s_post.dofFocus = envFloat("MANIAC_DOF_FOCUS", 400.0f);
+    s_post.dofRange = envFloat("MANIAC_DOF_RANGE", 2400.0f);
+    s_post.alphaToCoverage = envFloat("MANIAC_ALPHA_TO_COVERAGE", 1.0f) != 0.0f;
+    s_post.debugAo = envFloat("MANIAC_SSAO_DEBUG", 0.0f) != 0.0f;
+}
+
+/* Adobe .cube 3D LUT (LUT_3D_SIZE n, then n^3 "r g b" rows, red fastest —
+ * the same layout as a GL 3D texture). */
+static float *postLoadCube(const char *path, int *outSize)
+{
+    FILE *f = fopen(path, "r");
+    char line[256];
+    int n = 0, count = 0;
+    float *data = NULL;
+    if (!f) {
+        appLog("[gxGL] grade LUT %s not found; using built-in grade", path);
+        return NULL;
+    }
+    while (fgets(line, sizeof(line), f)) {
+        float r, g, b;
+        if (line[0] == '#') continue;
+        if (!data && sscanf(line, "LUT_3D_SIZE %d", &n) == 1) {
+            if (n < 2 || n > 128) break;
+            data = (float *)malloc((size_t)n * n * n * 3 * sizeof(float));
+            if (!data) break;
+            continue;
+        }
+        if (data && count < n * n * n &&
+            sscanf(line, "%f %f %f", &r, &g, &b) == 3) {
+            data[count * 3 + 0] = r;
+            data[count * 3 + 1] = g;
+            data[count * 3 + 2] = b;
+            count++;
+        }
+    }
+    fclose(f);
+    if (!data || count != n * n * n) {
+        appLog("[gxGL] grade LUT %s is not a valid .cube; using built-in grade", path);
+        free(data);
+        return NULL;
+    }
+    *outSize = n;
+    return data;
+}
+
+/* Built-in light grade: +10% saturation, a gentle S-curve, slightly warm
+ * highlights and cool shadows. */
+static float *postBuildGrade(int n)
+{
+    float *data = (float *)malloc((size_t)n * n * n * 3 * sizeof(float));
+    if (!data) return NULL;
+    for (int b = 0; b < n; b++)
+        for (int g = 0; g < n; g++)
+            for (int r = 0; r < n; r++) {
+                float c[3] = {(float)r / (n - 1), (float)g / (n - 1), (float)b / (n - 1)};
+                float luma = 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2];
+                float *out = &data[((b * n + g) * n + r) * 3];
+                for (int k = 0; k < 3; k++) {
+                    float v = luma + (c[k] - luma) * 1.10f;
+                    v = clampf(v, 0.0f, 1.0f);
+                    v += 0.30f * (v * v * (3.0f - 2.0f * v) - v);
+                    out[k] = v;
+                }
+                out[0] += 0.020f * luma;
+                out[2] -= 0.015f * luma;
+                out[2] += 0.015f * (1.0f - luma) * (1.0f - luma);
+                for (int k = 0; k < 3; k++) out[k] = clampf(out[k], 0.0f, 1.0f);
+            }
+    return data;
+}
+
+static void postBuildLut(void)
+{
+    const char *path = getenv("MANIAC_GRADE_LUT");
+    int n = 0;
+    float *data = NULL;
+    if (path && *path) data = postLoadCube(path, &n);
+    if (!data) {
+        n = 16;
+        data = postBuildGrade(n);
+    }
+    if (!data) return;
+    glGenTextures(1, &s_postLutTex);
+    glBindTexture(GL_TEXTURE_3D, s_postLutTex);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_RGB16F, n, n, n, 0, GL_RGB, GL_FLOAT, data);
+    glBindTexture(GL_TEXTURE_3D, 0);
+    s_postLutSize = n;
+    free(data);
+}
+
+static GLuint postLinkProgram(const char *fsSrc, const char *name)
+{
+    GLuint vs = compileShader(GL_VERTEX_SHADER, kPostVS);
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fsSrc);
+    GLuint prog = glCreateProgram();
+    GLint ok = 0;
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glLinkProgram(prog);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[1024];
+        glGetProgramInfoLog(prog, sizeof(log), NULL, log);
+        appLog("[gxGL] post shader %s failed to link: %s", name, log);
+        glDeleteProgram(prog);
+        return 0;
+    }
+    return prog;
+}
+
+static void postSampler(GLuint prog, const char *name, int unit)
+{
+    glUseProgram(prog);
+    glUniform1i(glGetUniformLocation(prog, name), unit);
+}
+
+static GLuint postMakeTex(GLenum internal, GLenum format, GLenum type,
+                          int w, int h, GLint filter)
+{
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, internal, w, h, 0, format, type, NULL);
+    return tex;
+}
+
+static GLuint postMakeFbo(GLuint color, GLuint depth, int *ok)
+{
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, color, 0);
+    if (depth)
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                               GL_TEXTURE_2D, depth, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        *ok = 0;
+    return fbo;
+}
+
+static void postRelease(void)
+{
+    GLuint textures[] = {s_postColorTex, s_postDepthTex, s_postAoTex,
+                         s_postBloomTex[0], s_postBloomTex[1]};
+    GLuint fbos[] = {s_postResolveFbo, s_postAoFbo,
+                     s_postBloomFbo[0], s_postBloomFbo[1]};
+    GLuint rbs[] = {s_postSceneColorRb, s_postSceneDepthRb};
+    if (s_postSceneFbo && s_postSceneFbo != s_postResolveFbo)
+        glDeleteFramebuffers(1, &s_postSceneFbo);
+    glDeleteFramebuffers(4, fbos);
+    glDeleteRenderbuffers(2, rbs);
+    glDeleteTextures(5, textures);
+    s_postSceneFbo = s_postResolveFbo = s_postAoFbo = 0;
+    s_postBloomFbo[0] = s_postBloomFbo[1] = 0;
+    s_postSceneColorRb = s_postSceneDepthRb = 0;
+    s_postColorTex = s_postDepthTex = s_postAoTex = 0;
+    s_postBloomTex[0] = s_postBloomTex[1] = 0;
+    s_postW = s_postH = 0;
+}
+
+/* (Re)build the offscreen targets for the current output rect. */
+static void postResize(void)
+{
+    int w, h, ok = 1;
+    GLint maxSize = 0;
+    if (!s_postReady) return;
+    w = (int)(s_outputWidth * s_post.renderScale + 0.5f);
+    h = (int)(s_outputHeight * s_post.renderScale + 0.5f);
+    glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maxSize);
+    if (maxSize > 0) {
+        if (w > maxSize) w = maxSize;
+        if (h > maxSize) h = maxSize;
+    }
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    if (w == s_postW && h == s_postH && s_postResolveFbo) return;
+    batchFlush();
+    postRelease();
+    s_postW = w;
+    s_postH = h;
+    s_postColorTex = postMakeTex(GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, w, h, GL_LINEAR);
+    s_postDepthTex = postMakeTex(GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT,
+                                 GL_UNSIGNED_INT, w, h, GL_NEAREST);
+    s_postResolveFbo = postMakeFbo(s_postColorTex, s_postDepthTex, &ok);
+    if (s_postSamples > 1) {
+        glGenRenderbuffers(1, &s_postSceneColorRb);
+        glBindRenderbuffer(GL_RENDERBUFFER, s_postSceneColorRb);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, s_postSamples, GL_RGBA8, w, h);
+        glGenRenderbuffers(1, &s_postSceneDepthRb);
+        glBindRenderbuffer(GL_RENDERBUFFER, s_postSceneDepthRb);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, s_postSamples,
+                                         GL_DEPTH_COMPONENT24, w, h);
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+        glGenFramebuffers(1, &s_postSceneFbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_postSceneFbo);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                  GL_RENDERBUFFER, s_postSceneColorRb);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                  GL_RENDERBUFFER, s_postSceneDepthRb);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            ok = 0;
+    } else {
+        s_postSceneFbo = s_postResolveFbo;
+    }
+    s_postAoTex = postMakeTex(GL_R8, GL_RED, GL_UNSIGNED_BYTE,
+                              (w + 1) / 2, (h + 1) / 2, GL_LINEAR);
+    s_postAoFbo = postMakeFbo(s_postAoTex, 0, &ok);
+    for (int i = 0; i < 2; i++) {
+        s_postBloomTex[i] = postMakeTex(GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE,
+                                        (w + 3) / 4, (h + 3) / 4, GL_LINEAR);
+        s_postBloomFbo[i] = postMakeFbo(s_postBloomTex[i], 0, &ok);
+    }
+    if (ok) {
+        glBindFramebuffer(GL_FRAMEBUFFER, s_postSceneFbo);
+        glDisable(GL_SCISSOR_TEST);
+        glClearColor(0, 0, 0, 0);
+        glDepthMask(GL_TRUE);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_SCISSOR_TEST);
+        s_depthWrite = 1;
+        appLog("[gxGL] post target %dx%d (%d samples)", w, h, s_postSamples);
+    } else {
+        appLog("[gxGL] post framebuffers incomplete; post-processing disabled");
+        postRelease();
+        s_postReady = 0;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    s_sceneTarget = 0;
+    /* Manual binds above: force the next useDrawState to rebind. */
+    s_boundTex = 0xFFFFFFFFu;
+}
+
+static int postActive(void)
+{
+    return s_postReady && s_post.enabled && s_depthEnabled && s_postResolveFbo;
+}
+
+static void postSetTarget(int scene)
+{
+    batchFlush();
+    s_sceneTarget = scene;
+    glBindFramebuffer(GL_FRAMEBUFFER, scene ? s_postSceneFbo : 0);
+    glApplyViewport();
+}
+
+static void postInit(void)
+{
+    GLint maxSamples = 0, ext = 0;
+    float maxAniso = 1.0f;
+    postConfigLoad();
+    glGetIntegerv(GL_SAMPLES, &s_windowSamples);
+    /* Anisotropic filtering: core in GL 4.6, otherwise EXT/ARB extension. */
+    glGetIntegerv(GL_NUM_EXTENSIONS, &ext);
+    for (GLint i = 0; i < ext; i++) {
+        const char *name = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+        if (name && (strcmp(name, "GL_EXT_texture_filter_anisotropic") == 0 ||
+                     strcmp(name, "GL_ARB_texture_filter_anisotropic") == 0)) {
+            glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
+            break;
+        }
+    }
+    s_anisotropy = clampf(envFloat("MANIAC_ANISOTROPY", 16.0f), 1.0f, maxAniso);
+    appLog("[gxGL] anisotropic filtering %.0fx (max %.0fx)", s_anisotropy, maxAniso);
+
+    s_postReady = 0;
+    s_postW = s_postH = 0;
+    s_sceneTarget = 0;
+    if (!s_post.enabled || !s_depthEnabled) {
+        appLog("[gxGL] post-processing off (enabled %d, depth %d)", s_post.enabled, s_depthEnabled);
+        return;
+    }
+    glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+    s_postSamples = s_post.msaa > 1 ? s_post.msaa : 0;
+    if (s_postSamples > maxSamples) s_postSamples = maxSamples;
+    s_progAo = postLinkProgram(kPostAoFS, "ssao");
+    s_progBright = postLinkProgram(kPostBrightFS, "bright");
+    s_progBlur = postLinkProgram(kPostBlurFS, "blur");
+    s_progComposite = postLinkProgram(kPostCompositeFS, "composite");
+    if (!s_progAo || !s_progBright || !s_progBlur || !s_progComposite) return;
+    postSampler(s_progAo, "uDepth", 1);
+    postSampler(s_progBright, "uColor", 0);
+    postSampler(s_progBlur, "uSrc", 3);
+    postSampler(s_progComposite, "uColor", 0);
+    postSampler(s_progComposite, "uDepth", 1);
+    postSampler(s_progComposite, "uAo", 2);
+    postSampler(s_progComposite, "uBloom", 3);
+    postSampler(s_progComposite, "uLut", 4);
+    postBuildLut();
+    glGenVertexArrays(1, &s_postVao);
+    s_postReady = 1;
+    appLog("[gxGL] post-processing on (scale %.2f, fxaa %d, ssao %.2f, "
+           "bloom %.2f, grade %d, vignette %.2f, dof %.1f, a2c %d)",
+           s_post.renderScale, s_post.fxaa, s_post.ssao,
+           s_post.bloom, s_post.grade && s_postLutTex, s_post.vignette,
+           s_post.dof, s_post.alphaToCoverage);
+}
+
+static void postShutdown(void)
+{
+    postRelease();
+    if (s_progAo) glDeleteProgram(s_progAo);
+    if (s_progBright) glDeleteProgram(s_progBright);
+    if (s_progBlur) glDeleteProgram(s_progBlur);
+    if (s_progComposite) glDeleteProgram(s_progComposite);
+    if (s_postLutTex) glDeleteTextures(1, &s_postLutTex);
+    if (s_postVao) glDeleteVertexArrays(1, &s_postVao);
+    s_progAo = s_progBright = s_progBlur = s_progComposite = 0;
+    s_postLutTex = 0;
+    s_postVao = 0;
+    s_postReady = 0;
+    s_sceneTarget = 0;
+}
+
+static void postUniform1f(GLuint prog, const char *name, float v)
+{
+    glUniform1f(glGetUniformLocation(prog, name), v);
+}
+
+static void postUniform2f(GLuint prog, const char *name, float x, float y)
+{
+    glUniform2f(glGetUniformLocation(prog, name), x, y);
+}
+
+/* Resolve the scene target and composite it into the window output rect;
+ * leaves the window bound with the GX draw state invalidated. */
+static void postRender(void)
+{
+    int aoW = (s_postW + 1) / 2, aoH = (s_postH + 1) / 2;
+    int bloomW = (s_postW + 3) / 4, bloomH = (s_postH + 3) / 4;
+    int ssaoOn = s_post.ssao > 0.0f;
+    int bloomOn = s_post.bloom > 0.0f;
+    GLuint prog;
+
+    glDisable(GL_SCISSOR_TEST); /* blits and fullscreen passes ignore the GX viewport */
+    if (s_postSamples > 1) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, s_postSceneFbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_postResolveFbo);
+        glBlitFramebuffer(0, 0, s_postW, s_postH, 0, 0, s_postW, s_postH,
+                          GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    }
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_BLEND);
+    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+    glBindVertexArray(s_postVao);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, s_postColorTex);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, s_postDepthTex);
+
+    if (ssaoOn) {
+        glBindFramebuffer(GL_FRAMEBUFFER, s_postAoFbo);
+        glViewport(0, 0, aoW, aoH);
+        glUseProgram(s_progAo);
+        /* sceneNodeRender: ndc.x = wx / (az * nWidth), ndc.y carries the
+         * 1.333 Y scale, so view y spans 0.75 of view x per NDC unit. */
+        postUniform2f(s_progAo, "uProj", s_post.projScale, s_post.projScale * 0.75f);
+        postUniform1f(s_progAo, "uRadius", s_post.ssaoRadius);
+        postUniform2f(s_progAo, "uDepthTexel", 1.0f / s_postW, 1.0f / s_postH);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, s_postAoTex);
+
+    if (bloomOn) {
+        glBindFramebuffer(GL_FRAMEBUFFER, s_postBloomFbo[0]);
+        glViewport(0, 0, bloomW, bloomH);
+        glUseProgram(s_progBright);
+        postUniform2f(s_progBright, "uTexel", 1.0f / s_postW, 1.0f / s_postH);
+        postUniform1f(s_progBright, "uThreshold", s_post.bloomThreshold);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glUseProgram(s_progBlur);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, s_postBloomTex[0]);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_postBloomFbo[1]);
+        postUniform2f(s_progBlur, "uDir", 1.0f / bloomW, 0.0f);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindTexture(GL_TEXTURE_2D, s_postBloomTex[1]);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_postBloomFbo[0]);
+        postUniform2f(s_progBlur, "uDir", 0.0f, 1.0f / bloomH);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, s_postBloomTex[0]);
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_3D, s_postLutTex);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(s_outputX, s_outputY, s_outputWidth, s_outputHeight);
+    prog = s_progComposite;
+    glUseProgram(prog);
+    postUniform2f(prog, "uTexel", 1.0f / s_postW, 1.0f / s_postH);
+    postUniform2f(prog, "uAoTexel", 1.0f / aoW, 1.0f / aoH);
+    postUniform2f(prog, "uOutputSize", (float)s_outputWidth, (float)s_outputHeight);
+    postUniform1f(prog, "uRenderScale", (float)s_postW / (float)s_outputWidth);
+    glUniform1i(glGetUniformLocation(prog, "uFxaa"), s_post.fxaa);
+    postUniform1f(prog, "uSsao", ssaoOn ? s_post.ssao : 0.0f);
+    postUniform1f(prog, "uBloomStrength", bloomOn ? s_post.bloom : 0.0f);
+    glUniform1i(glGetUniformLocation(prog, "uGrade"), s_post.grade && s_postLutTex);
+    postUniform1f(prog, "uLutSize", (float)s_postLutSize);
+    postUniform1f(prog, "uVignette", s_post.vignette);
+    postUniform1f(prog, "uDof", s_post.dof);
+    postUniform1f(prog, "uDofFocus", s_post.dofFocus);
+    postUniform1f(prog, "uDofRange", s_post.dofRange);
+    glUniform1i(glGetUniformLocation(prog, "uDebugAo"), s_post.debugAo);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    /* Back to the GX batch pipeline on the window target. */
+    glActiveTexture(GL_TEXTURE0);
+    glUseProgram(s_prog);
+    glBindVertexArray(s_vao);
+    s_sceneTarget = 0;
+    glEnable(GL_SCISSOR_TEST);
+    glApplyViewport();
+    s_boundTex = 0xFFFFFFFFu;
+    s_blendOn = -1;
+    s_keyBlack = -1;
+    s_depthTest = -1;
+    s_depthWrite = -1;
+    s_a2cOn = -1; /* GL enable was cleared above; resync the uA2C uniform */
+}
+
+void gxGLSetDepthOfField(float strength, float focus, float range)
+{
+    s_post.dof = strength;
+    s_post.dofFocus = focus;
+    s_post.dofRange = range;
 }
 
 static void glApplyViewport(void)
 {
-    int left = s_outputX + (int)floorf(s_viewX * s_outputScale);
-    int bottom = s_outputY + (int)floorf(s_viewY * s_outputScale);
-    int right = s_outputX + (int)ceilf((s_viewX + s_viewW) * s_outputScale);
-    int top = s_outputY + (int)ceilf((s_viewY + s_viewH) * s_outputScale);
+    /* The window target letterboxes the logical canvas into the output
+     * rect; the offscreen scene target is exactly that rect at its own
+     * (render-scaled) size. */
+    int originX = s_sceneTarget ? 0 : s_outputX;
+    int originY = s_sceneTarget ? 0 : s_outputY;
+    float scaleX = s_sceneTarget ? (float)s_postW / (float)s_width : s_outputScale;
+    float scaleY = s_sceneTarget ? (float)s_postH / (float)s_height : s_outputScale;
+    int left = originX + (int)floorf(s_viewX * scaleX);
+    int bottom = originY + (int)floorf(s_viewY * scaleY);
+    int right = originX + (int)ceilf((s_viewX + s_viewW) * scaleX);
+    int top = originY + (int)ceilf((s_viewY + s_viewH) * scaleY);
     glViewport(left, bottom, right - left, top - bottom);
     glScissor(left, bottom, right - left, top - bottom);
 }
@@ -497,6 +1280,7 @@ static void glUpdateDrawableSize(void)
     s_depthWrite = 1;
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_SCISSOR_TEST);
+    postResize();
     glApplyViewport();
 }
 
@@ -600,6 +1384,14 @@ static int glClearScreen(int clearMode, int color)
     glDepthMask(GL_TRUE);
     s_depthWrite = 1;
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (postActive()) {
+        /* Same scissored clear on the offscreen scene target; alpha 0
+         * marks "no scene coverage" for the composite. */
+        postSetTarget(1);
+        glClearColor(r, g, b, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        postSetTarget(0);
+    }
     return 1;
 }
 
@@ -645,6 +1437,9 @@ static int glResetState(void)
     glUniform1i(s_uUseTex, 0);
     glUniform1i(s_uKeyBlack, 0);
     glUniform1i(s_uKeyAlpha, 0);
+    s_a2cOn = 0;
+    glUniform1i(s_uA2C, 0);
+    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
     glDisable(GL_BLEND);
     glDepthFunc(GL_LESS);
     glClearDepth(1.0);
@@ -712,7 +1507,7 @@ static int glCreateSurface(const char *path);
  * into the origin, so the 0x1000 half-texel rule applies (see normUv).
  * This 2D polygon entry point retains white modulation for textured draws;
  * without bit 2 the driver ignores UVs and uses the vertex color. Scene-mesh
- * tint is handled by glDrawTriUV/glDrawQuad based on positive vertex depth. */
+ * draws through glDrawTriUV/glDrawQuad are white-modulated the same way. */
 static void glDrawPolygon(void *a0, void *a1, void *a2, void *a3, int flags, void *uvRec)
 {
     GxVert *v0 = (GxVert *)a0, *v1 = (GxVert *)a1, *v2 = (GxVert *)a2, *v3 = (GxVert *)a3;
@@ -867,8 +1662,8 @@ static void glDrawTriUV(void *a0, void *a1, void *a2, void *color, void *uvRec)
          * in scene_render.c): handle at +0, corner UV bytes at +8..+13.
          * Same byte convention as glDrawPolygon. Edges map via normUv
          * (byte/256), which already folds the origin 0x1000 corner shift.
-         * Positive-depth scene tris carry per-vertex tint; zero-depth 2D
-         * textured draws remain white-modulated. Queued with the GXSOFT
+         * Textured tris are white-modulated (no vertex tint, as in
+         * GXSOFT). Queued with the GXSOFT
          * z-sum key (z0+z1+z2); emitted sorted at flip. */
         int half = (s_origin & 0x1000) != 0;
         float u0 = 0, v0_ = 0, u1 = 1, v1_ = 0, u2 = 0, v2_ = 1;
@@ -894,11 +1689,6 @@ static void glDrawTriUV(void *a0, void *a1, void *a2, void *color, void *uvRec)
                 r0 = r1 = r2 = r;
                 g0 = g1 = g2 = g;
                 b0 = b1 = b2 = b;
-                if (v0->z > 0) {
-                    r0 = v0->r / 255.0f; g0 = v0->g / 255.0f; b0 = v0->b / 255.0f;
-                    r1 = v1->r / 255.0f; g1 = v1->g / 255.0f; b1 = v1->b / 255.0f;
-                    r2 = v2->r / 255.0f; g2 = v2->g / 255.0f; b2 = v2->b / 255.0f;
-                }
             }
         }
         queueTri(fx8(v0->x), fx8(v0->y), u0, v0_, depthW(v0->z),
@@ -919,8 +1709,8 @@ static void glDrawQuad(void *a0, void *a1, void *a2, void *a3, void *color, void
      * the third. Kept separate from glDrawPolygon: here `color` is the
      * mesh color record (a pointer carried as int), not bit flags, so
      * routing it through the `flags & 4` test would key texturing off heap
-     * alignment. UV edges map via normUv (see glDrawTriUV); positive-depth
-     * scene vertices carry per-vertex tint while 2D draws stay white. */
+     * alignment. UV edges map via normUv (see glDrawTriUV); textured
+     * draws are white-modulated (no vertex tint, as in GXSOFT). */
     GxVert *v0 = (GxVert *)a0, *v1 = (GxVert *)a1,
            *v2 = (GxVert *)a2, *v3 = (GxVert *)a3;
     unsigned char *uv = (unsigned char *)uvRec;
@@ -959,12 +1749,6 @@ static void glDrawQuad(void *a0, void *a1, void *a2, void *a3, void *color, void
                 r0 = r1 = r2 = r3 = r;
                 g0 = g1 = g2 = g3 = g;
                 b0 = b1 = b2 = b3 = b;
-                if (v0->z > 0) {
-                    r0 = v0->r / 255.0f; g0 = v0->g / 255.0f; b0 = v0->b / 255.0f;
-                    r1 = v1->r / 255.0f; g1 = v1->g / 255.0f; b1 = v1->b / 255.0f;
-                    r2 = v2->r / 255.0f; g2 = v2->g / 255.0f; b2 = v2->b / 255.0f;
-                    r3 = v3->r / 255.0f; g3 = v3->g / 255.0f; b3 = v3->b / 255.0f;
-                }
             }
         }
         /* Queued with the GXSOFT z-sum keys; emitted sorted at flip.
@@ -1092,8 +1876,14 @@ int gxGLBackendInstall(void)
     s_uUseTex = glGetUniformLocation(s_prog, "uUseTex");
     s_uKeyBlack = glGetUniformLocation(s_prog, "uKeyBlack");
     s_uKeyAlpha = glGetUniformLocation(s_prog, "uKeyAlpha");
-    glGetIntegerv(GL_DEPTH_BITS, &depthBits);
+    s_uA2C = glGetUniformLocation(s_prog, "uA2C");
+    /* GL_DEPTH_BITS is not a valid core-profile query (it returned 0 and
+     * silently kept the painter-only path); ask the default framebuffer. */
+    glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_DEPTH,
+        GL_FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE, &depthBits);
     s_depthEnabled = depthBits > 0;
+    appLog("[gxGL] window depth buffer %d bits", (int)depthBits);
+    postInit();
     glGenVertexArrays(1, &s_vao);
     glGenBuffers(1, &s_vbo);
     glBindVertexArray(s_vao);
@@ -1113,6 +1903,8 @@ int gxGLBackendInstall(void)
     glUniform1i(s_uUseTex, 0);
     glUniform1i(s_uKeyBlack, 0);
     glUniform1i(s_uKeyAlpha, 0);
+    glUniform1i(s_uA2C, 0);
+    s_a2cOn = 0;
     glDepthFunc(GL_LESS);
     glClearDepth(1.0);
     glDepthMask(GL_TRUE);
@@ -1120,7 +1912,10 @@ int gxGLBackendInstall(void)
     s_depthWrite = 1;
     if (s_depthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    /* Alpha accumulates coverage (src + dst * (1 - src)); only the post
+     * target reads it back, as the scene mask. */
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                        GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_SCISSOR_TEST);
     s_viewX = 0; s_viewY = 0; s_viewW = s_width; s_viewH = s_height;
     glScissor(0, 0, s_width, s_height);
@@ -1207,6 +2002,7 @@ void gxGLBackendUninstall(void)
     if (s_vbo) { glDeleteBuffers(1, &s_vbo); s_vbo = 0; s_vboBound = 0; }
     if (s_vao) { glDeleteVertexArrays(1, &s_vao); s_vao = 0; }
     if (s_prog) { glDeleteProgram(s_prog); s_prog = 0; }
+    postShutdown();
     memset(&g_driver.api, 0, sizeof(g_driver.api));
     g_driver.hDriverModule = NULL;
     g_driver.nDriverActive = 0;
