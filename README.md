@@ -11,9 +11,8 @@ My overall workflow has been:
 * Fix bugs with as much automation as possible. It's really satisfying to watch the agent navigate the game and take screenshots until arriving at a solution.
 * Use [opencode-pty](https://github.com/shekohex/opencode-pty) to attach a debugger for difficult bugs. The agent compared actual process memory between the original and rebuild.
 
-The game is now fully playable (excluding network play). This took a lot of time and manual steering. Running `make` produces `maniac_rebuid.exe` that can be run through wine (in my hardcoded game directory). The new binary uses the old `gxSoft.dll` software renderer (I did reimplement this as well as a first easier experiment).
+The game is now fully playable (excluding network play). This took a lot of time and manual steering. Running `make` produces `maniac_rebuid.exe` that can be run through wine (in my hardcoded game directory). The new binary uses the old `gxSoft.dll` software renderer (I did reimplement this as well as a first easier experiment). Note: Checkout "Original win32 reimplementation" commit to build this.
 
-Future goals:
+Later commits port the game to 64-bit cross-plattform and adds HD and modern rendering techniques: `cmake --build build && ./build/maniac_rebuild`
 
-* Port the game to cross-plattform, replacing the software renderer with some popular hardware rendering-based library - DONE.
-* Make a HD mod using image upscaling and adding modern rendering techniques.
+See screenshots.
