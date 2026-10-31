@@ -1,0 +1,14 @@
+# Montage 10.1: a lone cart on a turntable, shot like a car commercial.
+shot        m2_cart_turntable
+level       0
+players     1
+start       1.0
+frames      50
+world_speed 0
+env         MANIAC_DOF 8
+env         MANIAC_DOF_FOCUS 1600
+env         MANIAC_DOF_RANGE 1400
+actor 0 hide
+cart 0      1000 0 7200   0   spin 25
+key 0.0     1000 -450 5600    1000 -500 7200   45
+key 2.0     1150 -480 5650    1000 -500 7200   43

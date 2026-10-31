@@ -1,0 +1,17 @@
+# Fly-by bar 8: slow arc into the Woodshop.
+shot        f5_wood
+level       1
+players     4
+start       8.0
+frames      124
+ease        0.0 0.0
+actor 0 hide
+cart 0 hide
+actor 1 hide
+cart 1 hide
+actor 2 hide
+cart 2 hide
+actor 3 hide
+cart 3 hide
+key 0.0    -21300 -4400 22000   -26000 -4400 22900   70
+key 4.96   -23800 -4700 23400   -28500 -4500 22200   70

@@ -1,0 +1,20 @@
+# ICA: high sweep over the produce stand.
+shot        i1_produce_sweep
+level       0
+players     4
+start       8.0
+frames      30
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+key   0.00    17500   -5000   -8938     21000    -600  -15000   70.0
+key   0.24    16875   -4600   -9720     21000    -600  -15000   70.0
+key   0.48    16396   -4200  -10554     21000    -600  -15000   70.0
+key   0.72    16065   -3800  -11415     21000    -600  -15000   70.0
+key   0.96    15879   -3400  -12277     21000    -600  -15000   70.0
+key   1.20    15832   -3000  -13119     21000    -600  -15000   70.0

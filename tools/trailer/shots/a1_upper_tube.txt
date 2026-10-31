@@ -1,0 +1,17 @@
+# Aqua: glide into the upper glass tube.
+shot        a1_upper_tube
+level       3
+players     4
+start       8.0
+frames      54
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+key   0.00     6000   -1500  -18000     -2000    2900  -18200   72.0
+key   2.16    -7000    2700  -18500    -15000    3000  -19000   72.0

@@ -1,0 +1,21 @@
+# Woodshop: thrown goods hit a rival (on an open aisle).
+shot        w3_throw_hit
+level       1
+players     4
+cast        3 8 0 1
+start       8.0
+frames      30
+world_speed 0
+zones       all
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+actor 2 hide
+actor 3 hide
+actor 0  -10808 0 -15290  117  anim s_throw2 frame 0 fps 25 once
+actor 1  -8854 0 -16302  297  anim s_stand fps 12.5
+pose  1  0.48  s_oops fps 25 once
+item 21  -10808 -1500 -15290  spin 400 300 0  vel 6660 -500 -3449  gravity 2500  from 0.2
+key   0.00    -6612    -900  -15887     -9653   -1000  -15888   60.0
+key   1.20    -6835    -900  -15884     -9653   -1000  -15888   60.0

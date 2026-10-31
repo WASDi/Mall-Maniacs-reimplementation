@@ -1,0 +1,10 @@
+# Aqua race: high wide chase over the pack.
+shot        r3_race_high
+level       3
+mode        vagnrace
+players     8
+start       25.6
+frames      54
+zones       all
+follow 6 0 -4800 -4800 0 0 3500 rel smooth 0.3
+key   0.00        0       0       0         0       0       1   72.0

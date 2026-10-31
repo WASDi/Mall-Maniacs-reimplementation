@@ -1,0 +1,20 @@
+# Orient: a shopper slips, goods fly (on an open aisle).
+shot        o4_slip
+level       2
+players     4
+cast        6 0 1 2
+start       8.0
+frames      30
+world_speed 0
+zones       all
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+actor 0  -27799 -500 3948  18  anim s_oops frame 0 fps 25 once
+item 13  -27799 -1800 3948  spin 300 200 0  vel 464 -1800 1426  gravity 3200  from 0.25
+key   0.00   -26519   -2200    6266    -27799   -1300    3948   58.0
+key   1.20   -26659   -2200    5996    -27799   -1300    3948   58.0

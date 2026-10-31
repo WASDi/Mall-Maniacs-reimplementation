@@ -1,0 +1,31 @@
+# Orient: everyone frozen mid-action; slow orbit.
+shot        o3_frozen_orbit
+level       2
+players     8
+cast        0 1 2 3 4 5 6 7
+start       8.0
+frames      54
+world_speed 0
+zones       all
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+cart 4 hide
+cart 5 hide
+cart 6 hide
+cart 7 hide
+actor 0  19000 -500 2300  90  anim s_throw1 frame 6 fps 0
+actor 1  19919 -1000 1919  155  anim s_oops frame 5 fps 0
+actor 2  20300 -1400 1000  220  anim s_grab frame 4 fps 0
+actor 3  19919 -800 81  285  anim s_flpick1 frame 6 fps 0
+actor 4  19000 -500 -300  350  anim s_throw2 frame 5 fps 0
+actor 5  18081 -1200 81  55  anim s_winner frame 12 fps 0
+actor 6  17700 -900 1000  120  anim s_pick1 frame 5 fps 0
+actor 7  18081 -1500 1919  185  anim s_run frame 3 fps 0
+key   0.00    20800   -2100   -2118     19000   -1300    1000   62.0
+key   0.43    20211   -2040   -2327     19000   -1300    1000   62.0
+key   0.86    19604   -1980   -2427     19000   -1300    1000   62.0
+key   1.30    19000   -1920   -2420     19000   -1300    1000   62.0
+key   1.73    18417   -1860   -2309     19000   -1300    1000   62.0
+key   2.16    17871   -1800   -2101     19000   -1300    1000   62.0

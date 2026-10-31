@@ -1,0 +1,16 @@
+# Montage 11.3: a thrown item (Kalles Kaviar) hangs in the air; the thrower behind it, out of focus.
+shot        m5_midair
+level       0
+players     1
+cast        4
+start       1.0
+frames      50
+world_speed 0
+env         MANIAC_DOF 8
+env         MANIAC_DOF_FOCUS 900
+env         MANIAC_DOF_RANGE 700
+actor 0     1000 0 8400  180  anim s_throw2 frame 8 fps 0
+cart 0 hide
+item 12      650 -1550 7200  rot 200 30 0  spin 12 8 0
+key 0.0     1050 -1450 5900     850 -1500 7300   40
+key 2.0      990 -1460 5850     850 -1500 7300   38

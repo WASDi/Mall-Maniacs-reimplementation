@@ -1,0 +1,9 @@
+# T3 verification shot: keyframed dolly down the ICA aisle (uneven key spacing).
+shot        t3_test_dolly
+level       0
+start       8.0
+frames      100
+ease        0.8 0.8
+key 0.0     1500  -900 11500    1500  -900  8000
+key 1.5     1300 -1100  8800    1600 -1000  5300
+key 4.0     1500 -1500  5500    1500 -1100  2000

@@ -1,0 +1,17 @@
+# Orient: push in on the statue pavilion.
+shot        o2_statue_push
+level       2
+players     4
+start       8.0
+frames      30
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+key   0.00   -21000   -1600    7000    -21000   -1800   13500   60.0
+key   1.20   -21000   -2000    9800    -21000   -2000   13500   60.0

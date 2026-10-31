@@ -1,0 +1,24 @@
+# Aqua: slow glide through the lower tube past floating goods.
+shot        a2_tube_float
+level       3
+players     4
+start       8.0
+frames      54
+world_speed 0
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+item 12  800 4950 -40100  rot 0 20 0  spin 15 10 0
+item 16  -400 4424 -40700  rot 50 35 30  spin 19 13 0
+item 13  -1600 3161 -39900  rot 100 50 60  spin 23 16 0
+item 4  -2600 3771 -40500  rot 150 65 90  spin 27 19 0
+item 21  -3400 2978 -40000  rot 200 80 120  spin 31 22 0
+item 24  -4200 1984 -40800  rot 250 95 150  spin 35 25 0
+key   0.00     2500    4950  -40300     -2000    4061  -40400   64.0
+key   2.16    -1500    4061  -40400     -6000    2930  -40600   64.0

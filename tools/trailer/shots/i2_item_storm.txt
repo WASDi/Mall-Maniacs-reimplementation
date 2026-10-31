@@ -1,0 +1,27 @@
+# ICA: a burst of goods flies at the camera.
+shot        i2_item_storm
+level       0
+players     4
+start       8.0
+frames      54
+world_speed 0
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+actor 0  6500 0 -9500  180  anim s_throw1 frame 2 fps 25 once
+item 12  6200 -1500 -10000  rot 0 0 0  spin 120 90 60  vel -660 -1100 -1700  gravity 900  from 0.3
+item 16  6350 -1650 -10000  rot 37 23 11  spin 140 105 60  vel -330 -900 -2000  gravity 900  from 0.3
+item 13  6500 -1800 -10000  rot 74 46 22  spin 160 120 60  vel 0 -700 -2300  gravity 900  from 0.3
+item 4  6650 -1500 -10000  rot 111 69 33  spin 180 135 60  vel 330 -500 -1700  gravity 900  from 0.3
+item 21  6800 -1650 -10000  rot 148 92 44  spin 200 150 60  vel 660 -1100 -2000  gravity 900  from 0.3
+item 24  6200 -1800 -10000  rot 185 115 55  spin 220 165 60  vel -660 -900 -2300  gravity 900  from 0.3
+item 7  6350 -1500 -10000  rot 222 138 66  spin 240 180 60  vel -330 -700 -1700  gravity 900  from 0.3
+item 9  6500 -1650 -10000  rot 259 161 77  spin 260 195 60  vel 0 -500 -2000  gravity 900  from 0.3
+item 1  6650 -1800 -10000  rot 296 184 88  spin 280 210 60  vel 330 -1100 -2300  gravity 900  from 0.3
+item 15  6800 -1500 -10000  rot 333 207 99  spin 300 225 60  vel 660 -900 -1700  gravity 900  from 0.3
+key   0.00     6800    -900  -12500      6500   -1300   -9500   66.0
+key   2.16     6700   -1000  -12200      6500   -1300   -9500   66.0

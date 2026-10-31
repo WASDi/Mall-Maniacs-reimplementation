@@ -1,0 +1,10 @@
+# Aqua race: tracking alongside a racer in the left hall.
+shot        r2_race_side
+level       3
+mode        vagnrace
+players     8
+start       30.4
+frames      54
+zones       all
+follow 3 2600 -800 200 0 -600 900 rel smooth 0.2
+key   0.00        0       0       0         0       0       1   72.0

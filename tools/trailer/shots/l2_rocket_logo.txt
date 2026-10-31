@@ -1,0 +1,22 @@
+# Future: slow crane up past the rocket under the logo.
+shot        l2_rocket_logo
+level       4
+players     4
+start       8.0
+frames      258
+world_speed 0
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+key   0.00    -7662   -2200   -7872     -2500   -6500    -500   70.0
+key   2.06    -8928   -3860   -8160     -2500   -6500    -500   70.0
+key   4.13   -10278   -5520   -8278     -2500   -6500    -500   70.0
+key   6.19   -11693   -7180   -8213     -2500   -6500    -500   70.0
+key   8.26   -13149   -8840   -7956     -2500   -6500    -500   70.0
+key  10.32   -14624  -10500   -7500     -2500   -6500    -500   70.0

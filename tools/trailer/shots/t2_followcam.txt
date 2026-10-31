@@ -1,0 +1,6 @@
+# T2 verification shot: normal gameplay from the follow camera, no HUD.
+shot        t2_followcam
+level       0
+start       8.0
+frames      50
+size        1920 804

@@ -171,6 +171,13 @@ it. `GxMode.hInstance/hwnd` become ignored fields.
   `MANIAC_GRADE_LUT=<file.cube>`, `MANIAC_VIGNETTE`, `MANIAC_DOF`
   (`_FOCUS`, `_RANGE`; also `gxGLSetDepthOfField`), `MANIAC_ANISOTROPY`,
   `MANIAC_ALPHA_TO_COVERAGE`.
+- Legacy look (port addition, `MANIAC_LEGACY_LOOK=1`, used by the trailer's
+  1999 shots): approximates GXSOFT by switching off the HD additions at
+  once. That means affine UVs (vertex w 1), the painter-only path without
+  the depth buffer, nearest scene sampling, no post stack or
+  alpha-to-coverage, no MSAA, and the 4:3 canvas (no widescreen).
+  GXSOFT's rasterizer seams (occasional single-pixel cracks) are not
+  reproduced.
 - Widescreen (port addition): a window wider than 4:3 widens the logical
   canvas by a margin on each side (`gxGetWideMargin`; capped by
   `MANIAC_MAX_ASPECT`, default 2.4; `MANIAC_WIDESCREEN=0` pillarboxes).

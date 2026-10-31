@@ -1,0 +1,17 @@
+# Orient: low rush down the red-lacquer gallery.
+shot        o1_red_gallery
+level       2
+players     4
+start       8.0
+frames      54
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+key   0.00     1000   -1399   11000      1000   -1400   -9000   72.0
+key   2.16     1000   -1200   -4000      1000   -1400  -20000   72.0

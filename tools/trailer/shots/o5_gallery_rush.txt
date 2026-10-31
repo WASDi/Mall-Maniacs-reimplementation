@@ -1,0 +1,17 @@
+# Orient: gallery rush (build).
+shot        o5_gallery_rush
+level       2
+players     4
+start       8.0
+frames      18
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+key   0.00     1000   -1100    6000      1000   -1200   -6000   74.0
+key   0.72     1000   -1100       0      1000   -1200  -14000   74.0

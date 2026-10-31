@@ -1,0 +1,14 @@
+# Calm 1999 ICA gate; gates open at shot frame 175 (timeline 192).
+shot        c1_cold_legacy
+level       0
+players     4
+start       0.0
+frames      284
+size        640 480
+env         MANIAC_LEGACY_LOOK 1
+blur        1
+hold        2
+key   0.00     1500   -1900   12600      1500   -1100    6000   70.0
+key   7.00     1500   -1650   11300      1500   -1000    6000   70.0
+key   8.00     1500   -2600   10000      1500    -700    5000   70.0
+key  11.20     1400   -4600    6500      1300    -500       0   70.0

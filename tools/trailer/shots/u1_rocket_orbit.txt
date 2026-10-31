@@ -1,0 +1,21 @@
+# Future: fast high orbit around the giant rocket.
+shot        u1_rocket_orbit
+level       4
+players     4
+start       8.0
+frames      54
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+key   0.00     4571   -7500   -8926     -2500   -5500    -500   70.0
+key   0.43     1508   -7100  -10421     -2500   -5500    -500   70.0
+key   0.86    -1775   -6700  -10875     -2500   -5500    -500   70.0
+key   1.30    -4943   -6300  -10300     -2500   -5500    -500   70.0
+key   1.73    -7693   -5900   -8811     -2500   -5500    -500   70.0
+key   2.16    -9777   -5500   -6606     -2500   -5500    -500   70.0

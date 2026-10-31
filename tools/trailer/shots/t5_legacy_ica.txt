@@ -1,0 +1,7 @@
+# T5: the 1999 look. Follow camera at the ICA start gate, 640x480 like the original.
+shot        t5_legacy_ica
+level       0
+start       2.0
+frames      25
+size        640 480
+env         MANIAC_LEGACY_LOOK 1

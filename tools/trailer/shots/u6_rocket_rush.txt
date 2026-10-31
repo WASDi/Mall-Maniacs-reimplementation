@@ -1,0 +1,17 @@
+# Future: rush at the rocket (build).
+shot        u6_rocket_rush
+level       4
+players     4
+start       8.0
+frames      18
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+key   0.00     6500   -1700    -500     -2500   -4500    -500   74.0
+key   0.72     4000   -1900    -500     -2500   -5500    -500   74.0

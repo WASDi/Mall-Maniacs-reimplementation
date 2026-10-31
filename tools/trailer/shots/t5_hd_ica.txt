@@ -1,0 +1,6 @@
+# T5: HD counterpart of t5_legacy_ica (same camera, 2.39:1 Hor+).
+shot        t5_hd_ica
+level       0
+start       2.0
+frames      25
+size        1920 804

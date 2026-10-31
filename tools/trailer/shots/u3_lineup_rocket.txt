@@ -1,0 +1,27 @@
+# Future: the cast lined up beneath the rocket (10 MANIACS).
+shot        u3_lineup_rocket
+level       4
+players     8
+cast        0 1 2 3 4 5 6 7
+start       8.0
+frames      54
+world_speed 0
+zones       all
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+cart 4 hide
+cart 5 hide
+cart 6 hide
+cart 7 hide
+actor 0  750 -1000 -6129  150  anim s_stand fps 12.5 frame 0
+actor 1  -125 -1000 -6551  159  anim s_stand fps 12.5 frame 3
+actor 2  -1054 -1000 -6837  167  anim s_stand fps 12.5 frame 6
+actor 3  -2014 -1000 -6982  176  anim s_stand fps 12.5 frame 9
+actor 4  -2986 -1000 -6982  184  anim s_stand fps 12.5 frame 12
+actor 5  -3946 -1000 -6837  193  anim s_stand fps 12.5 frame 15
+actor 6  -4875 -1000 -6551  201  anim s_stand fps 12.5 frame 18
+actor 7  -5750 -1000 -6129  210  anim s_stand fps 12.5 frame 21
+key   0.00    -2500   -1400  -10500     -2500   -4200    -500   68.0
+key   2.16    -2500   -1500   -9400     -2500   -4600    -500   68.0

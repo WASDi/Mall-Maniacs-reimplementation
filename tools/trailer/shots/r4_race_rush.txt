@@ -1,0 +1,11 @@
+# Aqua race: very low rush (build).
+shot        r4_race_rush
+level       3
+mode        vagnrace
+players     8
+start       34.4
+frames      30
+zones       all
+follow 1 350 -500 -1500 0 -500 4000 rel smooth 0.12
+shake 0 1.0 90 11
+key   0.00        0       0       0         0       0       1   72.0

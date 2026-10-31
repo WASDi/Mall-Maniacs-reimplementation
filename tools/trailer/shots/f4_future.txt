@@ -1,0 +1,17 @@
+# Fly-by bar 7: push-in toward the Future mall rocket.
+shot        f4_future
+level       4
+players     4
+start       8.0
+frames      124
+ease        0.0 0.0
+actor 0 hide
+cart 0 hide
+actor 1 hide
+cart 1 hide
+actor 2 hide
+cart 2 hide
+actor 3 hide
+cart 3 hide
+key 0.0    -20500  1100   500   -14000  -900   500   70
+key 4.96   -18000   800   500   -12500 -1600   500   66

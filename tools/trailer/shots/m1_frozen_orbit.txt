@@ -1,0 +1,31 @@
+# Montage 9.1: everyone frozen mid-action in a ring; the camera orbits while time stands still.
+shot        m1_frozen_orbit
+level       0
+players     8
+cast        0 1 2 3 4 5 6 7
+start       1.0
+frames      100
+world_speed 0
+
+actor 0    1000     0   8300     90  anim s_throw1 frame 6 fps 0
+actor 1    1778  -500   7978    155  anim s_oops frame 5 fps 0
+actor 2    2100  -900   7200    220  anim s_grab frame 4 fps 0
+actor 3    1778  -300   6422    285  anim s_flpick1 frame 6 fps 0
+actor 4    1000     0   6100    350  anim s_throw2 frame 5 fps 0
+actor 5     222  -700   6422     55  anim s_winner frame 12 fps 0
+actor 6    -100  -400   7200    120  anim s_pick1 frame 5 fps 0
+actor 7     222 -1000   7978    185  anim s_run frame 3 fps 0
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+cart 4 hide
+cart 5 hide
+cart 6 hide
+cart 7 hide
+
+key 0.0    3121 -1500   4672   1000 -700 7200   62
+key 1.0    2129 -1500   4099   1000 -700 7200   62
+key 2.0    1000 -1500   3900   1000 -700 7200   62
+key 3.0    -129 -1500   4099   1000 -700 7200   62
+key 4.0   -1121 -1500   4672   1000 -700 7200   62

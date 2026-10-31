@@ -1,0 +1,10 @@
+# Climax (bars 12-13): one continuous flight over the ICA gate and down the aisle, rising to a wide view.
+shot        k1_climax
+level       0
+start       6.0
+frames      200
+ease        0.0 1.5
+key 0.0     1500 -1300 11400    1500 -1000  7000   72
+key 2.5     1500 -1500  8300    1450 -1000  4000   72
+key 5.0     1350 -1300  5300    1300 -1100  1000   72
+key 8.0     1100 -3600  3200    1000 -1000  -800   73.7

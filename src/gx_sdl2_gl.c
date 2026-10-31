@@ -10,6 +10,9 @@
 #include "gx_sdl2_gl.h"
 #include "platform_sdl2.h"
 #include "custom_helpers.h"
+#ifdef MANIAC_CINEMATIC
+#include "cinematic.h"
+#endif
 
 /* OpenGL 3.3 backend (simple, good-looking port).
  *
@@ -74,7 +77,10 @@
  *   vignette, depth of field). Only the opaque/transparent scene buckets
  *   render into the offscreen target; UI records and the fullscreen blit
  *   still draw straight to the window after the composite, so 2D screens are
- *   untouched. Every knob is a MANIAC_* environment variable (see
+ *   untouched. MANIAC_LEGACY_LOOK=1 turns all of that off at once and
+ *   also restores affine UVs, the painter-only (no depth buffer) path,
+ *   nearest sampling and the 4:3 canvas, approximating GXSOFT for the
+ *   trailer's 1999 shots. Every knob is a MANIAC_* environment variable (see
  *   postConfigLoad); MANIAC_POSTFX=0 restores the direct-to-window path.
  * - PORT ADDITION (widescreen, no GXSOFT counterpart): when the window is
  *   wider than 4:3 the logical canvas grows by s_wideMargin pixels on each
@@ -119,8 +125,15 @@ typedef struct GLVertex {
  * as clip w restores perspective-correct UV interpolation. z <= 0 marks
  * unprojected 2D draws (gxDrawQuadColor @0x414470, fonts, HUD) where every
  * vert shares w = 1 (affine == perspective there). */
+/* MANIAC_LEGACY_LOOK=1 (PORT ADDITION, trailer "1999" shots): approximate
+ * the GXSOFT software renderer by undoing the HD additions. Read once in
+ * gxGLBackendInstall before anything depends on it. See the header note. */
+static int s_legacyLook;
+
 static float depthW(int z)
 {
+    /* Legacy look: w 1 gives GXSOFT's affine (screen-linear) UV walk. */
+    if (s_legacyLook) return 1.0f;
     return (z > 0) ? ((float)z / 16.0f) : 1.0f;
 }
 
@@ -840,6 +853,10 @@ static void postConfigLoad(void)
     s_post.dofRange = envFloat("MANIAC_DOF_RANGE", 2400.0f);
     s_post.alphaToCoverage = envFloat("MANIAC_ALPHA_TO_COVERAGE", 1.0f) != 0.0f;
     s_post.debugAo = envFloat("MANIAC_SSAO_DEBUG", 0.0f) != 0.0f;
+    if (s_legacyLook) {
+        s_post.enabled = 0;
+        s_post.alphaToCoverage = 0;
+    }
 }
 
 /* Adobe .cube 3D LUT (LUT_3D_SIZE n, then n^3 "r g b" rows, red fastest —
@@ -1110,7 +1127,7 @@ static void postInit(void)
         }
     }
     s_anisotropy = clampf(envFloat("MANIAC_ANISOTROPY", 16.0f), 1.0f, maxAniso);
-    s_wideEnabled = envFloat("MANIAC_WIDESCREEN", 1.0f) != 0.0f;
+    s_wideEnabled = envFloat("MANIAC_WIDESCREEN", 1.0f) != 0.0f && !s_legacyLook;
     s_wideMaxAspect = clampf(envFloat("MANIAC_MAX_ASPECT", 2.4f), 4.0f / 3.0f, 8.0f);
     appLog("[gxGL] anisotropic filtering %.0fx (max %.0fx)", s_anisotropy, maxAniso);
 
@@ -1438,6 +1455,44 @@ static int glFlip(void)
                  0, (float)s_height, 0, 1, 1, 1, 1, 1, 1);
     }
     batchFlush();
+#ifdef MANIAC_CINEMATIC
+    /* PORT ADDITION (trailer capture): read the finished back buffer,
+     * after post-processing and UI, before it is presented. */
+    if (cinematicWantsFrame()) {
+        unsigned char *pFrame = cinematicFrameBuffer(s_drawWidth, s_drawHeight);
+        if (pFrame != NULL) {
+            glDisable(GL_SCISSOR_TEST);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+            glReadBuffer(GL_BACK);
+            glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            glReadPixels(0, 0, s_drawWidth, s_drawHeight, GL_RGB, GL_UNSIGNED_BYTE, pFrame);
+            glEnable(GL_SCISSOR_TEST);
+            cinematicSubmitFrame();
+        }
+    }
+    if (cinematicGuides()) {
+        /* Freecam framing guides: rule-of-thirds (grey) and the centred 4:3
+         * region the legacy half of the reveal shows (yellow), drawn as
+         * 2-pixel scissored clears so no draw state changes. */
+        int nW = s_drawWidth, nH = s_drawHeight;
+        int n43 = nH * 4 / 3;
+        int aRects[6][4] = {
+            { nW / 3 - 1, 0, 2, nH }, { 2 * nW / 3 - 1, 0, 2, nH },
+            { 0, nH / 3 - 1, nW, 2 }, { 0, 2 * nH / 3 - 1, nW, 2 },
+            { (nW - n43) / 2, 0, 2, nH }, { (nW + n43) / 2 - 2, 0, 2, nH }
+        };
+        int r;
+        glEnable(GL_SCISSOR_TEST);
+        for (r = 0; r < 6; r++) {
+            if (r < 4) glClearColor(0.6f, 0.6f, 0.6f, 1.0f);
+            else glClearColor(1.0f, 0.85f, 0.1f, 1.0f);
+            glScissor(aRects[r][0], aRects[r][1], aRects[r][2], aRects[r][3]);
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
+        glClearColor(0, 0, 0, 1);
+        glApplyViewport();
+    }
+#endif
     SDL_Window *w = (SDL_Window *)platformWindow();
     if (w) {
         SDL_GL_SwapWindow(w);
@@ -1977,8 +2032,12 @@ int gxGLBackendInstall(void)
      * silently kept the painter-only path); ask the default framebuffer. */
     glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_DEPTH,
         GL_FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE, &depthBits);
-    s_depthEnabled = depthBits > 0;
-    appLog("[gxGL] window depth buffer %d bits", (int)depthBits);
+    s_legacyLook = envFloat("MANIAC_LEGACY_LOOK", 0.0f) != 0.0f;
+    /* Legacy look keeps GXSOFT's far-first painter order for everything. */
+    s_depthEnabled = depthBits > 0 && !s_legacyLook;
+    appLog("[gxGL] window depth buffer %d bits%s", (int)depthBits,
+           s_legacyLook ? " (unused: legacy look)" : "");
+    if (s_legacyLook) glDisable(GL_MULTISAMPLE);
     postInit();
     glGenVertexArrays(1, &s_vao);
     glGenBuffers(1, &s_vbo);
@@ -2033,7 +2092,7 @@ int gxGLBackendInstall(void)
         const char *filter = getenv("MANIAC_SCENE_TEXTURE_FILTER");
         /* Scene surfaces default to linear/trilinear sampling. Set this to
          * "nearest" to restore the original sampling path for comparison. */
-        s_linearSceneTextures = !(filter && strcmp(filter, "nearest") == 0);
+        s_linearSceneTextures = !(filter && strcmp(filter, "nearest") == 0) && !s_legacyLook;
     }
 
     g_driver.api.pField_0 = NULL;

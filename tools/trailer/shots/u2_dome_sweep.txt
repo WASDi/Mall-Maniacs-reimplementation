@@ -1,0 +1,17 @@
+# Future: high sweep over the hazard-striped shelves and checkouts.
+shot        u2_dome_sweep
+level       4
+players     4
+start       8.0
+frames      30
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+key   0.00    13000   -9000  -11000     21000       0    1000   70.0
+key   1.20    16500   -8600   -6000     23500       0    3500   70.0

@@ -1,0 +1,29 @@
+# Future: grab frenzy at a shelf (1 SHOPPING LIST).
+shot        u4_grab_frenzy
+level       4
+players     4
+cast        2 5 9 0
+start       8.0
+frames      54
+world_speed 0
+zones       all
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+actor 3 hide
+actor 0  -14000 2000 -12000  0  anim s_grab fps 30
+actor 1  -12900 2000 -11700  330  anim s_pick1 fps 30
+actor 2  -15200 2000 -11800  30  anim s_flpick1 fps 30
+item 16  -15250 800 -11100  rot 0 30 0  spin 200 140 0  vel -750 -2200 -600  gravity 3000
+item 13  -14750 800 -11100  rot 60 30 0  spin 200 140 0  vel -450 -2200 -600  gravity 3000
+item 21  -14250 800 -11100  rot 120 30 0  spin 200 140 0  vel -150 -2200 -600  gravity 3000
+item 7  -13750 800 -11100  rot 180 30 0  spin 200 140 0  vel 150 -2200 -600  gravity 3000
+item 24  -13250 800 -11100  rot 240 30 0  spin 200 140 0  vel 450 -2200 -600  gravity 3000
+item 4  -12750 800 -11100  rot 300 30 0  spin 200 140 0  vel 750 -2200 -600  gravity 3000
+key   0.00   -15231     700  -15383    -14000     900  -12000   66.0
+key   0.43   -14604     740  -15427    -14000     900  -12000   66.0
+key   0.86   -14000     780  -15360    -14000     900  -12000   66.0
+key   1.30   -13437     820  -15191    -14000     900  -12000   66.0
+key   1.73   -12933     860  -14932    -14000     900  -12000   66.0
+key   2.16   -12500     900  -14598    -14000     900  -12000   66.0

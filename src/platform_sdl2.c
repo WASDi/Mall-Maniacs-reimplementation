@@ -14,6 +14,9 @@
 #include "menu.h"
 #include "gameplay.h"
 #include "custom_helpers.h"
+#ifdef MANIAC_CINEMATIC
+#include "cinematic.h"
+#endif
 
 /* SDL2 platform layer. Replaces WinMain @0x4160a0 window setup,
  * WindowProc @0x4161b0 message routing and WM_ACTIVATE @0x4161f6 focus
@@ -110,13 +113,21 @@ int platformInit(int argc, char **argv)
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     {
         int attempt;
+        int nWinW = 640, nWinH = 480;
+        Uint32 nWinFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+#ifdef MANIAC_CINEMATIC
+        /* PORT ADDITION: capture renders at the shot's fixed size. */
+        if (cinematicActive()) {
+            cinematicWindowSize(&nWinW, &nWinH);
+            nWinFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
+        }
+#endif
         for (attempt = 0; attempt < 2; attempt++) {
             int requestMultisampling = (attempt == 0);
             SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, requestMultisampling ? 1 : 0);
             SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, requestMultisampling ? 4 : 0);
             s_window = SDL_CreateWindow("Mall Maniacs",
-                SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480,
-                SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+                SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, nWinW, nWinH, nWinFlags);
             if (!s_window) {
                 char error[256];
                 snprintf(error, sizeof(error), "%s", SDL_GetError());
@@ -159,6 +170,12 @@ int platformInit(int argc, char **argv)
         SDL_GL_GetAttribute(SDL_GL_DEPTH_SIZE, &depthBits);
         appLog("[platform] GL depth buffer %d bits", depthBits);
     }
+#ifdef MANIAC_CINEMATIC
+    /* Offline capture must not wait for the display refresh. */
+    if (cinematicActive() && !cinematicFreecam()) {
+        SDL_GL_SetSwapInterval(0);
+    } else
+#endif
     if (SDL_GL_SetSwapInterval(1) != 0) {
         appLog("[platform] VSync unavailable: %s", SDL_GetError());
     } else if (SDL_GL_GetSwapInterval() == 1) {
@@ -166,6 +183,10 @@ int platformInit(int argc, char **argv)
     } else {
         appLog("[platform] VSync request did not activate swap interval=1");
     }
+#ifdef MANIAC_CINEMATIC
+    /* Freecam mouse look reads relative motion with a captured cursor. */
+    if (cinematicFreecam()) SDL_SetRelativeMouseMode(SDL_TRUE);
+#endif
     g_hWnd = (void *)s_window;
     g_hAppInstance = (void *)s_window;
     s_fpsStart = 0;
@@ -301,7 +322,15 @@ FILE *platformFopenCI(const char *path, const char *mode)
 #endif
 }
 
-unsigned int platformTicks(void) { return SDL_GetTicks(); }
+unsigned int platformTicks(void)
+{
+#ifdef MANIAC_CINEMATIC
+    /* PORT ADDITION: capture runs on a virtual clock (one video frame per
+     * rendered frame), so output is independent of render speed. */
+    if (cinematicActive()) return cinematicTicks();
+#endif
+    return SDL_GetTicks();
+}
 void platformSleep(unsigned int ms) { SDL_Delay(ms); }
 
 void platformUpdateFPS(void)
@@ -376,10 +405,69 @@ void platformRequestQuit(void)
     SDL_PushEvent(&ev);
 }
 
+#ifdef MANIAC_CINEMATIC
+/* PORT ADDITION (trailer freecam): edge-triggered keys and mouse motion
+ * accumulated since the last platformCineInput call. */
+static CineInput s_cineEdges;
+
+static void platformCineEvent(const SDL_Event *pEv)
+{
+    if (pEv->type == SDL_MOUSEMOTION) {
+        s_cineEdges.nMouseDX += pEv->motion.xrel;
+        s_cineEdges.nMouseDY += pEv->motion.yrel;
+    } else if (pEv->type == SDL_MOUSEWHEEL) {
+        s_cineEdges.nWheel += pEv->wheel.y;
+    } else if (pEv->type == SDL_KEYDOWN && !pEv->key.repeat) {
+        switch (pEv->key.keysym.scancode) {
+        case SDL_SCANCODE_K:      s_cineEdges.bRecord = 1; break;
+        case SDL_SCANCODE_RETURN: s_cineEdges.bPlay = 1; break;
+        case SDL_SCANCODE_T:      s_cineEdges.bFreeze = 1; break;
+        case SDL_SCANCODE_G:      s_cineEdges.bGuides = 1; break;
+        case SDL_SCANCODE_P:      s_cineEdges.bPrint = 1; break;
+        case SDL_SCANCODE_ESCAPE: s_cineEdges.bQuit = 1; break;
+        default: break;
+        }
+    }
+}
+
+unsigned int platformWallTicks(void)
+{
+    return SDL_GetTicks();
+}
+
+void platformCineInput(CineInput *pOut)
+{
+    const Uint8 *pKeys = SDL_GetKeyboardState(NULL);
+    *pOut = s_cineEdges;
+    memset(&s_cineEdges, 0, sizeof(s_cineEdges));
+    pOut->bForward = pKeys[SDL_SCANCODE_W];
+    pOut->bBack = pKeys[SDL_SCANCODE_S];
+    pOut->bLeft = pKeys[SDL_SCANCODE_A];
+    pOut->bRight = pKeys[SDL_SCANCODE_D];
+    pOut->bUp = pKeys[SDL_SCANCODE_E] || pKeys[SDL_SCANCODE_SPACE];
+    pOut->bDown = pKeys[SDL_SCANCODE_Q] || pKeys[SDL_SCANCODE_LCTRL];
+    pOut->bFast = pKeys[SDL_SCANCODE_LSHIFT] || pKeys[SDL_SCANCODE_RSHIFT];
+    pOut->bFovIn = pKeys[SDL_SCANCODE_Z];
+    pOut->bFovOut = pKeys[SDL_SCANCODE_X];
+}
+#endif
+
 int platformPumpEvents(void)
 {
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
+#ifdef MANIAC_CINEMATIC
+        /* PORT ADDITION: capture ignores keyboard and focus changes so a
+         * stray key or a focus loss (which freezes getGameTime) cannot
+         * alter the clip; only quitting is honoured. */
+        if (cinematicActive()) {
+            if (ev.type == SDL_QUIT ||
+                (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_CLOSE))
+                return 0;
+            if (cinematicFreecam()) platformCineEvent(&ev);
+            continue;
+        }
+#endif
         switch (ev.type) {
         case SDL_QUIT:
             return 0;

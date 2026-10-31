@@ -1,0 +1,36 @@
+# Montage 10.3: the whole cast lined up in the Aqua mall; standing in sync, then clapping on the beat.
+shot        m3_lineup
+level       3
+players     8
+cast        0 1 2 3 4 5 6 7
+start       1.0
+frames      50
+world_speed 0
+
+actor 0  21500 8000 -47300  0  anim s_stand fps 12.5
+pose  0  1.0  s_clap
+actor 1  22500 8000 -47300  0  anim s_stand fps 12.5
+pose  1  1.0  s_clap
+actor 2  23500 8000 -47300  0  anim s_stand fps 12.5
+pose  2  1.0  s_clap
+actor 3  24500 8000 -47300  0  anim s_stand fps 12.5
+pose  3  1.0  s_clap
+actor 4  25500 8000 -47300  0  anim s_stand fps 12.5
+pose  4  1.0  s_clap
+actor 5  26500 8000 -47300  0  anim s_stand fps 12.5
+pose  5  1.0  s_clap
+actor 6  27500 8000 -47300  0  anim s_stand fps 12.5
+pose  6  1.0  s_clap
+actor 7  28500 8000 -47300  0  anim s_stand fps 12.5
+pose  7  1.0  s_clap
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+cart 4 hide
+cart 5 hide
+cart 6 hide
+cart 7 hide
+
+key 0.0     25000 7000 -43500    25000 7150 -47300   55
+key 2.0     25000 7050 -44000    25000 7150 -47300   55

@@ -1,0 +1,8 @@
+# Logo shot (bars 14-15): the ICA cashier (KASSOERSKA, cash_sit) at her register; slow pull-back under the logo.
+shot        l1_cashier
+level       0
+start       6.0
+frames      200
+ease        0.5 0.0
+key 0.0     15200 -1400  8500    12500 -1000  8500   55
+key 8.0     17400 -1900  8500    12500 -1000  8500   65

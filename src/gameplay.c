@@ -7,6 +7,9 @@
 #include "config.h"
 #include "font.h"
 #include "gx.h"
+#ifdef MANIAC_CINEMATIC
+#include "cinematic.h"
+#endif
 #include "hud.h"
 #include "input.h"
 #include "level.h"
@@ -1418,10 +1421,23 @@ void gameObjectUpdate(void)
 void gameFrameRender(void)
 {
     if (g_nGameFrameActive == 0) {
+#ifdef MANIAC_CINEMATIC
+        cinematicSceneApply(); /* PORT ADDITION: staging + scripted/free camera */
+#endif
         zoneConnUpdateCulling();
+#ifdef MANIAC_CINEMATIC
+        cinematicZonesOverride(); /* PORT ADDITION: `zones all` shots */
+#endif
         sceneDetailGridUpdate(g_pSceneDetailGrid);
         sndStopAllVoices(g_pGameVoiceList);
+#ifdef MANIAC_CINEMATIC
+        cinematicHideOverlays(); /* PORT ADDITION: guidance arrows count as HUD */
+#endif
         if (g_pSceneRoot != NULL) sceneRender(g_pSceneRoot);
+#ifdef MANIAC_CINEMATIC
+        cinematicRestoreOverlays();
+        if (!cinematicHideHud()) /* PORT ADDITION: trailer capture has no HUD */
+#endif
         renderGameHud();
         gxFlip();
         gxClearScreen(1, g_nClearColor);

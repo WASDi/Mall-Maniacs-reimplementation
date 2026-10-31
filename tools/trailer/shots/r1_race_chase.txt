@@ -1,0 +1,10 @@
+# Aqua race: low chase behind the leader into the lower tube.
+shot        r1_race_chase
+level       3
+mode        vagnrace
+players     8
+start       20.8
+frames      102
+zones       all
+follow 4 0 -900 -2300 0 -700 3000 rel smooth 0.2
+key   0.00        0       0       0         0       0       1   72.0

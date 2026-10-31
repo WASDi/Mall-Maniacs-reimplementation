@@ -1,0 +1,85 @@
+# Mall Maniacs HD trailer — edit decision list (see tools/trailer/edit.py).
+# 25 fps, 125 BPM: 1 beat = 12 frames, 1 bar = 48 frames, 1500 frames = 60 s.
+# Bar b starts at frame (b - 1) * 48. Shots: tools/trailer/shotgen.py.
+
+frames 1500
+audio  build/trailer/music.wav
+
+# --- Bars 1-4: calm 1999. The ICA round starts at frame 17, so its gates open
+# (round time 7.00 s) exactly on the green start light at frame 192.
+video 0     black
+video 17    c1_cold_legacy     0   cut   legacy
+# --- Bar 5: the green light. HD replaces the 4:3 picture, the frame opens,
+# the players burst out and the camera cranes up over them.
+video 192   c1_cold_hd       175   wipe 6   hdbox
+video 198   c1_cold_hd       181   open 18
+
+# --- Bars 7-12: epic fly-bys through all five malls --------------------------
+video 288   w1_tree_crane      0   whip 4
+video 336   u1_rocket_orbit    0   whip 4
+video 384   o1_red_gallery     0   whip 4
+video 432   a1_upper_tube      0   whip 4
+video 480   i1_produce_sweep   0   cut
+video 504   w2_checkout_rise   0   cut
+video 528   u2_dome_sweep      0   cut
+video 552   o2_statue_push     0   cut
+
+# --- Bars 13-16: beauty -----------------------------------------------------------
+video 576   a2_tube_float      0   fade 6
+video 624   m5_midair          0   cut
+video 672   u3_lineup_rocket   0   cut
+video 720   o3_frozen_orbit    0   cut
+
+# --- Bars 17-24: action ------------------------------------------------------------
+video 768   r1_race_chase      0   flash 4
+video 864   i2_item_storm      0   cut
+video 912   r2_race_side       0   cut
+video 960   u4_grab_frenzy     0   cut
+video 1008  o4_slip            0   cut
+video 1032  w3_throw_hit       0   cut
+video 1056  r3_race_high       0   cut
+video 1104  u5_winner          0   cut
+video 1128  w4_cart_spin       0   cut
+
+# --- Bars 25-26: build, cuts accelerate; black on the silent beat ---------------
+video 1152  r4_race_rush       0   cut
+video 1176  i3_aisle_rush      0   cut
+video 1188  o5_gallery_rush    0   cut
+video 1200  u6_rocket_rush     0   cut
+video 1212  r1_race_chase     70   cut
+video 1224  a1_upper_tube     30   cut
+video 1236  black
+
+# --- Bars 27-31: logo slam, held to the end --------------------------------------
+video 1248  l2_rocket_logo     0   cut
+
+# --- Cards -----------------------------------------------------------------------
+overlay 30    170   caption_1999.png      fade 12 12
+overlay 204   282   caption_rebuilt.png   fade 6 12
+overlay 384   430   card_malls.png        fade 3 8
+overlay 672   718   card_maniacs.png      fade 6 10
+overlay 960   1006  card_list.png         fade 3 8
+darken  1248  1500  0.55                  fade 4
+glow    1248  1500  logo_glow.png         fade 10
+overlay 1248  1500  logo.png              fade 3
+
+# --- Game sound effects (MM_DATA_DIR/sound) -------------------------------------
+sfx 144   33_Red1.wav       -2      # start lights: red
+sfx 168   33_Red1.wav       -2      #               red
+sfx 192   34_Green1.wav      0      #               GREEN = the reveal
+sfx 192   07_Blast.wav      -8
+sfx 200   05_wind2.wav     -10      # crane over the players
+sfx 288   05_wind2.wav     -12      # whips between malls
+sfx 384   05_wind2.wav     -12
+sfx 768   11_Vagnrull1.wav  -3      # race
+sfx 778   12_Vagnrull2.wav  -5
+sfx 806   13_Vagnrull3.wav  -6
+sfx 871   21_Throw.wav      -3      # item storm
+sfx 1014  26_Plask.wav      -2      # slip
+sfx 1037  21_Throw.wav      -4      # throw...
+sfx 1044  22_Throw-Hit.wav  -1      # ...hit
+sfx 1060  13_Vagnrull3.wav  -7
+sfx 1248  35_Gong2.wav       0      # logo slam
+sfx 1248  07_Blast.wav      -4
+
+fadeout 1464 36

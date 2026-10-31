@@ -66,10 +66,19 @@ set(MANIAC_LIB_SOURCES
     src/zone.c
 )
 
+# Offline trailer capture mode (Trailer.md); dev-only, off by default.
+option(MANIAC_CINEMATIC "Build the trailer cinematic capture mode" OFF)
+if(MANIAC_CINEMATIC)
+    list(APPEND MANIAC_LIB_SOURCES src/cinematic.c)
+endif()
+
 add_library(maniac_lib STATIC ${MANIAC_LIB_SOURCES})
 target_include_directories(maniac_lib PUBLIC src ${SDL2_INCLUDE_DIRS})
 target_compile_definitions(maniac_lib PUBLIC
     MANIAC_DATA_DIR="${MANIAC_DATA_DIR}")
+if(MANIAC_CINEMATIC)
+    target_compile_definitions(maniac_lib PUBLIC MANIAC_CINEMATIC)
+endif()
 target_compile_options(maniac_lib PRIVATE
     -Wall -Wextra -Wpointer-to-int-cast)
 

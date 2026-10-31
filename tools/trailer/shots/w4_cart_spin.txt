@@ -1,0 +1,21 @@
+# Woodshop: a cart spins under the tree (car-ad look).
+shot        w4_cart_spin
+level       1
+players     4
+start       8.0
+frames      30
+world_speed 0
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+cart 0  -35900 -3000 11300  0  spin 60
+env MANIAC_DOF 8
+env MANIAC_DOF_FOCUS 2600
+env MANIAC_DOF_RANGE 1800
+key   0.00   -33900   -3500    8700    -35900   -3500   11300   48.0
+key   1.20   -34100   -3520    8900    -35900   -3500   11300   48.0

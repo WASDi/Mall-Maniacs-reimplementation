@@ -1,0 +1,19 @@
+# Future: a winner cheers beneath the rocket.
+shot        u5_winner
+level       4
+players     4
+cast        7 0 1 2
+start       8.0
+frames      30
+world_speed 0
+zones       all
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+actor 0  -2500 -1000 -9000  180  anim s_winner
+key   0.00    -1600   -1500  -12300     -2500   -2500   -9000   60.0
+key   1.20    -2100   -1600  -12000     -2500   -3200   -6000   60.0

@@ -1,0 +1,21 @@
+# Woodshop: crane down around the great tree.
+shot        w1_tree_crane
+level       1
+players     4
+start       8.0
+frames      54
+zones       all
+actor 0 hide
+actor 1 hide
+actor 2 hide
+actor 3 hide
+cart 0 hide
+cart 1 hide
+cart 2 hide
+cart 3 hide
+key   0.00   -39065  -10500    6452    -36500   -4500   13500   70.0
+key   0.43   -39900   -9320    7611    -36500   -4500   13500   70.0
+key   0.86   -40421   -8140    8827    -36500   -4500   13500   70.0
+key   1.30   -40637   -6960   10029    -36500   -4500   13500   70.0
+key   1.73   -40570   -5780   11150    -36500   -4500   13500   70.0
+key   2.16   -40259   -4600   12132    -36500   -4500   13500   70.0

@@ -9,6 +9,9 @@
 #include "stubs.h"
 #include "time.h"
 #include "platform_sdl2.h"
+#ifdef MANIAC_CINEMATIC
+#include "cinematic.h"
+#endif
 void gameInit(void); /* @0x409d90 — defined in game.c */
 
 /* =====================================================================
@@ -41,6 +44,12 @@ int main(int argc, char **argv)
 {
     appLog("[winmain] === start ===");
 
+#ifdef MANIAC_CINEMATIC
+    /* PORT ADDITION (trailer capture): parsed before the window exists so
+     * the shot's size and MANIAC_* environment take effect. */
+    if (cinematicInit(argc, argv) < 0) return 1;
+#endif
+
     if (!initWindowAndInput(argc, argv)) {
         appLog("[winmain] initWindowAndInput failed");
         return 1;
@@ -54,6 +63,16 @@ int main(int argc, char **argv)
     /* State is not set by gameInit; first frame's gameFrameUpdate will
      * call menuInit(0) lazily as in the original. */
     appLog("[winmain] running intro timeline (6 logos)");
+
+#ifdef MANIAC_CINEMATIC
+    /* PORT ADDITION: the capture loop replaces the interactive loop below
+     * and then shares its teardown. */
+    int nCinematicStatus = 0;
+    if (cinematicActive()) {
+        nCinematicStatus = cinematicRun();
+        g_bRunning = 0;
+    }
+#endif
 
     /* Event pump + frame update — mirrors the original WinMain idle path:
      * after the event batch, each iteration advances one game frame via
@@ -88,5 +107,9 @@ int main(int argc, char **argv)
     platformShutdown();
     g_hWnd = NULL;
     appLog("[winmain] === done ===\n");
+#ifdef MANIAC_CINEMATIC
+    return nCinematicStatus;
+#else
     return 0;
+#endif
 }
